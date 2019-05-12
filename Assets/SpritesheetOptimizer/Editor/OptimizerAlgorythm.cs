@@ -42,6 +42,8 @@ public class OptimizerAlgorythm
 
     private struct MyPoint
     {
+        public readonly int Square;
+
         public readonly int X;
         public readonly int Y;
 
@@ -49,6 +51,8 @@ public class OptimizerAlgorythm
         {
             X = x;
             Y = y;
+
+            Square = x * y;
         }
 
         public override string ToString() => $"{X}, {Y}";
@@ -74,19 +78,17 @@ public class OptimizerAlgorythm
     {
         public readonly MyColor[] _colors;
 
-        public readonly int Width;
-        public readonly int Height;
+        public readonly MyPoint Dimensions;
 
         public readonly int OpaquePixelsCount;
         public readonly int PixelsCount;
 
         private readonly int _hash;
 
-        public MyArea(int width, int height, params MyColor[] colors)
+        public MyArea(MyPoint dimensions, params MyColor[] colors)
         {
             _colors = colors;
-            Width = width;
-            Height = height;
+            Dimensions = dimensions;
 
             PixelsCount = _colors.Length;
             OpaquePixelsCount = 0;
@@ -95,36 +97,49 @@ public class OptimizerAlgorythm
             {
                 if (_colors[i].A > 0)
                     OpaquePixelsCount++;
-                _hash += (i + 1) * _colors[i].GetHashCode();
+                _hash += (i + 1) * _colors[i].GetHashCode() * short.MaxValue;
             }
-            _hash += width + width * height;
+            _hash *= dimensions.GetHashCode();
         }
 
         public override int GetHashCode() => _hash;
 
-        public static bool ContainsOpaquePixels(MyColor[][] sprite, int x, int y, int width, int height)
+        public static bool ContainsOpaquePixels(MyColor[][] sprite, int x, int y, MyPoint dimensions)
         {
-            for (int xx = 0; xx < width; xx++)
-                for (int yy = 0; yy < height; yy++)
+            for (int xx = 0; xx < dimensions.X; xx++)
+                for (int yy = 0; yy < dimensions.Y; yy++)
                     if (sprite[x + xx][y + yy].A > 0)
                         return true;
             return false;
         }
 
-        public static MyArea CreateFromSprite(MyColor[][] sprite, int x, int y, int width, int height)
+        public static MyArea CreateFromSprite(MyColor[][] sprite, int x, int y, MyPoint dimensions)
         {
-            var colors = new MyColor[width * height];
-            for (int xx = 0; xx < width; xx++)
-                for (int yy = 0; yy < height; yy++)
-                    colors[xx + yy * width] = sprite[x + xx][y + yy];
-            return new MyArea(width, height, colors);
+            var colors = new MyColor[dimensions.Square];
+            for (int xx = 0; xx < dimensions.X; xx++)
+                for (int yy = 0; yy < dimensions.Y; yy++)
+                    colors[xx + yy * dimensions.X] = sprite[x + xx][y + yy];
+            return new MyArea(dimensions, colors);
+        }
+        
+        public static void EraseAreaFromSprite(MyColor[][] sprite, int x, int y, MyPoint dimensions)
+        {
+            for (int xx = 0; xx < dimensions.X; xx++)
+                for (int yy = 0; yy < dimensions.Y; yy++)
+                    sprite[x + xx][y + yy] = new MyColor(byte.MinValue, byte.MinValue, byte.MinValue, byte.MinValue);
         }
 
-        public static void EraseAreaFromSprite(MyColor[][] sprite, int x, int y, int width, int height)
+        public static void EraseUpdateEmptinessMap(MyColor[][] sprite, bool[][] spritesMapOfEmptiness, int x, int y, MyPoint dimensions)
         {
-            for (int xx = 0; xx < width; xx++)
-                for (int yy = 0; yy < height; yy++)
-                    sprite[x + xx][y + yy] = new MyColor(byte.MinValue, byte.MinValue, byte.MinValue, byte.MinValue);
+            for (int xx = 0; xx < dimensions.X; xx++)
+                for (int yy = 0; yy < dimensions.Y; yy++)
+                {
+                    var spriteXCoord = x + xx;
+                    var spriteYCoord = y + yy;
+                    if (spriteXCoord + dimensions.X >= sprite.Length || spriteYCoord + dimensions.Y >= sprite[spriteXCoord].Length)
+                        continue;
+                    spritesMapOfEmptiness[spriteXCoord][spriteYCoord] = !ContainsOpaquePixels(sprite, spriteXCoord, spriteYCoord, dimensions);
+                }
         }
     }
 
@@ -211,6 +226,26 @@ public class OptimizerAlgorythm
         //    }
         //}
 
+        var mapsOfEmptiness = new Dictionary<MyPoint, bool[][][]>();
+        for (int i = 0; i < areaVariants.Length; i++)
+        {
+            var currentAreaVariant = areaVariants[i];
+            var currentMapOfEmptiness = new bool[sprites.Length][][];
+            for (int j = 0; j < sprites.Length; j++)
+            {
+                var sprite = sprites[j];
+                var spriteMapOfEmptiness = new bool[sprite.Length - currentAreaVariant.X][];
+                for (int x = 0; x < sprite.Length - currentAreaVariant.X; x++)
+                {
+                    spriteMapOfEmptiness[x] = new bool[sprite[x].Length - currentAreaVariant.Y];
+                    for (int y = 0; y < sprite[x].Length - currentAreaVariant.Y; y++)
+                        spriteMapOfEmptiness[x][y] = !MyArea.ContainsOpaquePixels(sprite, x, y, currentAreaVariant);
+                }
+                currentMapOfEmptiness[j] = spriteMapOfEmptiness;
+            }
+            mapsOfEmptiness.Add(currentAreaVariant, currentMapOfEmptiness);
+        }
+
         var areas = new ConcurrentDictionary<int, MyArea>();
         var areaDirtyScores = new ConcurrentDictionary<int, long>(); //Dirty - потому что мы не удаляем пиксели по-настоящему, так что это рассчет грубый и неточный, но пойдет для первичного отсева.
 
@@ -227,7 +262,9 @@ public class OptimizerAlgorythm
                     Debug.Log("Exception!");
                 var i = Mathf.FloorToInt(index / sprites.Length);
                 var j = index - i * sprites.Length;
-                getUniqueAreas(areaVariants[i], sprites[j], areas, areaDirtyScores);
+                var targetArea = areaVariants[i];
+                var mapOfEmptinessForAreaAndSprite = mapsOfEmptiness[targetArea][j];
+                getUniqueAreas(targetArea, sprites[j], areas, areaDirtyScores, mapOfEmptinessForAreaAndSprite);
             });
         }
         catch (AggregateException ae)
@@ -283,31 +320,36 @@ public class OptimizerAlgorythm
 
         Parallel.For(0, _bestOfTheDirtyBufferSize, index =>
         {
-            var imageCopy = CopyArrayOfColors(sprites);
+            var imageCopy = CopyArrayOf(sprites);
             var candidateHash = orderedDirtyKvpArray[index].Key;
             var candidate = areas[candidateHash];
+            var areaDimensions = candidate.Dimensions;
+
+            var emptinessMapCopy = CopyArrayOf(mapsOfEmptiness[areaDimensions]);
 
             var deletedOpaquePixels = 0L;
             for (int i = 0; i < imageCopy.Length; i++)
             {
                 var sprite = imageCopy[i];
-                for (int x = 0; x < sprite.Length - candidate.Width; x++)
+                var spritesMapOfEmptiness = emptinessMapCopy[i];
+                for (int x = 0; x < sprite.Length - areaDimensions.X; x++)
                 {
-                    for (int y = 0; y < sprite[x].Length - candidate.Height; y++)
+                    for (int y = 0; y < sprite[x].Length - areaDimensions.Y; y++)
                     {
-                        if (!MyArea.ContainsOpaquePixels(sprite, x, y, candidate.Width, candidate.Height))
+                        if (spritesMapOfEmptiness[x][y])
                             continue;
-                        var comparedArea = MyArea.CreateFromSprite(sprite, x, y, candidate.Width, candidate.Height);
+                        var comparedArea = MyArea.CreateFromSprite(sprite, x, y, areaDimensions);
                         if (comparedArea.GetHashCode() == candidate.GetHashCode())
                         {
-                            MyArea.EraseAreaFromSprite(sprite, x, y, candidate.Width, candidate.Height);
+                            MyArea.EraseAreaFromSprite(sprite, x, y, areaDimensions);
                             deletedOpaquePixels += comparedArea.OpaquePixelsCount;
+                            MyArea.EraseUpdateEmptinessMap(sprite, spritesMapOfEmptiness, x, y, areaDimensions);
                         }
                     }
                 }
             }
             
-            var cleanScore = ((long)(Mathf.Pow(candidate.OpaquePixelsCount, 2f) / (candidate.Width * candidate.Height))) * deletedOpaquePixels;
+            var cleanScore = ((long)(Mathf.Pow(candidate.OpaquePixelsCount, 2f) / candidate.Dimensions.Square)) * deletedOpaquePixels;
             partialCleanScore.AddOrUpdate(candidateHash, cleanScore, (key, _) => cleanScore);
             CurrentOp++;
         });
@@ -336,6 +378,9 @@ public class OptimizerAlgorythm
          * листов, и, несколько сотен хешей, размером, допустим 40 байт. В общем, не знаю, может я неправильно рассчитал, но у меня получилось, что мне 
          * понадобятся несколько сотен гигабайт оперативки для всего это счатья. Так что наверное, лучше все же смещать баланс в сторону вычислительной
          * сложности.
+         * 
+         * Нет, все-таки мне нужно как-то это дело оптимизировать. Так оставлять нельзя, очень долго будет обрабатываться. Я думаю, нужно сделать карту, 
+         * содержащую информацию о пустых областях, чтобы можно было скипнуть проходы цикла.
          */
 
 
@@ -347,20 +392,20 @@ public class OptimizerAlgorythm
         //return new Chunk[0][]; 
     }
 
-    private static MyColor[][][] CopyArrayOfColors(MyColor[][][] source)
+    private static T[][][] CopyArrayOf<T>(T[][][] source)
     {
         var len = source.Length;
-        var dest = new MyColor[len][][];
+        var dest = new T[len][][];
 
         for (int i = 0; i < len; i++)
         {
             var len2 = source[i].Length;
-            dest[i] = new MyColor[len2][];
+            dest[i] = new T[len2][];
 
             for (int j = 0; j < len2; j++)
             {
                 var len3 = source[i][j].Length;
-                dest[i][j] = new MyColor[len3];
+                dest[i][j] = new T[len3];
 
                 Array.Copy(source[i][j], dest[i][j], len3);
             }
@@ -369,7 +414,7 @@ public class OptimizerAlgorythm
         return dest;
     }
 
-    private static void getUniqueAreas(MyPoint areaResolution, MyColor[][] sprite, ConcurrentDictionary<int, MyArea> areas, ConcurrentDictionary<int, long> areaDirtyScores)
+    private static void getUniqueAreas(MyPoint areaResolution, MyColor[][] sprite, ConcurrentDictionary<int, MyArea> areas, ConcurrentDictionary<int, long> areaDirtyScores, bool[][] mapOfEmptiness)
     {
         var areaSquare = areaResolution.X * areaResolution.Y;
         for (int x = 0; x < sprite.Length - areaResolution.X; x++)
@@ -377,9 +422,9 @@ public class OptimizerAlgorythm
             for (int y = 0; y < sprite[x].Length - areaResolution.Y; y++)
             {
                 ProcessedAreas++;
-                if (!MyArea.ContainsOpaquePixels(sprite, x, y, areaResolution.X, areaResolution.Y))
+                if (mapOfEmptiness[x][y])
                     continue;
-                var area = MyArea.CreateFromSprite(sprite, x, y, areaResolution.X, areaResolution.Y);
+                var area = MyArea.CreateFromSprite(sprite, x, y, areaResolution);
                 var hash = area.GetHashCode();
                 if (areas.TryAdd(hash, area))
                     UniqueAreas++;
