@@ -16,21 +16,25 @@ public class OptimizerAlgorythm
 
     private struct MyColor
     {
-        public readonly float R;
-        public readonly float G;
-        public readonly float B;
-        public readonly float A;
+        private const short _byteMax = 256;
+        private const int _2bytesMax = 65_536;
+        private const long _4bytesMax = 4_294_967_296L;
+
+        public readonly byte R;
+        public readonly byte G;
+        public readonly byte B;
+        public readonly byte A;
 
         private readonly int _hash;
 
-        public MyColor(float r, float g, float b, float a)
+        public MyColor(byte r, byte g, byte b, byte a)
         {
             R = r;
             G = g;
             B = b;
             A = a;
 
-            _hash = (R + G * 10 + B * 100 + A * 1000).GetHashCode();
+            _hash = (R + G * _byteMax + B * _2bytesMax + A * _4bytesMax).GetHashCode();
         }
 
         public override int GetHashCode() => _hash;
@@ -89,7 +93,7 @@ public class OptimizerAlgorythm
             _hash = 0;
             for (int i = 0; i < _colors.Length; i++)
             {
-                if (_colors[i].A > 0f)
+                if (_colors[i].A > 0)
                     OpaquePixelsCount++;
                 _hash += (i + 1) * _colors[i].GetHashCode();
             }
@@ -102,7 +106,7 @@ public class OptimizerAlgorythm
         {
             for (int xx = 0; xx < width; xx++)
                 for (int yy = 0; yy < height; yy++)
-                    if (sprite[x + xx][y + yy].A > 0f)
+                    if (sprite[x + xx][y + yy].A > 0)
                         return true;
             return false;
         }
@@ -120,7 +124,7 @@ public class OptimizerAlgorythm
         {
             for (int xx = 0; xx < width; xx++)
                 for (int yy = 0; yy < height; yy++)
-                    sprite[x + xx][y + yy] = new MyColor(float.MinValue, float.MinValue, float.MinValue, float.MinValue);
+                    sprite[x + xx][y + yy] = new MyColor(byte.MinValue, byte.MinValue, byte.MinValue, byte.MinValue);
         }
     }
 
@@ -156,7 +160,12 @@ public class OptimizerAlgorythm
                 for (int y = 0; y < height; y++)
                 {
                     var color = texture.GetPixel(xOrigin + x, yOrigin + y);
-                    currentColors[x][y] = new MyColor(color.r, color.g, color.b, color.a);
+                    currentColors[x][y] = new MyColor(
+                        Convert.ToByte(Mathf.Clamp(color.r * byte.MaxValue, 0, byte.MaxValue)), 
+                        Convert.ToByte(Mathf.Clamp(color.g * byte.MaxValue, 0, byte.MaxValue)), 
+                        Convert.ToByte(Mathf.Clamp(color.b * byte.MaxValue, 0, byte.MaxValue)), 
+                        Convert.ToByte(Mathf.Clamp(color.a * byte.MaxValue, 0, byte.MaxValue))
+                    );
                 }
             }
             sprites[i] = currentColors;
@@ -286,6 +295,8 @@ public class OptimizerAlgorythm
                 {
                     for (int y = 0; y < sprite[x].Length - candidate.Height; y++)
                     {
+                        if (!MyArea.ContainsOpaquePixels(sprite, x, y, candidate.Width, candidate.Height))
+                            continue;
                         var comparedArea = MyArea.CreateFromSprite(sprite, x, y, candidate.Width, candidate.Height);
                         if (comparedArea.GetHashCode() == candidate.GetHashCode())
                         {
@@ -414,7 +425,7 @@ public class OptimizerAlgorythm
                 for (int y = 0; y < sprites[i][x].Length; y++)
                 {
                     pixelsTotal++;
-                    if (sprites[i][x][y].A > 0f)
+                    if (sprites[i][x][y].A > 0)
                         opaquePixelsTotal++;
                 }
             }
