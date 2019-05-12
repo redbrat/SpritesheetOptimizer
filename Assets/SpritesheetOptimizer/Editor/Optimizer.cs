@@ -16,6 +16,8 @@ public class Optimizer : EditorWindow
         _intance = GetWindow<Optimizer>();
     }
 
+    private static bool _displayingSomething;
+
     private void OnGUI()
     {
         var newSprite = EditorGUILayout.ObjectField(_sprite, typeof(Sprite), false) as Sprite;
@@ -25,12 +27,17 @@ public class Optimizer : EditorWindow
         _resolution = EditorGUILayout.Vector2IntField("Area:" ,_resolution);
 
         if (_sprite != null && GUILayout.Button("Try") && !OptimizerAlgorythm.Working)
+        {
             OptimizerAlgorythm.Go(_resolution, _sprite);
+            _displayingSomething = true;
+        }
         EditorGUILayout.LabelField(OptimizerAlgorythm.Working ? "Working" : "Idle");
-        if (OptimizerAlgorythm.Working)
+        if (_displayingSomething)
         {
             EditorGUILayout.LabelField($"Op #{OptimizerAlgorythm.CurrentOp} of {OptimizerAlgorythm.CurrentOpsTotal} ops done");
             EditorGUILayout.LabelField($"Areas #{OptimizerAlgorythm.UniqueAreas} unique of {OptimizerAlgorythm.ProcessedAreas} processed areas");
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField($"Unoptimized pixels count: {OptimizerAlgorythm.UnoptimizedPixelsCount} of {OptimizerAlgorythm.OpaquePixelsTotal} total optimizable pixels");
         }
 
         Repaint();

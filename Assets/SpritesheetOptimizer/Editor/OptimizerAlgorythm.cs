@@ -13,6 +13,8 @@ public class OptimizerAlgorythm
     public static int CurrentOpsTotal;
     public static int ProcessedAreas;
     public static int UniqueAreas;
+    public static int OpaquePixelsTotal;
+    public static int UnoptimizedPixelsCount;
 
     private struct MyColor
     {
@@ -129,16 +131,16 @@ public class OptimizerAlgorythm
                     sprite[x + xx][y + yy] = new MyColor(byte.MinValue, byte.MinValue, byte.MinValue, byte.MinValue);
         }
 
-        public static void EraseUpdateEmptinessMap(MyColor[][] sprite, bool[][] spritesMapOfEmptiness, int x, int y, MyPoint dimensions)
+        public static void EraseUpdateEmptinessMap(MyColor[][] sprite, bool[][] spritesMapOfEmptiness, int x, int y, MyPoint erasedAreaDimensions, MyPoint updatedAreaDimensions)
         {
-            for (int xx = 0; xx < dimensions.X; xx++)
-                for (int yy = 0; yy < dimensions.Y; yy++)
+            for (int xx = 0; xx < erasedAreaDimensions.X; xx++)
+                for (int yy = 0; yy < erasedAreaDimensions.Y; yy++)
                 {
                     var spriteXCoord = x + xx;
                     var spriteYCoord = y + yy;
-                    if (spriteXCoord + dimensions.X >= sprite.Length || spriteYCoord + dimensions.Y >= sprite[spriteXCoord].Length)
+                    if (spriteXCoord + updatedAreaDimensions.X >= sprite.Length || spriteYCoord + updatedAreaDimensions.Y >= sprite[spriteXCoord].Length)
                         continue;
-                    spritesMapOfEmptiness[spriteXCoord][spriteYCoord] = !ContainsOpaquePixels(sprite, spriteXCoord, spriteYCoord, dimensions);
+                    spritesMapOfEmptiness[spriteXCoord][spriteYCoord] = !ContainsOpaquePixels(sprite, spriteXCoord, spriteYCoord, updatedAreaDimensions);
                 }
         }
     }
@@ -198,13 +200,15 @@ public class OptimizerAlgorythm
     private static Chunk[][] goGetEm(MyPoint area, MyColor[][][] sprites/*, out Texture optimizedSpritesheet*/)
     {
         //optimizedSpritesheet = new Texture2D(1, 1);
-        Debug.Log("goGetEm . ......"); 
+        //Debug.Log("goGetEm . ......"); 
         int pixelsTotal;
         int opaquePixelsTotal;
 
         countOpaquePixels(sprites, out pixelsTotal, out opaquePixelsTotal);
 
-        Debug.Log($"pixelsTotal = {pixelsTotal}, opaquePixelsTotal = {opaquePixelsTotal}");
+        OpaquePixelsTotal = pixelsTotal;
+        UnoptimizedPixelsCount = opaquePixelsTotal;
+        //Debug.Log($"pixelsTotal = {pixelsTotal}, opaquePixelsTotal = {opaquePixelsTotal}");
 
         var areaVariants = getAreaVariants(area);
         //Debug.Log("Area variants:");
@@ -327,7 +331,7 @@ public class OptimizerAlgorythm
 
             var emptinessMapCopy = CopyArrayOf(mapsOfEmptiness[areaDimensions]);
 
-            var deletedOpaquePixels = 0L;
+            var deletedOpaquePixels = 0;
             for (int i = 0; i < imageCopy.Length; i++)
             {
                 var sprite = imageCopy[i];
@@ -343,7 +347,7 @@ public class OptimizerAlgorythm
                         {
                             MyArea.EraseAreaFromSprite(sprite, x, y, areaDimensions);
                             deletedOpaquePixels += comparedArea.OpaquePixelsCount;
-                            MyArea.EraseUpdateEmptinessMap(sprite, spritesMapOfEmptiness, x, y, areaDimensions);
+                            MyArea.EraseUpdateEmptinessMap(sprite, spritesMapOfEmptiness, x, y, areaDimensions, areaDimensions); //т.к. мы сейчас смотрим только на эффективность текущей области в плане удаления пикселей, нам не нужно оптимизировать другие области
                         }
                     }
                 }
@@ -382,6 +386,45 @@ public class OptimizerAlgorythm
          * Нет, все-таки мне нужно как-то это дело оптимизировать. Так оставлять нельзя, очень долго будет обрабатываться. Я думаю, нужно сделать карту, 
          * содержащую информацию о пустых областях, чтобы можно было скипнуть проходы цикла.
          */
+
+        var winnerAreaHash = orderedCleanKvpArray[0].Key;
+        var winnerArea = areas[winnerAreaHash];
+        var winnerAreaDimensions = winnerArea.Dimensions;
+        var winnerAreaEmptinessMap = mapsOfEmptiness[winnerAreaDimensions];
+        
+        var opaquePixelsDeletedByWinner = 0;
+        for (int i = 0; i < sprites.Length; i++)
+        {
+            var sprite = sprites[i];
+            var spritesMapOfEmptiness = winnerAreaEmptinessMap[i];
+            for (int x = 0; x < sprite.Length - winnerAreaDimensions.X; x++)
+            {
+                for (int y = 0; y < sprite[x].Length - winnerAreaDimensions.Y; y++)
+                {
+                    if (spritesMapOfEmptiness[x][y])
+                        continue;
+                    var comparedArea = MyArea.CreateFromSprite(sprite, x, y, winnerAreaDimensions);
+                    if (comparedArea.GetHashCode() == winnerArea.GetHashCode())
+                    {
+                        MyArea.EraseAreaFromSprite(sprite, x, y, winnerAreaDimensions);
+                        opaquePixelsDeletedByWinner += comparedArea.OpaquePixelsCount;
+
+                        /*
+                         * Сообщаем все мапам пустот, что в данной конкретной области на данном конкретном спрайте прибавилось пустоты, поэтому их надо 
+                         * обновить. Это действует на все варианты областей и только на 1 конкретный спрайт.
+                         */
+
+                        for (int v = 0; v < areaVariants.Length; v++)
+                        {
+                            var currentAreaVariant = areaVariants[v];
+                            MyArea.EraseUpdateEmptinessMap(sprite, spritesMapOfEmptiness, x, y, winnerAreaDimensions, currentAreaVariant);
+                        }
+                    }
+                }
+            }
+        }
+
+        UnoptimizedPixelsCount -= opaquePixelsDeletedByWinner;
 
 
 
