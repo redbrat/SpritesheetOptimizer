@@ -36,6 +36,7 @@ public class Optimizer : EditorWindow
         {
             EditorGUILayout.LabelField($"Op #{OptimizerAlgorythm.CurrentOp} of {OptimizerAlgorythm.CurrentOpsTotal} ops done");
             EditorGUILayout.LabelField($"Areas #{OptimizerAlgorythm.UniqueAreas} unique of {OptimizerAlgorythm.ProcessedAreas} processed areas");
+            EditorGUILayout.LabelField($"Last pass lasted {OptimizerAlgorythm.LastPassTime} milliseconds or {OptimizerAlgorythm.LastPassTime / 1000f} seconds.");
             EditorGUILayout.Space();
             EditorGUILayout.LabelField($"Unoptimized pixels count: {OptimizerAlgorythm.UnoptimizedPixelsCount} of {OptimizerAlgorythm.OpaquePixelsTotal} total optimizable pixels");
         }
