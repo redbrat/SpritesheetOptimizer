@@ -98,6 +98,15 @@ public class OptimizerAlgorythm
 
         public override int GetHashCode() => _hash;
 
+        public static bool ContainsOpaquePixels(MyColor[][] sprite, int x, int y, int width, int height)
+        {
+            for (int xx = 0; xx < width; xx++)
+                for (int yy = 0; yy < height; yy++)
+                    if (sprite[x + xx][y + yy].A > 0f)
+                        return true;
+            return false;
+        }
+
         public static MyArea CreateFromSprite(MyColor[][] sprite, int x, int y, int width, int height)
         {
             var colors = new MyColor[width * height];
@@ -129,6 +138,7 @@ public class OptimizerAlgorythm
         var path = AssetDatabase.GetAssetPath(sprite);
         var ti = AssetImporter.GetAtPath(path) as TextureImporter;
         ti.isReadable = true;
+        ti.SaveAndReimport();
 
         var sprites = new MyColor[ti.spritesheet.Length][][];
         for (int i = 0; i < ti.spritesheet.Length; i++)
@@ -305,7 +315,16 @@ public class OptimizerAlgorythm
          * Ок, теперь мы имеем чистый список и победителя - забираем его из areas, удаляем его пиксели с картинки, наносим на карту его id,
          * и после этого мы должны пойти по новой - пересчитать areaDirtyScores, взять buffer лучших, посчитать Clean, взять лучшего, и т.д..
          * Но вообще я могу сделать по-другому. Взять старый areaDirtyScores и пересчитать только те области, которые были затронуты предыдущим 
-         * удалением.
+         * удалением. Для этого мне надо иметь карту размером с картинку, где каждый пиксель будет содержать инфу о том, частью какого хеша он является.
+         * Поэтому при удалении пикселей победителя чистого списка с картинки, мы сохрянем все уникальные хеши удаленных пикселей, и потом пересчитываем
+         * области с соответствующими хешами - может оказаться, что эти области вообще больше не существуют и надо их тогда удалить из грязного списка.
+         * Если же они существуют - обновляем их рейтинг в грязном списке. А затем уже можно пойти по новой итерации цикла.
+         * 
+         * С другой стороны, карта размером с картинку - это потенциально много миллионов List'ов, каждый из которых будет содержать потенциально сотни 
+         * значений. В ххудшем случае, если у нас 4к текстура и какая-нибудь большая в пределах разумного область, допустим, 8х8, то у нас 16 миллионов 
+         * листов, и, несколько сотен хешей, размером, допустим 40 байт. В общем, не знаю, может я неправильно рассчитал, но у меня получилось, что мне 
+         * понадобятся несколько сотен гигабайт оперативки для всего это счатья. Так что наверное, лучше все же смещать баланс в сторону вычислительной
+         * сложности.
          */
 
 
@@ -346,15 +365,16 @@ public class OptimizerAlgorythm
         {
             for (int y = 0; y < sprite[x].Length - areaResolution.Y; y++)
             {
-                var area = MyArea.CreateFromSprite(sprite, x, y, areaResolution.X, areaResolution.Y);
                 ProcessedAreas++;
-                if (area.OpaquePixelsCount == 0)
+                if (!MyArea.ContainsOpaquePixels(sprite, x, y, areaResolution.X, areaResolution.Y))
                     continue;
+                var area = MyArea.CreateFromSprite(sprite, x, y, areaResolution.X, areaResolution.Y);
                 var hash = area.GetHashCode();
                 if (areas.TryAdd(hash, area))
                     UniqueAreas++;
-                else
-                    areaDirtyScores.AddOrUpdate(hash, 0, (int key, long existingValue) => existingValue + (int)(Mathf.Pow(area.OpaquePixelsCount, 3f) / areaSquare));
+
+                var dirtyScore = (int)(Mathf.Pow(area.OpaquePixelsCount, 3f) / areaSquare);
+                areaDirtyScores.AddOrUpdate(hash, dirtyScore, (key, existingValue) => existingValue + dirtyScore);
             }
         }
         CurrentOp++;
