@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
@@ -23,21 +24,21 @@ public static class AnimatorControllerDoer
 
         for (int i = 0; i < originalCtrlr.layers.Length; i++)
         {
-            var optLayer = getOptimizedLayer(originalCtrlr.layers[i], originalToOptObjectReferences, animationClipsFolder);
+            var optLayer = getOptimizedLayer(originalCtrlr.layers[i], structure, futureSpriteSheet, originalToOptObjectReferences, animationClipsFolder);
             optCtrlr.AddLayer(optLayer);
         }
     }
 
-    private static T getOptReference<T>(T original, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder) where T : UnityEngine.Object
+    private static T getOptReference<T>(T original, OptimizedControllerStructure structure, List<SpritesheetChunk> futureSpriteSheet, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder) where T : UnityEngine.Object
     {
         if (original == null)
             return null;
         if (!originalToOptObjectReferences.ContainsKey(original))
         {
             if (typeof(T).Equals(typeof(AnimatorStateMachine)))
-                return (T)(UnityEngine.Object)getOptimizedStateMachine(original as AnimatorStateMachine, originalToOptObjectReferences, animationClipsFolder);
+                return (T)(UnityEngine.Object)getOptimizedStateMachine(original as AnimatorStateMachine, structure, futureSpriteSheet, originalToOptObjectReferences, animationClipsFolder);
             else if (typeof(T).Equals(typeof(AnimatorState)))
-                return (T)(UnityEngine.Object)getOptimizedState(original as AnimatorState, originalToOptObjectReferences, animationClipsFolder);
+                return (T)(UnityEngine.Object)getOptimizedState(original as AnimatorState, structure, futureSpriteSheet, originalToOptObjectReferences, animationClipsFolder);
             else
                 throw new ApplicationException($"Unknown reference type occured :{typeof(T).FullName}!");
         }
@@ -45,7 +46,7 @@ public static class AnimatorControllerDoer
             return (T)originalToOptObjectReferences[original];
     }
 
-    private static AnimatorControllerLayer getOptimizedLayer(AnimatorControllerLayer originalLayer, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
+    private static AnimatorControllerLayer getOptimizedLayer(AnimatorControllerLayer originalLayer, OptimizedControllerStructure structure, List<SpritesheetChunk> futureSpriteSheet, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
     {
         var optLayer = new AnimatorControllerLayer();
 
@@ -53,14 +54,14 @@ public static class AnimatorControllerDoer
         optLayer.defaultWeight = originalLayer.defaultWeight;
         optLayer.iKPass = originalLayer.iKPass;
         optLayer.name = originalLayer.name;
-        optLayer.stateMachine = getOptReference(originalLayer.stateMachine, originalToOptObjectReferences, animationClipsFolder);
+        optLayer.stateMachine = getOptReference(originalLayer.stateMachine, structure, futureSpriteSheet, originalToOptObjectReferences, animationClipsFolder);
         optLayer.syncedLayerAffectsTiming = originalLayer.syncedLayerAffectsTiming;
         optLayer.syncedLayerIndex = originalLayer.syncedLayerIndex;
 
         return optLayer;
     }
 
-    private static AnimatorStateMachine getOptimizedStateMachine(AnimatorStateMachine originalStateMachine, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
+    private static AnimatorStateMachine getOptimizedStateMachine(AnimatorStateMachine originalStateMachine, OptimizedControllerStructure structure, List<SpritesheetChunk> futureSpriteSheet, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
     {
         var optStateMachine = new AnimatorStateMachine();
         originalToOptObjectReferences.Add(originalStateMachine, optStateMachine);
@@ -72,7 +73,7 @@ public static class AnimatorControllerDoer
         optStateMachine.parentStateMachinePosition = originalStateMachine.parentStateMachinePosition;
 
         for (int i = 0; i < originalStateMachine.states.Length; i++)
-            optStateMachine.AddState(getOptReference(originalStateMachine.states[i].state, originalToOptObjectReferences, animationClipsFolder), originalStateMachine.states[i].position);
+            optStateMachine.AddState(getOptReference(originalStateMachine.states[i].state, structure, futureSpriteSheet, originalToOptObjectReferences, animationClipsFolder), originalStateMachine.states[i].position);
 
         //for (int i = 0; i < originalStateMachine.anyStateTransitions.Length; i++)
         //{
@@ -82,7 +83,7 @@ public static class AnimatorControllerDoer
         return optStateMachine;
     }
 
-    private static AnimatorState getOptimizedState(AnimatorState originalAnimatorState, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
+    private static AnimatorState getOptimizedState(AnimatorState originalAnimatorState, OptimizedControllerStructure structure, List<SpritesheetChunk> futureSpriteSheet, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
     {
         var optAnimatorState = new AnimatorState();
         originalToOptObjectReferences.Add(originalAnimatorState, optAnimatorState);
@@ -94,7 +95,7 @@ public static class AnimatorControllerDoer
         optAnimatorState.mirror = originalAnimatorState.mirror;
         optAnimatorState.mirrorParameter = originalAnimatorState.mirrorParameter;
         optAnimatorState.mirrorParameterActive = originalAnimatorState.mirrorParameterActive;
-        optAnimatorState.motion = getOptimizedMotion(originalAnimatorState.motion, originalToOptObjectReferences, animationClipsFolder);
+        optAnimatorState.motion = getOptimizedMotion(originalAnimatorState.motion, structure, futureSpriteSheet, originalToOptObjectReferences, animationClipsFolder);
         optAnimatorState.name = originalAnimatorState.name;
         optAnimatorState.speed = originalAnimatorState.speed;
         optAnimatorState.speedParameter = originalAnimatorState.speedParameter;
@@ -104,12 +105,12 @@ public static class AnimatorControllerDoer
         optAnimatorState.timeParameterActive = originalAnimatorState.timeParameterActive;
         optAnimatorState.writeDefaultValues = originalAnimatorState.writeDefaultValues;
 
-        optAnimatorState.transitions = getOptimizedAnimatorStateTransition(originalAnimatorState.transitions, originalToOptObjectReferences, animationClipsFolder);
+        optAnimatorState.transitions = getOptimizedAnimatorStateTransition(originalAnimatorState.transitions, structure, futureSpriteSheet, originalToOptObjectReferences, animationClipsFolder);
 
         return optAnimatorState;
     }
 
-    private static Motion getOptimizedMotion(Motion originalMotion, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
+    private static Motion getOptimizedMotion(Motion originalMotion, OptimizedControllerStructure structure, List<SpritesheetChunk> futureSpriteSheet, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
     {
         if (!(originalMotion is AnimationClip))
             throw new ApplicationException($"Unknown type of motion - {originalMotion.GetType().FullName}. Never done this before...");
@@ -125,14 +126,26 @@ public static class AnimatorControllerDoer
         optMotion.name = originalAnimationClip.name;
         optMotion.wrapMode = originalAnimationClip.wrapMode;
 
+        /*
+         * Собственно, вся работа происходит здесь. Перебираем дорожки анимации, имеем доступ к используемым спрайтам.
+         * Наша задача - повторить спрайт в оптимизированном виде на данном конкретном временном отрезке на любом количестве дорожек.
+         * Каждая дорожка это отдеальный спрайт, отображающий наш выбранного размера чанк оптимизированного спрайтшита. При этом гораздо большего
+         * сжатия мы добъемся, если будем переиспользовать спрайты, т.е. если будет возможность менять из взаиморасположение. Таким образом для каждого 
+         * спрайта будут 2 дорожки - собственно спрайт и localPosition его трансформации.
+         */
+
         var objectReferenceBindings = AnimationUtility.GetObjectReferenceCurveBindings(originalAnimationClip);
         for (int i = 0; i < objectReferenceBindings.Length; i++)
         {
             var originalBinding = objectReferenceBindings[i];
+            Debug.Log($"originalBinding.propertyName = {originalBinding.propertyName}");
             Debug.Log($"originalBinding.path = {originalBinding.path}");
+            Debug.Log($"originalBinding.type = {originalBinding.type.FullName}");
             var optimizedBinding = new EditorCurveBinding();
             var keyframes = AnimationUtility.GetObjectReferenceCurve(originalAnimationClip, originalBinding);
-            AnimationUtility.SetObjectReferenceCurve(optMotion, originalBinding, getOptimizedObjectReferenceKeyframes(keyframes));
+
+            setOptimizedCurvesBasedOnOriginalCurve(optMotion, structure, futureSpriteSheet, originalBinding, keyframes);
+            //AnimationUtility.SetObjectReferenceCurve(optMotion, originalBinding, getOptimizedObjectReferenceKeyframes(keyframes));
         }
 
         var animationClipPath = Path.Combine(animationClipsFolder, $"{originalAnimationClip.name}.anim");
@@ -140,8 +153,87 @@ public static class AnimatorControllerDoer
         return optMotion;
     }
 
+    private static void setOptimizedCurvesBasedOnOriginalCurve(AnimationClip optMotion, OptimizedControllerStructure structure, List<SpritesheetChunk> futureSpriteSheet, EditorCurveBinding originalBinding, ObjectReferenceKeyframe[] originalKeyframes, int resolutionX = 4, int resolutionY = 4)
+    {
+        /*
+         *      originalBinding содержит инфу о цели анимации. path - путь трансформации вида SecondSprite/Thrid, 
+         * type - тип компонента, propertyName - имя сериализуемого поля. 
+         *      originalKeyframes - просто содержит ссылки на объекты и время.
+         *      optMotion - то, куда надо добавить оптимизированные кривые.
+         * 
+         * Тут нам надо проставить кривые новому оптимизированному AnimationClip'у, которые будут делает то же что делают originalKeyframes'ы.
+         * Новые кифреймы должны оперировать на новых геймобжах. Вообще не обязательно их щас делать. Нам сейчас нужны только ссылки на спрайты.
+         * Геймобжы и целевые спрайтрендереры можно пока не создавать - достаточно прописать пути для них, а создать потом. В дальнейшем этот 
+         * AnimationClip будет привязан к параметру Motion какого-нибудь State'а StateMachine'ы какого-нибудь Animator'а, являющегося оптимизированным
+         * двойником какого-нибудь оригинального исходного Animator'а в сцене или в ассетах. Потом, при создании оптимизированных копий геймобъектов в  
+         * сцене или в ресурсах можно будет воссоздать нужную структуру спрайтрендереров.
+         */
+
+        var rootPath = originalBinding.path;
+
+        var optimizedKeyframes = new ObjectReferenceKeyframe();
+
+        for (int i = 0; i < originalKeyframes.Length; i++)
+        {
+            if (!(originalKeyframes[i].value is Sprite))
+                continue;
+            var spriteReference = originalKeyframes[i].value as Sprite;
+            var time = originalKeyframes[i].time;
+
+            var texture = spriteReference.texture;
+            var mask = new bool[texture.width, texture.height];
+
+            var areaHeight = 4;
+            var areaWidth = 4;
+
+            for (int x = 0; x < texture.width; x++)
+            {
+                for (int y = 0; y < texture.height; y++)
+                {
+                    var color = texture.GetPixel(x, y);
+                    if (color.a == 0f)
+                        continue;
+
+                    if (mask[x, y] == true)
+                        continue;
+
+                    var allowedWidth = 0;
+                    var allowedHeight = 0;
+                    for (int xx = 0; xx < areaWidth; xx++)
+                    {
+                        for (int yy = 0; yy < areaHeight; yy++)
+                        {
+                            if (mask[x + xx, y + yy])
+                            {
+                                resolutionX = xx;
+                                break;
+                            }
+                            allowedWidth = xx + 1;
+                            allowedHeight = yy + 1;
+                        }
+                    }
+                    if (mask[x + 1, y + 1])
+                    {
+                        x--;
+                        y--;
+                    }
+                    else if (mask[x, y + 1])
+                        y--;
+                    else if (mask[x + 1, y])
+                        x--;
+
+                    var colors = texture.GetPixels(x, y, 2, 2);
+                }
+            }
+        }
+    }
+
     private static ObjectReferenceKeyframe[] getOptimizedObjectReferenceKeyframes(ObjectReferenceKeyframe[] originalKeyframes)
     {
+        /*
+         * Ок. Вот тут собственно и нужно проделывать все манипуляции, ибо тут мы имеем кадр и время, в которое его надо показывать
+         */
+
         var optimizedKeyframes = new ObjectReferenceKeyframe[originalKeyframes.Length];
         for (int i = 0; i < originalKeyframes.Length; i++)
         {
@@ -176,7 +268,7 @@ public static class AnimatorControllerDoer
         return result;
     }
 
-    private static AnimatorStateTransition[] getOptimizedAnimatorStateTransition(AnimatorStateTransition[] originalTransitions, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
+    private static AnimatorStateTransition[] getOptimizedAnimatorStateTransition(AnimatorStateTransition[] originalTransitions, OptimizedControllerStructure structure, List<SpritesheetChunk> futureSpriteSheet, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
     {
         var optTransitions = new AnimatorStateTransition[originalTransitions.Length];
 
@@ -199,8 +291,8 @@ public static class AnimatorControllerDoer
                 optConditions[j] = newCondition;
             }
             newTransition.conditions = optConditions;
-            newTransition.destinationState = getOptReference(originalTransition.destinationState, originalToOptObjectReferences, animationClipsFolder);
-            newTransition.destinationStateMachine = getOptReference(originalTransition.destinationStateMachine, originalToOptObjectReferences, animationClipsFolder);
+            newTransition.destinationState = getOptReference(originalTransition.destinationState, structure, futureSpriteSheet, originalToOptObjectReferences, animationClipsFolder);
+            newTransition.destinationStateMachine = getOptReference(originalTransition.destinationStateMachine, structure, futureSpriteSheet, originalToOptObjectReferences, animationClipsFolder);
             newTransition.exitTime = originalTransition.exitTime;
             newTransition.hasExitTime = originalTransition.hasExitTime;
             newTransition.hasFixedDuration = originalTransition.hasFixedDuration;

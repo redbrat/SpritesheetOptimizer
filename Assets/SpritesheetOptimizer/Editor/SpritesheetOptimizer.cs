@@ -56,8 +56,9 @@ public class SpritesheetOptimizerWindow : EditorWindow
 
     internal class OptimizedControllerStructure
     {
-        public AnimatorController OptimizedController;
-        public GameObject Root;
+        public AnimatorController[] OptimizedControllers;
+        public GameObject[] Originals;
+        public GameObject[] Optimized;
     }
 
     private static void doAllControllers()
