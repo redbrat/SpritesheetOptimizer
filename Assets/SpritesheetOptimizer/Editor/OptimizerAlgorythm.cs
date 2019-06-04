@@ -260,9 +260,12 @@ public class OptimizerAlgorythm
             ProcessedAreas = 0;
             UniqueAreas = 0;
 
-            var areas = new ConcurrentDictionary<int, MyArea>();
-            var areaDirtyScores = new ConcurrentDictionary<int, long>(); //Dirty - потому что мы не удаляем пиксели по-настоящему, так что это рассчет грубый и неточный, но пойдет для первичного отсева.
+            var areas = new ConcurrentDictionary<int, MyArea>(); //Тут мы храним все уникальные области по их хешам
+            var areaDirtyScores = new ConcurrentDictionary<int, long>(); //А тут - их счет по их хешам
+            //Dirty - потому что мы не удаляем пиксели по-настоящему, так что счет может быть выше чем на самом деле из-за повторов.
+            //Так что это рассчет грубый и неточный, но пойдет для первичного отсева.
 
+            //Сейчас мы идем заполнять эти два словаря, и это можно делать параллельно - слава TPL
             var overallOpsCount = areaVariants.Length * sprites.Length;
 
             CurrentOpsTotal = overallOpsCount;
@@ -274,11 +277,11 @@ public class OptimizerAlgorythm
                 {
                     if (state.IsExceptional)
                         Debug.Log("Exception!");
-                    var i = Mathf.FloorToInt(index / sprites.Length);
-                    var j = index - i * sprites.Length;
-                    var targetArea = areaVariants[i];
-                    var mapOfEmptinessForAreaAndSprite = mapsOfEmptiness[targetArea][j];
-                    getUniqueAreas(targetArea, sprites[j], areas, areaDirtyScores, mapOfEmptinessForAreaAndSprite);
+                    var areaVariantIndex = Mathf.FloorToInt(index / sprites.Length);
+                    var spriteIndex = index - areaVariantIndex * sprites.Length;
+                    var targetArea = areaVariants[areaVariantIndex];
+                    var mapOfEmptinessForAreaAndSprite = mapsOfEmptiness[targetArea][spriteIndex];
+                    getUniqueAreas(targetArea, sprites[spriteIndex], areas, areaDirtyScores, mapOfEmptinessForAreaAndSprite);
                 });
             }
             catch (AggregateException ae)
@@ -293,21 +296,21 @@ public class OptimizerAlgorythm
 
             Debug.Log($"unique areas count = {areas.Count}");
 
+            /*
+             * Итак, что мы тут делаем. Мы имеем грязный словарь, с примерными значениями полезности. Что мы должны сделать в идеальном мире -
+             * - пройтись с каждым из нескольких миллионов областей по потенциально многомиллионопиксельному спрайту и проанализировать каждый в плане
+             * полезности. И сделать это надо для каждого шага. Ясно, что сложность тут нереальная. Поэтому, я думаю, надо иметь некий буфер, выборку
+             * возможных кандитатов, например, 100. Берем 100 самых достойных областей (первые 100 из грязного словаря), проходимся с ними по спрайтам,
+             * и смотрим какой из них удаляет больше всего пикселей. Его и забираем и действительно удаляем все пиксели с ним. У нас осталось на 1 область
+             * грязного списка меньше. Повторять покуда остались пиксели.
+             */
+
             var orderedDirtyKvpArray = areaDirtyScores.ToArray().OrderByDescending(kvp => kvp.Value).ToArray();
             Debug.Log($"The winner is {orderedDirtyKvpArray[0].Key} with highest score of {orderedDirtyKvpArray[0].Value}!");
             for (int i = 0; i < _bestOfTheDirtyBufferSize; i++)
             {
                 Debug.Log($"    {i + 1}. {orderedDirtyKvpArray[i].Key}. Score: {orderedDirtyKvpArray[i].Value}");
             }
-
-            /*
-             * Итак, что мы тут делаем. Мы имеем грязный словарь, с примерными значениями полезности. Что мы должны сделать в идеальном мире -
-             * - пройтись с каждым из нескольких миллионов областей по потенциально многомиллионопиксельному спрайту и проанализировать каждый в плане
-             * полезности. И сделать это надо для каждого шага. Ясно, что сложность тут зашкаливает. Поэтому, я думаю, надо иметь некий буфер, выборку
-             * возможных кандитатов, например, 100. Берем 100 самых достойных областей (первые 100 из грязного словаря), проходимся с ними по спрайтам,
-             * и смотрим какой из них удаляет больше всего пикселей. Его и забираем и действительно удаляем все пиксели с ним. У нас осталось на 1 область
-             * грязного списка меньше. Повторять покуда остались пиксели.
-             */
 
 
             //var imageCopy = CopyArrayOfColors(sprites);
@@ -329,10 +332,14 @@ public class OptimizerAlgorythm
             //else
             //    Debug.Log($"Clone of image isn't the same"); 
 
+            /*
+             * Ок, дальше мы идем делать чистую проверку самых вероятных победителей - с пробным удалением пикселей.
+             */
+
             CurrentOpsTotal = _bestOfTheDirtyBufferSize;
             CurrentOp = 0;
 
-            var partialCleanScore = new ConcurrentDictionary<int, long>();
+            var partialCleanScore = new ConcurrentDictionary<int, long>(); //Это и есть словарь с чистым счетом - при пробном удалении пикселей
 
             Parallel.For(0, _bestOfTheDirtyBufferSize, index =>
             {
@@ -346,20 +353,20 @@ public class OptimizerAlgorythm
                 var deletedOpaquePixels = 0;
                 for (int i = 0; i < imageCopy.Length; i++)
                 {
-                    var sprite = imageCopy[i];
-                    var spritesMapOfEmptiness = emptinessMapCopy[i];
-                    for (int x = 0; x < sprite.Length - areaDimensions.X; x++)
+                    var spriteCopy = imageCopy[i];
+                    var spritesMapOfEmptinessCopy = emptinessMapCopy[i];
+                    for (int x = 0; x < spriteCopy.Length - areaDimensions.X; x++)
                     {
-                        for (int y = 0; y < sprite[x].Length - areaDimensions.Y; y++)
+                        for (int y = 0; y < spriteCopy[x].Length - areaDimensions.Y; y++)
                         {
-                            if (spritesMapOfEmptiness[x][y])
+                            if (spritesMapOfEmptinessCopy[x][y])
                                 continue;
-                            var comparedArea = MyArea.CreateFromSprite(sprite, x, y, areaDimensions);
+                            var comparedArea = MyArea.CreateFromSprite(spriteCopy, x, y, areaDimensions);
                             if (comparedArea.GetHashCode() == candidate.GetHashCode())
                             {
-                                MyArea.EraseAreaFromSprite(sprite, x, y, areaDimensions);
+                                MyArea.EraseAreaFromSprite(spriteCopy, x, y, areaDimensions);
                                 deletedOpaquePixels += comparedArea.OpaquePixelsCount;
-                                MyArea.EraseUpdateEmptinessMap(sprite, spritesMapOfEmptiness, x, y, areaDimensions, areaDimensions); //т.к. мы сейчас смотрим только на эффективность текущей области в плане удаления пикселей, нам не нужно оптимизировать другие области
+                                MyArea.EraseUpdateEmptinessMap(spriteCopy, spritesMapOfEmptinessCopy, x, y, areaDimensions, areaDimensions); //т.к. мы сейчас смотрим только на эффективность текущей области в плане удаления пикселей, нам не нужно оптимизировать другие области
                             }
                         }
                     }
@@ -373,7 +380,7 @@ public class OptimizerAlgorythm
             var orderedCleanKvpArray = partialCleanScore.ToArray().OrderByDescending(kvp => kvp.Value).ToArray();
 
             Debug.Log($"");
-            Debug.Log($"It's time for clean results everybody.");
+            Debug.Log($"It's time for clean results everybody!");
             Debug.Log($"The winner is {orderedCleanKvpArray[0].Key} with highest score of {orderedCleanKvpArray[0].Value}!");
             for (int i = 0; i < orderedCleanKvpArray.Length; i++)
             {
