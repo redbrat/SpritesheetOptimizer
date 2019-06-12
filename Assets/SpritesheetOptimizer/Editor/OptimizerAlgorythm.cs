@@ -15,144 +15,8 @@ public class OptimizerAlgorythm
     public static int CurrentOpsTotal;
     public static int ProcessedAreas;
     public static int UniqueAreas;
-    public static int OpaquePixelsTotal;
     public static int UnoptimizedPixelsCount;
     public static long LastPassTime;
-
-    private struct MyColor
-    {
-        private const short _byteMax = 256;
-        private const int _2bytesMax = 65_536;
-        private const long _4bytesMax = 4_294_967_296L;
-
-        public readonly byte R;
-        public readonly byte G;
-        public readonly byte B;
-        public readonly byte A;
-
-        private readonly int _hash;
-
-        public MyColor(byte r, byte g, byte b, byte a)
-        {
-            R = r;
-            G = g;
-            B = b;
-            A = a;
-
-            _hash = (R + G * _byteMax + B * _2bytesMax + A * _4bytesMax).GetHashCode();
-        }
-
-        public override int GetHashCode() => _hash;
-    }
-
-    private struct MyPoint
-    {
-        public readonly int Square;
-
-        public readonly int X;
-        public readonly int Y;
-
-        public MyPoint(int x, int y)
-        {
-            X = x;
-            Y = y;
-
-            Square = x * y;
-        }
-
-        public override string ToString() => $"{X}, {Y}";
-    }
-
-    private struct MyRect
-    {
-        public readonly int X;
-        public readonly int Y;
-        public readonly int Width;
-        public readonly int Height;
-
-        public MyRect(int x, int y, int width, int height)
-        {
-            X = x;
-            Y = y;
-            Width = width;
-            Height = height;
-        }
-    }
-
-    private struct MyArea
-    {
-        public readonly MyColor[] _colors;
-
-        public readonly MyPoint Dimensions;
-
-        public readonly int OpaquePixelsCount;
-        public readonly int PixelsCount;
-
-        private readonly int _hash;
-
-        public MyArea(MyPoint dimensions, params MyColor[] colors)
-        {
-            _colors = colors;
-            Dimensions = dimensions;
-
-            PixelsCount = _colors.Length;
-            OpaquePixelsCount = 0;
-            _hash = 0;
-            for (int i = 0; i < _colors.Length; i++)
-            {
-                if (_colors[i].A > 0)
-                    OpaquePixelsCount++;
-                _hash += (i + 1) * _colors[i].GetHashCode() * short.MaxValue;
-            }
-            _hash *= dimensions.GetHashCode();
-        }
-
-        public override int GetHashCode() => _hash;
-
-        public static bool ContainsOpaquePixels(MyColor[][] sprite, int x, int y, MyPoint dimensions)
-        {
-            for (int xx = 0; xx < dimensions.X; xx++)
-                for (int yy = 0; yy < dimensions.Y; yy++)
-                    if (sprite[x + xx][y + yy].A > 0)
-                        return true;
-            return false;
-        }
-
-        public static MyArea CreateFromSprite(MyColor[][] sprite, int x, int y, MyPoint dimensions)
-        {
-            var colors = new MyColor[dimensions.Square];
-            for (int xx = 0; xx < dimensions.X; xx++)
-                for (int yy = 0; yy < dimensions.Y; yy++)
-                    colors[xx + yy * dimensions.X] = sprite[x + xx][y + yy];
-            return new MyArea(dimensions, colors);
-        }
-        
-        public static void EraseAreaFromSprite(MyColor[][] sprite, int x, int y, MyPoint dimensions)
-        {
-            for (int xx = 0; xx < dimensions.X; xx++)
-                for (int yy = 0; yy < dimensions.Y; yy++)
-                    sprite[x + xx][y + yy] = new MyColor(byte.MinValue, byte.MinValue, byte.MinValue, byte.MinValue);
-        }
-
-        public static void EraseUpdateEmptinessMap(MyColor[][] sprite, bool[][] spritesMapOfEmptiness, int x, int y, MyPoint erasedAreaDimensions, MyPoint updatedAreaDimensions)
-        {
-            for (int xx = 0; xx < erasedAreaDimensions.X; xx++)
-                for (int yy = 0; yy < erasedAreaDimensions.Y; yy++)
-                {
-                    var spriteXCoord = x + xx;
-                    var spriteYCoord = y + yy;
-                    if (spriteXCoord + updatedAreaDimensions.X >= sprite.Length || spriteYCoord + updatedAreaDimensions.Y >= sprite[spriteXCoord].Length)
-                        continue;
-                    spritesMapOfEmptiness[spriteXCoord][spriteYCoord] = !ContainsOpaquePixels(sprite, spriteXCoord, spriteYCoord, updatedAreaDimensions);
-                }
-        }
-    }
-
-    private struct Chunk
-    {
-        public int Id;
-        public Vector2Int Coordinates;
-    }
 
     public static void Go(Vector2Int area, Sprite sprite)
     {
@@ -194,13 +58,13 @@ public class OptimizerAlgorythm
         Texture optimizedSpritesheet;
 
         //goGetEm(new MyPoint(area.x, area.y), sprites, out optimizedSpritesheet);
-        var task = new Task<Chunk[][]>(() => goGetEm(new MyPoint(area.x, area.y), sprites/*, out optimizedSpritesheet*/));
+        var task = new Task<Chunk[][]>(() => goGetEm(new MyVector2(area.x, area.y), sprites/*, out optimizedSpritesheet*/));
         task.Start();
     }
 
     private const int _bestOfTheDirtyBufferSize = 8;
 
-    private static Chunk[][] goGetEm(MyPoint area, MyColor[][][] sprites/*, out Texture optimizedSpritesheet*/)
+    private static Chunk[][] goGetEm(MyVector2 area, MyColor[][][] sprites/*, out Texture optimizedSpritesheet*/)
     {
         //optimizedSpritesheet = new Texture2D(1, 1);
         //Debug.Log("goGetEm . ......"); 
@@ -209,7 +73,6 @@ public class OptimizerAlgorythm
 
         countOpaquePixels(sprites, out pixelsTotal, out opaquePixelsTotal);
 
-        OpaquePixelsTotal = pixelsTotal;
         UnoptimizedPixelsCount = opaquePixelsTotal;
         //Debug.Log($"pixelsTotal = {pixelsTotal}, opaquePixelsTotal = {opaquePixelsTotal}");
 
@@ -230,7 +93,7 @@ public class OptimizerAlgorythm
         //    }
         //}
 
-        var mapsOfEmptiness = new Dictionary<MyPoint, bool[][][]>();
+        var mapsOfEmptiness = new Dictionary<MyVector2, bool[][][]>();
         for (int i = 0; i < areaVariants.Length; i++)
         {
             var currentAreaVariant = areaVariants[i];
@@ -519,7 +382,7 @@ public class OptimizerAlgorythm
         return dest;
     }
 
-    private static void getUniqueAreas(MyPoint areaResolution, MyColor[][] sprite, ConcurrentDictionary<int, MyArea> areas, ConcurrentDictionary<int, long> areaDirtyScores, bool[][] mapOfEmptiness)
+    private static void getUniqueAreas(MyVector2 areaResolution, MyColor[][] sprite, ConcurrentDictionary<int, MyArea> areas, ConcurrentDictionary<int, long> areaDirtyScores, bool[][] mapOfEmptiness)
     {
         var areaSquare = areaResolution.X * areaResolution.Y;
         for (int x = 0; x < sprite.Length - areaResolution.X; x++)
@@ -541,9 +404,9 @@ public class OptimizerAlgorythm
         CurrentOp++;
     }
 
-    private static MyPoint[] getAreaVariants(MyPoint area)
+    private static MyVector2[] getAreaVariants(MyVector2 area)
     {
-        var resultList = new List<MyPoint>();
+        var resultList = new List<MyVector2>();
 
         var currentArea = area;
         var counter = area.X != area.Y ? area.X < area.Y ? 1 : 2 : 0;
@@ -551,11 +414,11 @@ public class OptimizerAlgorythm
         {
             resultList.Add(currentArea);
             if (counter % 3 == 0)
-                currentArea = new MyPoint(currentArea.X - 1, currentArea.Y);
+                currentArea = new MyVector2(currentArea.X - 1, currentArea.Y);
             else if (counter % 3 == 1)
-                currentArea = new MyPoint(currentArea.X + 1, currentArea.Y - 1);
+                currentArea = new MyVector2(currentArea.X + 1, currentArea.Y - 1);
             else
-                currentArea = new MyPoint(currentArea.X - 1, currentArea.Y);
+                currentArea = new MyVector2(currentArea.X - 1, currentArea.Y);
 
             counter++;
         }

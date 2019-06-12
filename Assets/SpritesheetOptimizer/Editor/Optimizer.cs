@@ -1,6 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using UnityEditor;
 using UnityEngine;
 
@@ -16,7 +14,7 @@ public class Optimizer : EditorWindow
         _intance = GetWindow<Optimizer>();
     }
 
-    private static bool _displayingSomething;
+    private static ProgressReport _progressReport;
 
     private void OnGUI()
     {
@@ -24,23 +22,100 @@ public class Optimizer : EditorWindow
         if (newSprite != _sprite)
             _sprite = newSprite;
 
-        _resolution = EditorGUILayout.Vector2IntField("Area:" ,_resolution);
+        _resolution = EditorGUILayout.Vector2IntField("Area:", _resolution);
 
-        if (_sprite != null && GUILayout.Button("Try") && !OptimizerAlgorythm.Working)
+        if (_sprite != null && _progressReport == null && GUILayout.Button("Try"))
         {
-            OptimizerAlgorythm.Go(_resolution, _sprite);
-            _displayingSomething = true;
+            var algorithmBulder = new AlgorythmBuilder();
+            var algorythm = algorithmBulder
+                .AddSizingsConfigurator<DefaultSizingsConfigurator>()
+                .SetAreaEnumerator<DefaultAreaEnumerator>()
+                .Build(getColors(_sprite));
+            _progressReport = algorythm.ProgressReport;
+
+            launch(algorythm);
         }
-        EditorGUILayout.LabelField(OptimizerAlgorythm.Working ? "Working" : "Idle");
-        if (_displayingSomething)
+        if (_progressReport != null)
         {
-            EditorGUILayout.LabelField($"Op #{OptimizerAlgorythm.CurrentOp} of {OptimizerAlgorythm.CurrentOpsTotal} ops done");
-            EditorGUILayout.LabelField($"Areas #{OptimizerAlgorythm.UniqueAreas} unique of {OptimizerAlgorythm.ProcessedAreas} processed areas");
-            EditorGUILayout.LabelField($"Last pass lasted {OptimizerAlgorythm.LastPassTime} milliseconds or {OptimizerAlgorythm.LastPassTime / 1000f} seconds.");
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField($"Unoptimized pixels count: {OptimizerAlgorythm.UnoptimizedPixelsCount} of {OptimizerAlgorythm.OpaquePixelsTotal} total optimizable pixels");
+            EditorGUILayout.LabelField($"Unoptimized pixels count: {_progressReport.OverallOpsLeft} total optimizable pixels");
+            EditorGUILayout.LabelField($"Current operation: {_progressReport.OperationDescription}");
+            EditorGUILayout.LabelField($"Progress: {_progressReport.OperationsDone} of {_progressReport.OperationsCount}");
         }
 
         Repaint();
+    }
+
+    private async void launch(Algorythm algorythm)
+    {
+        await algorythm.Initialize();
+        await algorythm.Run();
+        _progressReport = null;
+    }
+
+    private MyColor[][][] getColors(Sprite sprite)
+    {
+        var texture = sprite.texture;
+        var path = AssetDatabase.GetAssetPath(sprite);
+        var ti = AssetImporter.GetAtPath(path) as TextureImporter;
+        ti.isReadable = true;
+        ti.SaveAndReimport();
+
+        var spritesCount = ti.spritesheet.Length;
+        var sprites = (MyColor[][][])null;
+
+        if (spritesCount == 0) //If there're no items in spritesheet that means there is a single sprite in asset.
+        {
+            sprites = new MyColor[1][][];
+
+            var tex = sprite.texture;
+            var colors = new MyColor[tex.width][];
+            for (int x = 0; x < tex.width; x++)
+            {
+                colors[x] = new MyColor[tex.height];
+                for (int y = 0; y < tex.height; y++)
+                {
+                    var color = texture.GetPixel(x, y);
+                    colors[x][y] = new MyColor(
+                        Convert.ToByte(Mathf.Clamp(color.r * byte.MaxValue, 0, byte.MaxValue)),
+                        Convert.ToByte(Mathf.Clamp(color.g * byte.MaxValue, 0, byte.MaxValue)),
+                        Convert.ToByte(Mathf.Clamp(color.b * byte.MaxValue, 0, byte.MaxValue)),
+                        Convert.ToByte(Mathf.Clamp(color.a * byte.MaxValue, 0, byte.MaxValue))
+                    );
+                }
+            }
+            sprites[0] = colors;
+        }
+        else
+        {
+            sprites = new MyColor[spritesCount][][];
+
+            for (int i = 0; i < spritesCount; i++)
+            {
+                var currentSprite = ti.spritesheet[i];
+
+                var xOrigin = Mathf.FloorToInt(currentSprite.rect.x);
+                var yOrigin = Mathf.CeilToInt(currentSprite.rect.y);
+                var width = Mathf.CeilToInt(currentSprite.rect.width);
+                var height = Mathf.CeilToInt(currentSprite.rect.height);
+                var currentColors = new MyColor[width][];
+                for (int x = 0; x < width; x++)
+                {
+                    currentColors[x] = new MyColor[height];
+                    for (int y = 0; y < height; y++)
+                    {
+                        var color = texture.GetPixel(xOrigin + x, yOrigin + y);
+                        currentColors[x][y] = new MyColor(
+                            Convert.ToByte(Mathf.Clamp(color.r * byte.MaxValue, 0, byte.MaxValue)),
+                            Convert.ToByte(Mathf.Clamp(color.g * byte.MaxValue, 0, byte.MaxValue)),
+                            Convert.ToByte(Mathf.Clamp(color.b * byte.MaxValue, 0, byte.MaxValue)),
+                            Convert.ToByte(Mathf.Clamp(color.a * byte.MaxValue, 0, byte.MaxValue))
+                        );
+                    }
+                }
+                sprites[i] = currentColors;
+            }
+        }
+
+        return sprites;
     }
 }
