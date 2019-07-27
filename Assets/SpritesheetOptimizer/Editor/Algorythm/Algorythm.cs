@@ -20,17 +20,18 @@ public class Algorythm
     private IEnumerable<MyArea> _allAreas;
     private IAreaEnumerator _areaEnumerator;
 
-    public Algorythm(MyColor[][][] sprites, Type areaEnumeratorType, IList<ISizingsConfigurator> sizingConfigurators)
+    public Algorythm(MyColor[][][] sprites, Type areaEnumeratorType, IList<ISizingsConfigurator> sizingConfigurators, IList<IScoreCounter> scoreCounters)
     {
         ProgressReport = new ProgressReport();
         _sprites = sprites;
         _areaEnumeratorType = areaEnumeratorType;
         _sizingsConfigurators = sizingConfigurators;
+        _scoreCounters = scoreCounters;
     }
 
-    public async Task Initialize()
+    public async Task Initialize(Vector2Int maxAreaSize)
     {
-        _areaSizings = getAreaSizings(_sprites);
+        _areaSizings = getAreaSizings(_sprites, maxAreaSize);
 
         var areaEnumeratorCtor = _areaEnumeratorType.GetConstructor(new Type[] { typeof(MyColor[][][]) });
         foreach (var param in areaEnumeratorCtor.GetParameters())
@@ -55,14 +56,11 @@ public class Algorythm
 
     #region Initializing
 
-    private IEnumerable<MyVector2> getAreaSizings(MyColor[][][] sprites)
+    private IEnumerable<MyVector2> getAreaSizings(MyColor[][][] sprites, Vector2Int maxAreaSize)
     {
-        var spritesCount = sprites.Length;
-        var width = sprites[0].Length;
-        var height = sprites[0][0].Length;
         var result = default(IEnumerable<MyVector2>);
         for (int i = 0; i < _sizingsConfigurators.Count; i++)
-            result = _sizingsConfigurators[i]?.ConfigureSizings(result, sprites.Length, sprites[0].Length, sprites[0][0].Length);
+            result = _sizingsConfigurators[i]?.ConfigureSizings(result, sprites.Length, maxAreaSize.x, maxAreaSize.y);
         return result;
     }
 
@@ -96,6 +94,10 @@ public class Algorythm
                     Debug.Log("Exception!");
                 var areaVariantIndex = Mathf.FloorToInt(index / sprites.Length);
                 var spriteIndex = index - areaVariantIndex * sprites.Length;
+                if (areaVariantIndex > sizingsList.Count - 1)
+                    Debug.LogError($"sizingsList[areaVariantIndex] is out of range! areaVariantIndex = {areaVariantIndex}, sizingsList.Count = {sizingsList.Count}");
+                if (areaVariantIndex < 0)
+                    Debug.LogError($"areaVariantIndex < 0! ({areaVariantIndex})");
                 var targetArea = sizingsList[areaVariantIndex];
                 getUniqueAreas(targetArea, spriteIndex, areas, areaEnumerator, progressReport);
             });
@@ -105,7 +107,7 @@ public class Algorythm
             Debug.Log("catch");
             ae.Handle((inner) =>
             {
-                Debug.Log(inner.Message);
+                Debug.Log($"{inner.Message}\r\n\r\n{inner.StackTrace}");
                 return true;
             });
         }
@@ -132,12 +134,16 @@ public class Algorythm
 
         while (UnprocessedPixels > 0)
         {
+            Debug.Log("1");
             var scores = await Task.Run(() => countScoreForEachArea(_sprites, _allAreas, _areaEnumerator));
 
+            Debug.Log("2");
             var rating = scores.OrderByDescending(kvp => kvp.Item1);
 
+            Debug.Log("3");
             var bestArea = getBestArea(rating);
 
+            Debug.Log("4");
             UnprocessedPixels -= applyBestArea(_sprites, bestArea, map);
         }
 

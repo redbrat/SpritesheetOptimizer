@@ -1,4 +1,6 @@
-﻿public struct MyArea
+﻿using UnityEngine;
+
+public struct MyArea
 {
     public readonly MyColor[] _colors;
 
@@ -42,7 +44,18 @@
         var colors = new MyColor[dimensions.Square];
         for (int xx = 0; xx < dimensions.X; xx++)
             for (int yy = 0; yy < dimensions.Y; yy++)
+            {
+                var colorsIndex = xx + yy * dimensions.X;
+                var spriteX = x + xx;
+                var spriteY = y + yy;
+                if (colorsIndex > colors.Length - 1)
+                    Debug.LogError($"colors[colorsIndex] is out of range! colors.Length = {colors.Length}, colorsIndex = {colorsIndex}");
+                if (spriteX > sprite.Length - 1)
+                    Debug.LogError($"sprite[spriteX] is out of range! sprite.Length = {sprite.Length}, spriteX = {spriteX}");
+                if (spriteY > sprite[spriteX].Length - 1)
+                    Debug.LogError($"sprite[spriteX][spriteY] is out of range! sprite[spriteX].Length = {sprite[spriteX].Length}, spriteY = {spriteY}");
                 colors[xx + yy * dimensions.X] = sprite[x + xx][y + yy];
+            }
         return new MyArea(dimensions, colors);
     }
 

@@ -29,6 +29,7 @@ public class Optimizer : EditorWindow
             var algorithmBulder = new AlgorythmBuilder();
             var algorythm = algorithmBulder
                 .AddSizingsConfigurator<DefaultSizingsConfigurator>()
+                .AddScoreCounter<DefaultScoreCounter>()
                 .SetAreaEnumerator<DefaultAreaEnumerator>()
                 .Build(getColors(_sprite));
             _progressReport = algorythm.ProgressReport;
@@ -47,7 +48,7 @@ public class Optimizer : EditorWindow
 
     private async void launch(Algorythm algorythm)
     {
-        await algorythm.Initialize();
+        await algorythm.Initialize(_resolution);
         await algorythm.Run();
         _progressReport = null;
     }
@@ -63,7 +64,7 @@ public class Optimizer : EditorWindow
         var spritesCount = ti.spritesheet.Length;
         var sprites = (MyColor[][][])null;
 
-        if (spritesCount == 0) //If there're no items in spritesheet that means there is a single sprite in asset.
+        if (spritesCount == 0) //If there're no items in spritesheet - it means there is a single sprite in asset.
         {
             sprites = new MyColor[1][][];
 

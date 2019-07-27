@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 public class AlgorythmBuilder
 {
+    private IList<Type> _scoreCounterTypes = new List<Type>();
     private IList<Type> _sizingCofiguratorTypes = new List<Type>();
     private Type _areaEnumeratorType;
 
@@ -22,6 +23,12 @@ public class AlgorythmBuilder
         return this;
     }
 
+    public AlgorythmBuilder AddScoreCounter<T>() where T : IScoreCounter
+    {
+        _scoreCounterTypes.Add(typeof(T));
+        return this;
+    }
+
     public Algorythm Build(MyColor[][][] data)
     {
         var sizingCofigurators = new List<ISizingsConfigurator>();
@@ -31,9 +38,16 @@ public class AlgorythmBuilder
             sizingCofigurators.Add((ISizingsConfigurator)instance);
         }
 
+        var scoreCounters = new List<IScoreCounter>();
+        for (int i = 0; i < _scoreCounterTypes.Count; i++)
+        {
+            var instance = Activator.CreateInstance(_scoreCounterTypes[i]);
+            scoreCounters.Add((IScoreCounter)instance);
+        }
+
         if (_areaEnumeratorType == null)
             _areaEnumeratorType = typeof(DefaultAreaEnumerator);
 
-        return new Algorythm(data, _areaEnumeratorType, sizingCofigurators);
+        return new Algorythm(data, _areaEnumeratorType, sizingCofigurators, scoreCounters);
     }
 }
