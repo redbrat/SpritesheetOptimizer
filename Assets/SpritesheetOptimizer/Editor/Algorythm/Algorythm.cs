@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 
@@ -20,6 +21,8 @@ public class Algorythm
     private IEnumerable<MyArea> _allAreas;
     private IAreaEnumerator _areaEnumerator;
 
+    private CancellationToken _ct;
+
     public Algorythm(MyColor[][][] sprites, Type areaEnumeratorType, IList<ISizingsConfigurator> sizingConfigurators, IList<IScoreCounter> scoreCounters)
     {
         ProgressReport = new ProgressReport();
@@ -29,9 +32,10 @@ public class Algorythm
         _scoreCounters = scoreCounters;
     }
 
-    public async Task Initialize(Vector2Int maxAreaSize)
+    public async Task Initialize(Vector2Int maxAreaSize, CancellationToken ct)
     {
-        _areaSizings = getAreaSizings(_sprites, maxAreaSize);
+        _ct = ct;
+        _areaSizings = getAreaSizings(_sprites, maxAreaSize, ct);
 
         var areaEnumeratorCtor = _areaEnumeratorType.GetConstructor(new Type[] { typeof(MyColor[][][]) });
         foreach (var param in areaEnumeratorCtor.GetParameters())
@@ -56,11 +60,11 @@ public class Algorythm
 
     #region Initializing
 
-    private IEnumerable<MyVector2> getAreaSizings(MyColor[][][] sprites, Vector2Int maxAreaSize)
+    private IEnumerable<MyVector2> getAreaSizings(MyColor[][][] sprites, Vector2Int maxAreaSize, CancellationToken ct)
     {
         var result = default(IEnumerable<MyVector2>);
-        for (int i = 0; i < _sizingsConfigurators.Count; i++)
-            result = _sizingsConfigurators[i]?.ConfigureSizings(result, sprites.Length, maxAreaSize.x, maxAreaSize.y);
+        for (int i = 0; i < _sizingsConfigurators.Count && !ct.IsCancellationRequested; i++)
+            result = _sizingsConfigurators[i]?.ConfigureSizings(result, sprites.Length, maxAreaSize.x, maxAreaSize.y, ct);
         return result;
     }
 
@@ -86,12 +90,15 @@ public class Algorythm
         var sizingsList = areaSizings.ToList();
         var areas = new ConcurrentDictionary<int, MyArea>();
 
+        var allAreas = 0;
         try
         {
             Parallel.For(0, overallOpsCount, (int index, ParallelLoopState state) =>
             {
                 if (state.IsExceptional)
                     Debug.Log("Exception!");
+                if (_ct.IsCancellationRequested)
+                    state.Break();
                 var areaVariantIndex = Mathf.FloorToInt(index / sprites.Length);
                 var spriteIndex = index - areaVariantIndex * sprites.Length;
                 if (areaVariantIndex > sizingsList.Count - 1)
@@ -99,7 +106,10 @@ public class Algorythm
                 if (areaVariantIndex < 0)
                     Debug.LogError($"areaVariantIndex < 0! ({areaVariantIndex})");
                 var targetArea = sizingsList[areaVariantIndex];
-                getUniqueAreas(targetArea, spriteIndex, areas, areaEnumerator, progressReport);
+                var spritesAreas = getUniqueAreas(targetArea, spriteIndex, areas, areaEnumerator, progressReport);
+                //Debug.Log($"allAreas before = {allAreas}");
+                allAreas += spritesAreas;
+                //Debug.Log($"allAreas after = {allAreas}");
             });
         }
         catch (AggregateException ae)
@@ -111,19 +121,22 @@ public class Algorythm
                 return true;
             });
         }
-
+        Debug.Log($"allAreas = {allAreas}, areas.Count = {areas.Count}");
         return areas.Values;
     }
 
-    private void getUniqueAreas(MyVector2 areaSizing, int spriteIndex, ConcurrentDictionary<int, MyArea> areas, IAreaEnumerator areaEnumerator, ProgressReport progressReport)
+    private int getUniqueAreas(MyVector2 areaSizing, int spriteIndex, ConcurrentDictionary<int, MyArea> areas, IAreaEnumerator areaEnumerator, ProgressReport progressReport)
     {
+        var result = 0;
         areaEnumerator.EnumerateThroughSprite(areaSizing, spriteIndex, (sprite, x, y) =>
         {
             var area = MyArea.CreateFromSprite(sprite, x, y, areaSizing);
             var hash = area.GetHashCode();
             areas.TryAdd(hash, area);
+            result++;
         });
         progressReport.OperationsDone++;
+        return result;
     }
 
     #endregion Initializing
@@ -132,8 +145,11 @@ public class Algorythm
     {
         var map = new Dictionary<MyArea, List<(int, int, int)>>();
 
+        Debug.Log("0");
         while (UnprocessedPixels > 0)
         {
+            if (_ct.IsCancellationRequested)
+                break;
             Debug.Log("1");
             var scores = await Task.Run(() => countScoreForEachArea(_sprites, _allAreas, _areaEnumerator));
 
@@ -142,9 +158,13 @@ public class Algorythm
 
             Debug.Log("3");
             var bestArea = getBestArea(rating);
-
             Debug.Log("4");
+
+            if (_ct.IsCancellationRequested)
+                break;
+            Debug.Log("5");
             UnprocessedPixels -= applyBestArea(_sprites, bestArea, map);
+            Debug.Log("6");
         }
 
         return map;
@@ -154,7 +174,7 @@ public class Algorythm
     {
         var result = default(IEnumerable<(int, MyArea)>);
         foreach (var scoreCounter in _scoreCounters)
-            result = scoreCounter.CountScores(result, sprites, allAreas, areaEnumerator, ProgressReport);
+            result = scoreCounter.CountScores(result, sprites, allAreas, areaEnumerator, ProgressReport, _ct);
         return result;
     }
 

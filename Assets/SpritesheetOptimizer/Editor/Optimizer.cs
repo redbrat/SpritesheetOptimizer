@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading;
 using UnityEditor;
 using UnityEngine;
 
@@ -14,7 +15,8 @@ public class Optimizer : EditorWindow
         _intance = GetWindow<Optimizer>();
     }
 
-    private static ProgressReport _progressReport;
+    private ProgressReport _progressReport;
+    private CancellationTokenSource _cts;
 
     private void OnGUI()
     {
@@ -33,14 +35,19 @@ public class Optimizer : EditorWindow
                 .SetAreaEnumerator<DefaultAreaEnumerator>()
                 .Build(getColors(_sprite));
             _progressReport = algorythm.ProgressReport;
-
+            _cts = new CancellationTokenSource();
             launch(algorythm);
         }
-        if (_progressReport != null)
+        if (_cts != null)
         {
             EditorGUILayout.LabelField($"Unoptimized pixels count: {_progressReport.OverallOpsLeft} total optimizable pixels");
             EditorGUILayout.LabelField($"Current operation: {_progressReport.OperationDescription}");
             EditorGUILayout.LabelField($"Progress: {_progressReport.OperationsDone} of {_progressReport.OperationsCount}");
+            if (GUILayout.Button("Cancel"))
+            {
+                _cts.Cancel();
+                _cts = null;
+            }
         }
 
         Repaint();
@@ -48,9 +55,10 @@ public class Optimizer : EditorWindow
 
     private async void launch(Algorythm algorythm)
     {
-        await algorythm.Initialize(_resolution);
+        await algorythm.Initialize(_resolution, _cts.Token);
         await algorythm.Run();
         _progressReport = null;
+        _cts = null;
     }
 
     private MyColor[][][] getColors(Sprite sprite)

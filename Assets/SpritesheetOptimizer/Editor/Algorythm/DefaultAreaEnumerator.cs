@@ -20,8 +20,8 @@ public class DefaultAreaEnumerator : IAreaEnumerator
 
     private void enumerateThroughSprite(MyVector2 areaSizing, MyColor[][] sprite, Action<MyColor[][], int, int> action)
     {
-        for (int x = 0; x < sprite.Length && x + areaSizing.X < sprite.Length; x++)
-            for (int y = 0; y < sprite[x].Length && y + areaSizing.Y < sprite[x].Length; y++)
+        for (int x = 0; x < sprite.Length && x + areaSizing.X <= sprite.Length; x++)
+            for (int y = 0; y < sprite[x].Length && y + areaSizing.Y <= sprite[x].Length; y++)
                 action(sprite, x, y);
     }
 
