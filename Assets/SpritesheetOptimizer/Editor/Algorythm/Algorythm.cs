@@ -17,8 +17,8 @@ public class Algorythm
     private readonly IList<IScoreCounter> _scoreCounters;
     private readonly Type _areaEnumeratorType;
 
-    private ConcurrentDictionary<int, MyArea> _allAreas;
-    private ConcurrentDictionary<int, long> _allScores;
+    private Dictionary<int, MyArea> _allAreas;
+    private IOrderedEnumerable<KeyValuePair<int, long>> _allScores;
     private IEnumerable<MyVector2> _areaSizings;
     private IAreaEnumerator _areaEnumerator;
 
@@ -56,7 +56,9 @@ public class Algorythm
         //_areaEnumerator = (IAreaEnumerator)Activator.CreateInstance(_areaEnumeratorType, _sprites, _areaSizings);
 
         UnprocessedPixels = countUprocessedPixels(MyVector2.One, _areaEnumerator);
-        (_allAreas, _allScores) = await Task.Run(() => getAllAreas(_sprites, _areaSizings, _areaEnumerator, ProgressReport));
+        var (allAreas, allScores) = await Task.Run(() => getAllAreas(_sprites, _areaSizings, _areaEnumerator, ProgressReport));
+        _allAreas = allAreas.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+        _allScores = allScores.OrderByDescending(kvp => kvp.Value);
     }
 
     #region Initializing
@@ -155,29 +157,45 @@ public class Algorythm
 
     public async Task<Dictionary<MyArea, List<(int, int, int)>>> Run()
     {
+        ProgressReport.OperationDescription = "Removing areas from picture";
+        ProgressReport.OperationsCount = UnprocessedPixels;
         var map = new Dictionary<MyArea, List<(int, int, int)>>();
 
+        var currentAreaIndex = 0;
         Debug.Log("0");
-        while (UnprocessedPixels > 0)
+        foreach (var idScorePair in _allScores)
         {
+            Debug.Log($"Working with score #{currentAreaIndex++}: id {idScorePair.Key}, score {idScorePair.Value}");
+            if (UnprocessedPixels == 0)
+                break;
             if (_ct.IsCancellationRequested)
                 break;
-            //Debug.Log("1");
-            //var scores = await Task.Run(() => countScoreForEachArea(_sprites, _allAreas, _areaEnumerator));
 
-            Debug.Log("2");
-            var rating = _allScores.OrderByDescending(kvp => kvp.Key);
-
-            Debug.Log("3");
-            var bestAreaIndex = getBestArea(rating);
-            Debug.Log("4");
-
-            if (_ct.IsCancellationRequested)
-                break;
-            Debug.Log("5");
-            UnprocessedPixels -= applyBestArea(_sprites, _areaEnumerator, bestAreaIndex, map, _ct);
-            Debug.Log("6");
+            var pixelsRemoved = await applyBestArea(_sprites, _areaEnumerator, idScorePair.Key, map, _ct);
+            ProgressReport.OperationsDone += pixelsRemoved;
+            UnprocessedPixels -= pixelsRemoved;
         }
+        Debug.Log($"Done!");
+        //while (UnprocessedPixels > 0)
+        //{
+        //    if (_ct.IsCancellationRequested)
+        //        break;
+        //    //Debug.Log("1");
+        //    //var scores = await Task.Run(() => countScoreForEachArea(_sprites, _allAreas, _areaEnumerator));
+
+        //    //Debug.Log("2");
+        //    //var rating = _allScores.OrderByDescending(kvp => kvp.Key);
+
+        //    Debug.Log("3");
+        //    var bestAreaId = _allScores.;
+        //    Debug.Log("4");
+
+        //    if (_ct.IsCancellationRequested)
+        //        break;
+        //    Debug.Log("5");
+        //    UnprocessedPixels -= applyBestArea(_sprites, _areaEnumerator, bestAreaId, map, _ct);
+        //    Debug.Log("6");
+        //}
 
         return map;
     }
@@ -192,29 +210,27 @@ public class Algorythm
 
     private int getBestArea(IOrderedEnumerable<KeyValuePair<int, long>> rating) => rating.First().Key;
 
-    private int applyBestArea(MyColor[][][] sprites, IAreaEnumerator enumerator, int bestAreaIndex, Dictionary<MyArea, List<(int, int, int)>> map, CancellationToken ct)
+    private async Task<int> applyBestArea(MyColor[][][] sprites, IAreaEnumerator enumerator, int bestAreaIndex, Dictionary<MyArea, List<(int, int, int)>> map, CancellationToken ct)
     {
         var result = 0;
         var mappedAreas = new List<(int, int, int)>();
-        long scoreValue;
-        MyArea areaValue;
-        _allAreas.TryRemove(bestAreaIndex, out areaValue);
-        _allScores.TryRemove(bestAreaIndex, out scoreValue);
-        var winnerAreaDimensions = areaValue.Dimensions;
+        var bestArea = _allAreas[bestAreaIndex];
+        _allAreas.Remove(bestAreaIndex);
+        var winnerAreaDimensions = bestArea.Dimensions;
 
-        enumerator.EnumerateParallel(areaValue.Dimensions, (sprite, spriteIndex, x, y) =>
+        await enumerator.EnumerateParallel(bestArea.Dimensions, (sprite, spriteIndex, x, y) =>
         {
             var comparedArea = MyArea.CreateFromSprite(sprite, x, y, winnerAreaDimensions);
-            if (comparedArea.GetHashCode() == areaValue.GetHashCode())
+            if (comparedArea.GetHashCode() == bestArea.GetHashCode())
             {
                 MyArea.EraseAreaFromSprite(sprite, x, y, winnerAreaDimensions);
 
                 mappedAreas.Add((spriteIndex, x, y));
-                result += areaValue.OpaquePixelsCount;
+                result += bestArea.OpaquePixelsCount;
             }
         }, ct);
 
-        map.Add(areaValue, mappedAreas);
+        map.Add(bestArea, mappedAreas);
 
         return result;
     }

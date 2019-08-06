@@ -36,14 +36,14 @@ public class DefaultAreaEnumerator : IAreaEnumerator
         //        action(_sprites[i], x, y);
     }
 
-    public void EnumerateParallel(MyVector2 areaSizing, Action<MyColor[][], int, int, int> action, CancellationToken ct)
+    public async Task EnumerateParallel(MyVector2 areaSizing, Action<MyColor[][], int, int, int> action, CancellationToken ct)
     {
-        Parallel.For(0, _sprites.Length, (index, loopState) =>
+        await Task.Run(() => Parallel.For(0, _sprites.Length, (index, loopState) =>
         {
             if (ct.IsCancellationRequested)
                 loopState.Break();
             EnumerateThroughSprite(areaSizing, index, action);
-        });
+        }));
     }
 
     public void EnumerateCopy(MyVector2 areaDimensions, Action<MyColor[][], int, int, int> action)
