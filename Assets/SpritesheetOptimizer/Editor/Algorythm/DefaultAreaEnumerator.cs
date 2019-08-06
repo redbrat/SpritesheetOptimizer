@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Threading;
+using System.Threading.Tasks;
 
 public class DefaultAreaEnumerator : IAreaEnumerator
 {
@@ -29,9 +31,19 @@ public class DefaultAreaEnumerator : IAreaEnumerator
     {
         for (int i = 0; i < _sprites.Length; i++)
             enumerateThroughSprite(areaSizing, _sprites[i], action);
-            //for (int x = 0; x < _sprites[i].Length && x + areaSizing.X < _sprites[i].Length; x++)
-            //    for (int y = 0; y < _sprites[i][x].Length && y + areaSizing.Y < _sprites[i][x].Length; y++)
-            //        action(_sprites[i], x, y);
+        //for (int x = 0; x < _sprites[i].Length && x + areaSizing.X < _sprites[i].Length; x++)
+        //    for (int y = 0; y < _sprites[i][x].Length && y + areaSizing.Y < _sprites[i][x].Length; y++)
+        //        action(_sprites[i], x, y);
+    }
+
+    public void EnumerateParallel(MyVector2 areaSizing, Action<MyColor[][], int, int> action, CancellationToken ct)
+    {
+        Parallel.For(0, _sprites.Length, (index, loopState) =>
+        {
+            if (ct.IsCancellationRequested)
+                loopState.Break();
+            EnumerateThroughSprite(areaSizing, index, action);
+        });
     }
 
     public void EnumerateCopy(MyVector2 areaDimensions, Action<MyColor[][], int, int> action)
@@ -39,9 +51,9 @@ public class DefaultAreaEnumerator : IAreaEnumerator
         var copy = CopyArrayOf(_sprites);
         for (int i = 0; i < copy.Length; i++)
             enumerateThroughSprite(areaDimensions, copy[i], action);
-            //for (int x = 0; x < copy[i].Length; x++)
-            //    for (int y = 0; y < copy[i][x].Length; y++)
-            //        action(copy[i], x, y);
+        //for (int x = 0; x < copy[i].Length; x++)
+        //    for (int y = 0; y < copy[i][x].Length; y++)
+        //        action(copy[i], x, y);
     }
 
     private T[][][] CopyArrayOf<T>(T[][][] source)
