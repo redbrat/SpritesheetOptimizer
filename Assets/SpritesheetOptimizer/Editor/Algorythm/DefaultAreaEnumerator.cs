@@ -11,32 +11,32 @@ public class DefaultAreaEnumerator : IAreaEnumerator
         _sprites = sprites;
     }
 
-    public void EnumerateThroughSprite(MyVector2 areaSizing, int spriteIndex, Action<MyColor[][], int, int> action)
+    public void EnumerateThroughSprite(MyVector2 areaSizing, int spriteIndex, Action<MyColor[][], int, int, int> action)
     {
         var sprite = _sprites[spriteIndex];
-        enumerateThroughSprite(areaSizing, sprite, action);
+        enumerateThroughSprite(areaSizing, sprite, spriteIndex, action);
         //for (int x = 0; x < sprite.Length && x + areaSizing.X < sprite.Length; x++)
         //    for (int y = 0; y < sprite[x].Length && y + areaSizing.Y < sprite[x].Length; y++)
         //        action(sprite, x, y);
     }
 
-    private void enumerateThroughSprite(MyVector2 areaSizing, MyColor[][] sprite, Action<MyColor[][], int, int> action)
+    private void enumerateThroughSprite(MyVector2 areaSizing, MyColor[][] sprite, int spriteIndex, Action<MyColor[][], int, int, int> action)
     {
         for (int x = 0; x < sprite.Length && x + areaSizing.X <= sprite.Length; x++)
             for (int y = 0; y < sprite[x].Length && y + areaSizing.Y <= sprite[x].Length; y++)
-                action(sprite, x, y);
+                action(sprite, spriteIndex, x, y);
     }
 
-    public void Enumerate(MyVector2 areaSizing, Action<MyColor[][], int, int> action)
+    public void Enumerate(MyVector2 areaSizing, Action<MyColor[][], int, int, int> action)
     {
         for (int i = 0; i < _sprites.Length; i++)
-            enumerateThroughSprite(areaSizing, _sprites[i], action);
+            enumerateThroughSprite(areaSizing, _sprites[i], i, action);
         //for (int x = 0; x < _sprites[i].Length && x + areaSizing.X < _sprites[i].Length; x++)
         //    for (int y = 0; y < _sprites[i][x].Length && y + areaSizing.Y < _sprites[i][x].Length; y++)
         //        action(_sprites[i], x, y);
     }
 
-    public void EnumerateParallel(MyVector2 areaSizing, Action<MyColor[][], int, int> action, CancellationToken ct)
+    public void EnumerateParallel(MyVector2 areaSizing, Action<MyColor[][], int, int, int> action, CancellationToken ct)
     {
         Parallel.For(0, _sprites.Length, (index, loopState) =>
         {
@@ -46,11 +46,11 @@ public class DefaultAreaEnumerator : IAreaEnumerator
         });
     }
 
-    public void EnumerateCopy(MyVector2 areaDimensions, Action<MyColor[][], int, int> action)
+    public void EnumerateCopy(MyVector2 areaDimensions, Action<MyColor[][], int, int, int> action)
     {
         var copy = CopyArrayOf(_sprites);
         for (int i = 0; i < copy.Length; i++)
-            enumerateThroughSprite(areaDimensions, copy[i], action);
+            enumerateThroughSprite(areaDimensions, copy[i], i, action);
         //for (int x = 0; x < copy[i].Length; x++)
         //    for (int y = 0; y < copy[i][x].Length; y++)
         //        action(copy[i], x, y);

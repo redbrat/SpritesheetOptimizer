@@ -27,7 +27,7 @@ public class DefaultScoreCounter : IScoreCounter
 
             var deletedOpaquePixels = 0;
             //areaEnumerator.EnumerateCopy(areaDimensions, (sprite, x, y) =>
-            areaEnumerator.Enumerate(areaDimensions, (sprite, x, y) =>
+            areaEnumerator.Enumerate(areaDimensions, (sprite, spriteIndex, x, y) =>
             {
                 var comparedArea = MyArea.CreateFromSprite(sprite, x, y, areaDimensions);
                 if (comparedArea.GetHashCode() == area.GetHashCode())

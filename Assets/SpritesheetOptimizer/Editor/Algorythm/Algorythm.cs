@@ -17,8 +17,8 @@ public class Algorythm
     private readonly IList<IScoreCounter> _scoreCounters;
     private readonly Type _areaEnumeratorType;
 
+    private ConcurrentDictionary<MyArea, long> _allAreas;
     private IEnumerable<MyVector2> _areaSizings;
-    private IEnumerable<MyArea> _allAreas;
     private IAreaEnumerator _areaEnumerator;
 
     private CancellationToken _ct;
@@ -71,7 +71,7 @@ public class Algorythm
     private int countUprocessedPixels(MyVector2 areaSizing, IAreaEnumerator areaEnumerator)
     {
         var result = 0;
-        areaEnumerator.Enumerate(areaSizing, (sprite, x, y) =>
+        areaEnumerator.Enumerate(areaSizing, (sprite, index, x, y) =>
         {
             if (sprite[x][y].A > 0)
                 result++;
@@ -79,8 +79,10 @@ public class Algorythm
         return result;
     }
 
-    private IEnumerable<MyArea> getAllAreas(MyColor[][][] sprites, IEnumerable<MyVector2> areaSizings, IAreaEnumerator areaEnumerator, ProgressReport progressReport)
+    private ConcurrentDictionary<MyArea, long> getAllAreas(MyColor[][][] sprites, IEnumerable<MyVector2> areaSizings, IAreaEnumerator areaEnumerator, ProgressReport progressReport)
     {
+        var result = new ConcurrentDictionary<MyArea, long>();
+
         var overallOpsCount = areaSizings.Count() * sprites.Length;
 
         progressReport.OperationDescription = "Fetching possible areas";
@@ -88,7 +90,6 @@ public class Algorythm
         progressReport.OperationsDone = 0;
 
         var sizingsList = areaSizings.ToList();
-        var areas = new ConcurrentDictionary<int, MyArea>();
 
         var allAreas = 0;
         try
@@ -99,14 +100,14 @@ public class Algorythm
                     Debug.Log("Exception!");
                 if (_ct.IsCancellationRequested)
                     state.Break();
-                var areaVariantIndex = Mathf.FloorToInt(index / sprites.Length);
-                var spriteIndex = index - areaVariantIndex * sprites.Length;
-                if (areaVariantIndex > sizingsList.Count - 1)
-                    Debug.LogError($"sizingsList[areaVariantIndex] is out of range! areaVariantIndex = {areaVariantIndex}, sizingsList.Count = {sizingsList.Count}");
-                if (areaVariantIndex < 0)
-                    Debug.LogError($"areaVariantIndex < 0! ({areaVariantIndex})");
-                var targetArea = sizingsList[areaVariantIndex];
-                var spritesAreas = getUniqueAreas(targetArea, spriteIndex, areas, areaEnumerator, progressReport);
+                var sizingIndex = Mathf.FloorToInt(index / sprites.Length);
+                var spriteIndex = index - sizingIndex * sprites.Length;
+                if (sizingIndex > sizingsList.Count - 1)
+                    Debug.LogError($"sizingsList[sizingIndex] is out of range! sizingIndex = {sizingIndex}, sizingsList.Count = {sizingsList.Count}");
+                if (sizingIndex < 0)
+                    Debug.LogError($"sizingIndex < 0! ({sizingIndex})");
+                var targetSizing = sizingsList[sizingIndex];
+                var spritesAreas = getUniqueAreas(targetSizing, spriteIndex, result, areaEnumerator, progressReport);
                 //Debug.Log($"allAreas before = {allAreas}");
                 allAreas += spritesAreas;
                 //Debug.Log($"allAreas after = {allAreas}");
@@ -117,22 +118,27 @@ public class Algorythm
             Debug.Log("catch");
             ae.Handle((inner) =>
             {
-                Debug.Log($"{inner.Message}\r\n\r\n{inner.StackTrace}");
+                Debug.LogError($"{inner.Message}\r\n\r\n{inner.StackTrace}");
                 return true;
             });
         }
-        Debug.Log($"allAreas = {allAreas}, areas.Count = {areas.Count}");
-        return areas.Values;
+        Debug.Log($"allAreas = {allAreas}, areas.Count = {result.Count}");
+        return result;
     }
 
-    private int getUniqueAreas(MyVector2 areaSizing, int spriteIndex, ConcurrentDictionary<int, MyArea> areas, IAreaEnumerator areaEnumerator, ProgressReport progressReport)
+    /// <returns>Overall areas</returns>
+    private int getUniqueAreas(MyVector2 areaSizing, int spriteIndex, ConcurrentDictionary<MyArea, long> areas, IAreaEnumerator areaEnumerator, ProgressReport progressReport)
     {
         var result = 0;
-        areaEnumerator.EnumerateThroughSprite(areaSizing, spriteIndex, (sprite, x, y) =>
+        areaEnumerator.EnumerateThroughSprite(areaSizing, spriteIndex, (sprite, index, x, y) =>
         {
             var area = MyArea.CreateFromSprite(sprite, x, y, areaSizing);
-            var hash = area.GetHashCode();
-            areas.TryAdd(hash, area);
+            //var hash = area.GetHashCode();
+            //areas.TryAdd(hash, area);
+
+            var dirtyScore = (long)(Mathf.Pow(area.OpaquePixelsCount, 3f) / area.Dimensions.Square);
+            areas.AddOrUpdate(area, dirtyScore, (exisitingKey, existingScore) => existingScore + dirtyScore);
+
             result++;
         });
         progressReport.OperationsDone++;
@@ -150,11 +156,11 @@ public class Algorythm
         {
             if (_ct.IsCancellationRequested)
                 break;
-            Debug.Log("1");
-            var scores = await Task.Run(() => countScoreForEachArea(_sprites, _allAreas, _areaEnumerator));
+            //Debug.Log("1");
+            //var scores = await Task.Run(() => countScoreForEachArea(_sprites, _allAreas, _areaEnumerator));
 
             Debug.Log("2");
-            var rating = scores.OrderByDescending(kvp => kvp.Item1);
+            var rating = _allAreas.OrderByDescending(kvp => kvp.Key);
 
             Debug.Log("3");
             var bestArea = getBestArea(rating);
@@ -163,49 +169,46 @@ public class Algorythm
             if (_ct.IsCancellationRequested)
                 break;
             Debug.Log("5");
-            UnprocessedPixels -= applyBestArea(_sprites, bestArea, map);
+            UnprocessedPixels -= applyBestArea(_sprites, _areaEnumerator, bestArea, map, _ct);
             Debug.Log("6");
         }
 
         return map;
     }
 
-    private IEnumerable<(int, MyArea)> countScoreForEachArea(MyColor[][][] sprites, IEnumerable<MyArea> allAreas, IAreaEnumerator areaEnumerator)
-    {
-        var result = default(IEnumerable<(int, MyArea)>);
-        foreach (var scoreCounter in _scoreCounters)
-            result = scoreCounter.CountScores(result, sprites, allAreas, areaEnumerator, ProgressReport, _ct);
-        return result;
-    }
+    //private IEnumerable<(int, MyArea)> countScoreForEachArea(MyColor[][][] sprites, IEnumerable<MyArea> allAreas, IAreaEnumerator areaEnumerator)
+    //{
+    //    var result = default(IEnumerable<(int, MyArea)>);
+    //    foreach (var scoreCounter in _scoreCounters)
+    //        result = scoreCounter.CountScores(result, sprites, allAreas, areaEnumerator, ProgressReport, _ct);
+    //    return result;
+    //}
 
-    private MyArea getBestArea(IOrderedEnumerable<(int, MyArea)> rating) => rating.First().Item2;
+    private MyArea getBestArea(IOrderedEnumerable<KeyValuePair<MyArea, long>> rating) => rating.First().Key;
 
-    private int applyBestArea(MyColor[][][] sprites, MyArea bestArea, Dictionary<MyArea, List<(int, int, int)>> map)
+    private int applyBestArea(MyColor[][][] sprites, IAreaEnumerator enumerator, MyArea bestArea, Dictionary<MyArea, List<(int, int, int)>> map, CancellationToken ct)
     {
         var result = 0;
-        var winnerAreaDimensions = bestArea.Dimensions;
         var mappedAreas = new List<(int, int, int)>();
+        var winnerAreaDimensions = bestArea.Dimensions;
 
-        for (int i = 0; i < sprites.Length; i++)
+        enumerator.EnumerateParallel(bestArea.Dimensions, (sprite, spriteIndex, x, y) =>
         {
-            var sprite = sprites[i];
-            for (int x = 0; x < sprite.Length - winnerAreaDimensions.X; x++)
+            var comparedArea = MyArea.CreateFromSprite(sprite, x, y, winnerAreaDimensions);
+            if (comparedArea.GetHashCode() == bestArea.GetHashCode())
             {
-                for (int y = 0; y < sprite[x].Length - winnerAreaDimensions.Y; y++)
-                {
-                    var comparedArea = MyArea.CreateFromSprite(sprite, x, y, winnerAreaDimensions);
-                    if (comparedArea.GetHashCode() == bestArea.GetHashCode())
-                    {
-                        MyArea.EraseAreaFromSprite(sprite, x, y, winnerAreaDimensions);
+                MyArea.EraseAreaFromSprite(sprite, x, y, winnerAreaDimensions);
 
-                        mappedAreas.Add((i, x, y));
-                        result += bestArea.OpaquePixelsCount;
-                    }
-                }
+                mappedAreas.Add((spriteIndex, x, y));
+                result += bestArea.OpaquePixelsCount;
             }
-        }
+        }, ct);
 
         map.Add(bestArea, mappedAreas);
+
+        long value;
+        _allAreas.TryRemove(bestArea, out value);
+
         return result;
     }
 }
