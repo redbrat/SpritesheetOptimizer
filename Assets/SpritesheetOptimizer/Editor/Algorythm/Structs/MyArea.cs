@@ -1,6 +1,8 @@
-﻿using UnityEngine;
+﻿using System.Collections.Generic;
+using System.Collections.Concurrent;
+using UnityEngine;
 
-public struct MyArea
+public class MyArea
 {
     public readonly MyColor[] _colors;
 
@@ -11,10 +13,15 @@ public struct MyArea
 
     private readonly int _hash;
 
+    public readonly ConcurrentDictionary<int, MyAreaCoordinates> Correlations;
+
+    public readonly long Score;
+
     public MyArea(MyVector2 dimensions, params MyColor[] colors)
     {
         _colors = colors;
         Dimensions = dimensions;
+        Correlations = new ConcurrentDictionary<int, MyAreaCoordinates>();
 
         PixelsCount = _colors.Length;
         OpaquePixelsCount = 0;
@@ -26,6 +33,8 @@ public struct MyArea
             _hash += (i + 1) * _colors[i].GetHashCode() * short.MaxValue;
         }
         _hash *= dimensions.GetHashCode();
+
+        Score = (long)(Mathf.Pow(OpaquePixelsCount, 3f) / Dimensions.Square);
     }
 
     public override int GetHashCode() => _hash;

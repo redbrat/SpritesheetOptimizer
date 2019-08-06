@@ -7,7 +7,9 @@ public class Optimizer : EditorWindow
 {
     private static Optimizer _intance;
     private static Sprite _sprite;
-    private static Vector2Int _resolution;
+    private static Vector2Int _resolution = new Vector2Int(8, 8);
+    private static int _areaFreshmentSpan = 10;
+    private static int _areasVolatilityRange = 100;
 
     [MenuItem("Optimizer/Optimize")]
     private static void Main()
@@ -24,6 +26,8 @@ public class Optimizer : EditorWindow
         if (newSprite != _sprite)
             _sprite = newSprite;
 
+        _areaFreshmentSpan = EditorGUILayout.IntField("Areas freshment span:", _areaFreshmentSpan);
+        _areasVolatilityRange = EditorGUILayout.IntField("Areas volatility range:", _areasVolatilityRange);
         _resolution = EditorGUILayout.Vector2IntField("Area:", _resolution);
 
         if (_sprite != null && _progressReport == null && GUILayout.Button("Try"))
@@ -33,6 +37,8 @@ public class Optimizer : EditorWindow
                 .AddSizingsConfigurator<DefaultSizingsConfigurator>()
                 .AddScoreCounter<DefaultScoreCounter>()
                 .SetAreaEnumerator<DefaultAreaEnumerator>()
+                .SetAreasFreshmentSpan(_areaFreshmentSpan)
+                .SetAreasVolatilityRange(_areasVolatilityRange)
                 .Build(getColors(_sprite));
             _progressReport = algorythm.ProgressReport;
             _cts = new CancellationTokenSource();
