@@ -5,6 +5,7 @@ public class AlgorythmBuilder
 {
     private IList<Type> _scoreCounterTypes = new List<Type>();
     private IList<Type> _sizingCofiguratorTypes = new List<Type>();
+    private IList<object[]> _sizingCofiguratorCtorParams = new List<object[]>();
     private Type _areaEnumeratorType;
     private int _areasFreshmentSpan;
     private int _areasVolatilityRange;
@@ -19,9 +20,10 @@ public class AlgorythmBuilder
         return this;
     }
 
-    public AlgorythmBuilder AddSizingsConfigurator<T>() where T : ISizingsConfigurator
+    public AlgorythmBuilder AddSizingsConfigurator<T>(params object[] parameters) where T : ISizingsConfigurator
     {
         _sizingCofiguratorTypes.Add(typeof(T));
+        _sizingCofiguratorCtorParams.Add(parameters);
         return this;
     }
 
@@ -48,7 +50,7 @@ public class AlgorythmBuilder
         var sizingCofigurators = new List<ISizingsConfigurator>();
         for (int i = 0; i < _sizingCofiguratorTypes.Count; i++)
         {
-            var instance = Activator.CreateInstance(_sizingCofiguratorTypes[i]);
+            var instance = Activator.CreateInstance(_sizingCofiguratorTypes[i], _sizingCofiguratorCtorParams[i]);
             sizingCofigurators.Add((ISizingsConfigurator)instance);
         }
 

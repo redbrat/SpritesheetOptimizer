@@ -10,6 +10,7 @@ public class Optimizer : EditorWindow
     private static Vector2Int _resolution = new Vector2Int(8, 8);
     private static int _areaFreshmentSpan = 10;
     private static int _areasVolatilityRange = 100;
+    private static PickySizingConfigurator.PickynessLevel _pickinessLevel;
 
     [MenuItem("Optimizer/Optimize")]
     private static void Main()
@@ -30,12 +31,13 @@ public class Optimizer : EditorWindow
         _areaFreshmentSpan = EditorGUILayout.IntField("Areas freshment span:", _areaFreshmentSpan);
         _areasVolatilityRange = EditorGUILayout.IntField("Areas volatility range:", _areasVolatilityRange);
         _resolution = EditorGUILayout.Vector2IntField("Area:", _resolution);
+        _pickinessLevel = (PickySizingConfigurator.PickynessLevel)EditorGUILayout.EnumPopup($"Sizings variety level", _pickinessLevel);
 
-        if (_sprite != null && _operationProgressReport == null && GUILayout.Button("Try"))
+        if (_sprite != null && _cts == null && GUILayout.Button("Try"))
         {
             var algorithmBulder = new AlgorythmBuilder();
             var algorythm = algorithmBulder
-                .AddSizingsConfigurator<DefaultSizingsConfigurator>()
+                .AddSizingsConfigurator<PickySizingConfigurator>(_pickinessLevel)
                 .AddScoreCounter<DefaultScoreCounter>()
                 .SetAreaEnumerator<DefaultAreaEnumerator>()
                 .SetAreasFreshmentSpan(_areaFreshmentSpan)
@@ -55,6 +57,7 @@ public class Optimizer : EditorWindow
             {
                 _cts.Cancel();
                 _cts = null;
+                _operationProgressReport = null;
             }
         }
 
