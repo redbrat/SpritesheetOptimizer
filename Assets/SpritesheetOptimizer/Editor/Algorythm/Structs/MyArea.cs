@@ -9,7 +9,6 @@ public class MyArea
     public readonly MyVector2 Dimensions;
 
     public readonly int OpaquePixelsCount;
-    public readonly int PixelsCount;
 
     private readonly int _hash;
 
@@ -23,7 +22,6 @@ public class MyArea
         Dimensions = dimensions;
         Correlations = new ConcurrentDictionary<int, MyAreaCoordinates>();
 
-        PixelsCount = _colors.Length;
         OpaquePixelsCount = 0;
         _hash = 0;
         for (int i = 0; i < _colors.Length; i++)

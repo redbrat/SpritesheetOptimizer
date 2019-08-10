@@ -17,7 +17,8 @@ public class Optimizer : EditorWindow
         _intance = GetWindow<Optimizer>();
     }
 
-    private ProgressReport _progressReport;
+    private ProgressReport _operationProgressReport;
+    private ProgressReport _overallProgressReport;
     private CancellationTokenSource _cts;
 
     private void OnGUI()
@@ -30,7 +31,7 @@ public class Optimizer : EditorWindow
         _areasVolatilityRange = EditorGUILayout.IntField("Areas volatility range:", _areasVolatilityRange);
         _resolution = EditorGUILayout.Vector2IntField("Area:", _resolution);
 
-        if (_sprite != null && _progressReport == null && GUILayout.Button("Try"))
+        if (_sprite != null && _operationProgressReport == null && GUILayout.Button("Try"))
         {
             var algorithmBulder = new AlgorythmBuilder();
             var algorythm = algorithmBulder
@@ -40,15 +41,16 @@ public class Optimizer : EditorWindow
                 .SetAreasFreshmentSpan(_areaFreshmentSpan)
                 .SetAreasVolatilityRange(_areasVolatilityRange)
                 .Build(getColors(_sprite));
-            _progressReport = algorythm.ProgressReport;
+            _operationProgressReport = algorythm.OperationProgressReport;
+            _overallProgressReport = algorythm.OverallProgressReport;
             _cts = new CancellationTokenSource();
             launch(algorythm);
         }
         if (_cts != null)
         {
-            EditorGUILayout.LabelField($"Unoptimized pixels count: {_progressReport.OverallOpsLeft} total optimizable pixels");
-            EditorGUILayout.LabelField($"Current operation: {_progressReport.OperationDescription}");
-            EditorGUILayout.LabelField($"Progress: {_progressReport.OperationsDone} of {_progressReport.OperationsCount}");
+            EditorGUILayout.LabelField($"{_overallProgressReport.OperationDescription}: {_overallProgressReport.OperationsDone}/{_overallProgressReport.OperationsCount}");
+            EditorGUILayout.LabelField($"Current operation: {_operationProgressReport.OperationDescription} - {_operationProgressReport.OperationsDone}/{_operationProgressReport.OperationsCount}");
+            //EditorGUILayout.LabelField($"Progress: {_operationProgressReport.OperationsDone} of {_operationProgressReport.OperationsCount}");
             if (GUILayout.Button("Cancel"))
             {
                 _cts.Cancel();
@@ -63,7 +65,7 @@ public class Optimizer : EditorWindow
     {
         await algorythm.Initialize(_resolution, _cts.Token);
         await algorythm.Run();
-        _progressReport = null;
+        _operationProgressReport = null;
         _cts = null;
     }
 
