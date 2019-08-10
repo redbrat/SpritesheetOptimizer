@@ -26,11 +26,11 @@ public class MyArea
         _hash = 0;
         for (int i = 0; i < _colors.Length; i++)
         {
-            if (_colors[i].A > 0)
+            if (_colors[i].A > 0f)
                 OpaquePixelsCount++;
             _hash += (i + 1) * _colors[i].GetHashCode() * short.MaxValue;
         }
-        _hash *= dimensions.GetHashCode();
+        _hash += dimensions.GetHashCode();
 
         Score = (long)(Mathf.Pow(OpaquePixelsCount, 3f) / Dimensions.Square);
     }

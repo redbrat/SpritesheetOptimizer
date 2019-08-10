@@ -29,7 +29,7 @@ public class Algorythm
     private readonly Type _areaEnumeratorType;
 
     private ConcurrentDictionary<int, MyArea> _allAreas;
-    //private IOrderedEnumerable<KeyValuePair<int, long>> _allScores;
+    private MapOfEmptiness _mapOfEmptiness;
     private IEnumerable<MyVector2> _areaSizings;
     private IAreaEnumerator _areaEnumerator;
 
@@ -64,6 +64,8 @@ public class Algorythm
         else if (_areaEnumerator == null)
             _areaEnumerator = (IAreaEnumerator)areaEnumeratorCtor.Invoke(new object[] { _sprites, _areaSizings });
         UnprocessedPixels = countUprocessedPixels(MyVector2.One, _areaEnumerator);
+        _mapOfEmptiness = new MapOfEmptiness();
+        await _mapOfEmptiness.Initialize(_areaSizings, _sprites, _areaEnumerator);
     }
 
     #region Initializing
@@ -121,10 +123,15 @@ public class Algorythm
                     foreach (var kvp in area.Correlations)
                     {
                         var correlation = kvp.Value;
-                        var sprite = _sprites[correlation.SpriteIndex];
-                        var correlatedArea = MyArea.CreateFromSprite(sprite, correlation.X, correlation.Y, correlation.Dimensions);
-                        if (correlatedArea.GetHashCode() != area.GetHashCode())
+                        if (_mapOfEmptiness.Contains(correlation.Dimensions, correlation.SpriteIndex, correlation.X, correlation.Y))
                             invalidAreas.Add(kvp.Key);
+                        else
+                        {
+                            var sprite = _sprites[correlation.SpriteIndex];
+                            var correlatedArea = MyArea.CreateFromSprite(sprite, correlation.X, correlation.Y, correlation.Dimensions);
+                            if (correlatedArea.GetHashCode() != area.GetHashCode())
+                                invalidAreas.Add(kvp.Key);
+                        }
                     }
                     for (int j = 0; j < invalidAreas.Count; j++)
                     {
@@ -210,15 +217,18 @@ public class Algorythm
         var areasUnique = 0;
         areaEnumerator.EnumerateThroughSprite(areaSizing, spriteIndex, (sprite, index, x, y) =>
         {
-            var area = MyArea.CreateFromSprite(sprite, x, y, areaSizing);
-            var hash = area.GetHashCode();
-            if (areas.TryAdd(hash, area))
-                areasUnique++;
-            area = areas[hash];
+            if (!_mapOfEmptiness.Contains(areaSizing, index, x, y))
+            {
+                var area = MyArea.CreateFromSprite(sprite, x, y, areaSizing);
+                var hash = area.GetHashCode();
+                if (areas.TryAdd(hash, area))
+                    areasUnique++;
+                area = areas[hash];
 
-            area.Correlations.TryAdd(area.Correlations.Count, new MyAreaCoordinates(index, x, y, areaSizing.X, areaSizing.Y));
+                area.Correlations.TryAdd(area.Correlations.Count, new MyAreaCoordinates(index, x, y, areaSizing.X, areaSizing.Y));
 
-            areasTotal++;
+                areasTotal++;
+            }
         });
         progressReport.OperationsDone++;
         return (areasTotal, areasUnique);
@@ -237,10 +247,14 @@ public class Algorythm
         foreach (var kvp in correlations)
         {
             var myAreaCoordinates = kvp.Value;
+            if (_mapOfEmptiness.Contains(myAreaCoordinates.Dimensions, myAreaCoordinates.SpriteIndex, myAreaCoordinates.X, myAreaCoordinates.Y))
+                continue;
+
             var candidateForErasing = MyArea.CreateFromSprite(sprites[myAreaCoordinates.SpriteIndex], myAreaCoordinates.X, myAreaCoordinates.Y, myAreaCoordinates.Dimensions);
             if (candidateForErasing.GetHashCode() != bestArea.GetHashCode())
                 continue;
             MyArea.EraseAreaFromSprite(sprites[myAreaCoordinates.SpriteIndex], myAreaCoordinates.X, myAreaCoordinates.Y, myAreaCoordinates.Dimensions);
+            _mapOfEmptiness.MakeEmpty(myAreaCoordinates.Dimensions, myAreaCoordinates.SpriteIndex, myAreaCoordinates.X, myAreaCoordinates.Y);
             result.Add(myAreaCoordinates);
         }
 

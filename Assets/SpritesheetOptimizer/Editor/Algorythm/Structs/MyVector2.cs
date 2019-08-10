@@ -1,4 +1,6 @@
-﻿public struct MyVector2
+﻿using System;
+
+public struct MyVector2
 {
     public static MyVector2 Zero => new MyVector2(0, 0);
     public static MyVector2 One => new MyVector2(1, 1);
@@ -17,4 +19,8 @@
     }
 
     public override string ToString() => $"{X}, {Y}";
+
+    internal bool CanBePutInto(MyVector2 myVector2) => X <= myVector2.X && Y <= myVector2.Y;
+
+    public override int GetHashCode() => X + Y * 100_000;
 }
