@@ -55,21 +55,14 @@ public class Algorythm
         _areaSizings = getAreaSizings(_sprites, maxAreaSize, ct);
 
         var areaEnumeratorCtor = _areaEnumeratorType.GetConstructor(new Type[] { typeof(MyColor[][][]) });
-        foreach (var param in areaEnumeratorCtor.GetParameters())
-        {
-            Debug.Log($"ParameterType = {param.ParameterType}");
-        }
-        Debug.Log($"_sprites = {_sprites}. Type = {_sprites.GetType()}");
         if (areaEnumeratorCtor == null)
             areaEnumeratorCtor = _areaEnumeratorType.GetConstructor(new Type[] { typeof(MyColor[][][]), typeof(IEnumerable<MyVector2>) });
         else
             _areaEnumerator = (IAreaEnumerator)areaEnumeratorCtor.Invoke(new object[] { _sprites });
-        //_areaEnumerator = (IAreaEnumerator)Activator.CreateInstance(_areaEnumeratorType, new object[] { _sprites });
         if (_areaEnumerator == null && areaEnumeratorCtor == null)
             throw new ArgumentException($"Got AreaEnumerator with unknown set of ctor parameters.");
         else if (_areaEnumerator == null)
             _areaEnumerator = (IAreaEnumerator)areaEnumeratorCtor.Invoke(new object[] { _sprites, _areaSizings });
-        //_areaEnumerator = (IAreaEnumerator)Activator.CreateInstance(_areaEnumeratorType, _sprites, _areaSizings);
         UnprocessedPixels = countUprocessedPixels(MyVector2.One, _areaEnumerator);
     }
 
@@ -102,8 +95,6 @@ public class Algorythm
         OverallProgressReport.OperationsCount = UnprocessedPixels;
         var map = new Dictionary<MyArea, List<MyAreaCoordinates>>();
 
-        //var areasOrderedByScores = _allAreas.OrderByDescending(kvp => kvp.Value.Correlations.Count * kvp.Value.Score).ToList();
-
         var currentAreaIndex = 0;
 
         List<KeyValuePair<int, MyArea>> orderedAreas = null;
@@ -112,10 +103,7 @@ public class Algorythm
             if (_ct.IsCancellationRequested)
                 break;
             if (currentAreaIndex % _areasFreshmentSpan == 0)
-            {
-                Debug.Log($"Areas and scores recounting...");
                 await setAreasAndScores();
-            }
 
             //После удаления некоторых пикселей рейтинги областей могут меняться - поэтому надо обновлять и переупорядочивать каждый раз.
             if (orderedAreas != null)
@@ -151,7 +139,7 @@ public class Algorythm
             orderedAreas = _allAreas.OrderByDescending(kvp => kvp.Value.Correlations.Count * kvp.Value.Score).ToList();
             var currentArea = orderedAreas[0];
 
-            Debug.Log($"Working with score #{currentAreaIndex}: id {currentArea.Key}, score {currentArea.Value.Correlations.Count * currentArea.Value.Score}");
+            Debug.Log($"Removing area #{currentAreaIndex}: hash {currentArea.Key}, score {currentArea.Value.Correlations.Count * currentArea.Value.Score}");
             var areasRemoved = await applyBestArea(_sprites, currentArea.Key);
             var pixelsRemoved = currentArea.Value.OpaquePixelsCount * areasRemoved.Count;
             map.Add(currentArea.Value, areasRemoved);
@@ -228,8 +216,6 @@ public class Algorythm
                 areasUnique++;
             area = areas[hash];
 
-            //var dirtyScore = (long)(Mathf.Pow(area.OpaquePixelsCount, 3f) / area.Dimensions.Square);
-            //scores.AddOrUpdate(hash, area.Score, (exisitingKey, existingScore) => existingScore + area.Score);
             area.Correlations.TryAdd(area.Correlations.Count, new MyAreaCoordinates(index, x, y, areaSizing.X, areaSizing.Y));
 
             areasTotal++;
@@ -257,22 +243,6 @@ public class Algorythm
             MyArea.EraseAreaFromSprite(sprites[myAreaCoordinates.SpriteIndex], myAreaCoordinates.X, myAreaCoordinates.Y, myAreaCoordinates.Dimensions);
             result.Add(myAreaCoordinates);
         }
-
-        //var winnerAreaDimensions = bestArea.Dimensions;
-
-        //await enumerator.EnumerateParallel(bestArea.Dimensions, (sprite, spriteIndex, x, y) =>
-        //{
-        //    var comparedArea = MyArea.CreateFromSprite(sprite, x, y, winnerAreaDimensions);
-        //    if (comparedArea.GetHashCode() == bestArea.GetHashCode())
-        //    {
-        //        MyArea.EraseAreaFromSprite(sprite, x, y, winnerAreaDimensions);
-
-        //        mappedAreas.Add((spriteIndex, x, y));
-        //        result += bestArea.OpaquePixelsCount;
-        //    }
-        //}, ct);
-
-        //map.Add(bestArea, mappedAreas);
 
         return result;
     }
