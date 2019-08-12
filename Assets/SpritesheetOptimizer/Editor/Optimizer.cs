@@ -11,6 +11,7 @@ public class Optimizer : EditorWindow
     private static int _areaFreshmentSpan = 10;
     private static int _areasVolatilityRange = 100;
     private static PickySizingConfigurator.PickynessLevel _pickinessLevel;
+    private static ComputeMode _computeMode;
 
     [MenuItem("Optimizer/Optimize")]
     private static void Main()
@@ -32,6 +33,7 @@ public class Optimizer : EditorWindow
         _areasVolatilityRange = EditorGUILayout.IntField("Areas volatility range:", _areasVolatilityRange);
         _resolution = EditorGUILayout.Vector2IntField("Area:", _resolution);
         _pickinessLevel = (PickySizingConfigurator.PickynessLevel)EditorGUILayout.EnumPopup($"Sizings variety level", _pickinessLevel);
+        _computeMode = (ComputeMode)EditorGUILayout.EnumPopup($"Compute on", _computeMode);
 
         if (_sprite != null && _cts == null && GUILayout.Button("Try"))
         {
@@ -42,7 +44,7 @@ public class Optimizer : EditorWindow
                 .SetAreaEnumerator<DefaultAreaEnumerator>()
                 .SetAreasFreshmentSpan(_areaFreshmentSpan)
                 .SetAreasVolatilityRange(_areasVolatilityRange)
-                .Build(getColors(_sprite));
+                .Build(getColors(_sprite), _computeMode);
             _operationProgressReport = algorythm.OperationProgressReport;
             _overallProgressReport = algorythm.OverallProgressReport;
             _cts = new CancellationTokenSource();

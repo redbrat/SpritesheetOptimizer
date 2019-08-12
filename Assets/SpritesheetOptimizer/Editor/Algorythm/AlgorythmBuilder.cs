@@ -45,7 +45,7 @@ public class AlgorythmBuilder
         return this;
     }
 
-    public Algorythm Build(MyColor[][][] data)
+    public Algorythm Build(MyColor[][][] data, ComputeMode computeMode)
     {
         var sizingCofigurators = new List<ISizingsConfigurator>();
         for (int i = 0; i < _sizingCofiguratorTypes.Count; i++)
@@ -64,6 +64,6 @@ public class AlgorythmBuilder
         if (_areaEnumeratorType == null)
             _areaEnumeratorType = typeof(DefaultAreaEnumerator);
 
-        return new Algorythm(data, _areaEnumeratorType, sizingCofigurators, scoreCounters, _areasFreshmentSpan, _areasVolatilityRange);
+        return new Algorythm(data, _areaEnumeratorType, sizingCofigurators, scoreCounters, _areasFreshmentSpan, _areasVolatilityRange, computeMode);
     }
 }
