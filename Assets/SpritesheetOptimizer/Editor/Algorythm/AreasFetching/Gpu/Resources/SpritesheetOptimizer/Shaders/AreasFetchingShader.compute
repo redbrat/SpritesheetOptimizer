@@ -1,14 +1,85 @@
-﻿// Each #kernel tells which function to compile; you can have many kernels
+﻿RWStructuredBuffer<int> SpriteBuffer;
+RWStructuredBuffer<int> ResultBuffer;
+int MultipliedValue;
+int PreferredAreaWidth;
+int PreferredAreaHeight;
+int SpriteWidth;
+int SpriteHeight;
+
 #pragma kernel CSMain
-
-// Create a RenderTexture with enableRandomWrite flag and set it
-// with cs.SetTexture
-RWTexture2D<float4> Result;
-
 [numthreads(32,24,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
-    // TODO: insert actual code here!
+	int radiusX = PreferredAreaWidth / 2;
+	int radiusY = PreferredAreaHeight / 2;
 
-    Result[id.xy] = float4(id.x & id.y, (id.x & 15)/15.0, (id.y & 15)/15.0, 0.0);
+	if (id.x >= SpriteWidth)
+		return;
+	if (id.y >= SpriteHeight)
+		return;
+
+	int xStart = id.x - radiusX;
+	int yStart = id.y - radiusY;
+	if (xStart < 0)
+		xStart = 0;
+	if (yStart < 0)
+		yStart = 0;
+	int xMax = id.x + radiusX;
+	int yMax = id.y + radiusY;
+	if (xMax > SpriteWidth)
+		xMax = SpriteWidth;
+	if (yMax > SpriteHeight)
+		yMax = SpriteHeight;
+
+	int width = xMax - xStart;
+	int height = yMax - yStart;
+	float divider = width * height;
+	float r = 0;
+	float g = 0;
+	float b = 0;
+	float a = 0;
+
+	for (int x = xStart; x < xMax; x++)
+	{
+		for (int y = yStart; y < yMax; y++)
+		{
+			int i = x * MultipliedValue + y;
+			int value = SpriteBuffer[i];
+			r += (value & 255) / divider;
+			g += ((value >> 8) & 255) / divider;
+			b += ((value >> 16) & 255) / divider;
+			a += ((value >> 24) & 255) / divider;
+		}
+	}
+
+	int ir = r;
+	ir = ir & 255;
+	int ig = g;
+	ig = ig & 255;
+	int ib = b;
+	ib = ib & 255;
+	int ia = a;
+	ia = ia & 255;
+
+	int j = id.x * MultipliedValue + id.y;
+	ResultBuffer[j] = ir | (ig << 8) | (ib << 16) | (ia << 24);
+
+	/*int i = id.x * MultipliedValue + id.y;
+	int value = SpriteBuffer[i];
+	divider = 1;
+	float r = (value & 3) / divider;
+	float g = ((value >> 8) & 3) / divider;
+	float b = ((value >> 16) & 3) / divider;
+	float a = ((value >> 24) & 3) / divider;
+
+	int ir = value & 255;
+	int ig = (value >> 8) & 255;
+	int ib = (value >> 16) & 255;
+	int ia = (value >> 24) & 255;
+
+	ResultBuffer[i] = ir | (ig << 8) | (ib << 16) | (ia << 24);*/
+
+
+	/*int j = id.x * MultipliedValue + id.y;
+	ResultBuffer[j] = SpriteBuffer[j];*/
 }
