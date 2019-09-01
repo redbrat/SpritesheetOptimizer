@@ -63,23 +63,4 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 
 	int j = id.x * MultipliedValue + id.y;
 	ResultBuffer[j] = ir | (ig << 8) | (ib << 16) | (ia << 24);
-
-	/*int i = id.x * MultipliedValue + id.y;
-	int value = SpriteBuffer[i];
-	divider = 1;
-	float r = (value & 3) / divider;
-	float g = ((value >> 8) & 3) / divider;
-	float b = ((value >> 16) & 3) / divider;
-	float a = ((value >> 24) & 3) / divider;
-
-	int ir = value & 255;
-	int ig = (value >> 8) & 255;
-	int ib = (value >> 16) & 255;
-	int ia = (value >> 24) & 255;
-
-	ResultBuffer[i] = ir | (ig << 8) | (ib << 16) | (ia << 24);*/
-
-
-	/*int j = id.x * MultipliedValue + id.y;
-	ResultBuffer[j] = SpriteBuffer[j];*/
 }

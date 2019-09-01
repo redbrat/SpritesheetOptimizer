@@ -73,7 +73,7 @@ public class CpuAreaFetcher : IAreaFetcher
     {
         var areasTotal = 0;
         var areasUnique = 0;
-        areaEnumerator.EnumerateThroughSprite(areaSizing, spriteIndex, (sprite, index, x, y) =>
+        areaEnumerator .EnumerateThroughSprite(areaSizing, spriteIndex, (sprite, index, x, y) =>
         {
             if (!_mapOfEmptiness.Contains(areaSizing, index, x, y))
             {
