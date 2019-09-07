@@ -16,6 +16,14 @@ public static class GpuUtilities
         return result;
     }
 
+    public static GpuSpriteDataChunk[] PrepareChunksForGpuLegacy(this MyColor[][][] sprites, uint x, uint y, uint z)
+    {
+        var result = new GpuSpriteDataChunk[sprites.Length];
+        for (int i = 0; i < result.Length; i++)
+            result[i] = new GpuSpriteDataChunk(sprites[i], x, y, z);
+        return result;
+    }
+
     public static Texture2D ToTexture2D(this MyColor[][] colors)
     {
         var width = colors.Length;

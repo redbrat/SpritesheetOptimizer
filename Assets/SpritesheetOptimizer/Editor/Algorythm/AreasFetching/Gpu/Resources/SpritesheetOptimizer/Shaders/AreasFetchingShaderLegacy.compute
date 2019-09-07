@@ -1,0 +1,66 @@
+﻿RWStructuredBuffer<int> SpriteBuffer;
+RWStructuredBuffer<int> ResultBuffer;
+int MultipliedValue;
+int PreferredAreaWidth;
+int PreferredAreaHeight;
+int SpriteWidth;
+int SpriteHeight;
+
+#pragma kernel CSMain
+[numthreads(32,24,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+	int radiusX = PreferredAreaWidth / 2;
+	int radiusY = PreferredAreaHeight / 2;
+
+	if (id.x >= SpriteWidth)
+		return;
+	if (id.y >= SpriteHeight)
+		return;
+
+	int xStart = id.x - radiusX;
+	int yStart = id.y - radiusY;
+	if (xStart < 0)
+		xStart = 0;
+	if (yStart < 0)
+		yStart = 0;
+	int xMax = id.x + radiusX;
+	int yMax = id.y + radiusY;
+	if (xMax > SpriteWidth)
+		xMax = SpriteWidth;
+	if (yMax > SpriteHeight)
+		yMax = SpriteHeight;
+
+	int width = xMax - xStart;
+	int height = yMax - yStart;
+	float divider = width * height;
+	float r = 0;
+	float g = 0;
+	float b = 0;
+	float a = 0;
+
+	for (int x = xStart; x < xMax; x++)
+	{
+		for (int y = yStart; y < yMax; y++)
+		{
+			int i = x * MultipliedValue + y;
+			int value = SpriteBuffer[i];
+			r += (value & 255) / divider;
+			g += ((value >> 8) & 255) / divider;
+			b += ((value >> 16) & 255) / divider;
+			a += ((value >> 24) & 255) / divider;
+		}
+	}
+
+	int ir = r;
+	ir = ir & 255;
+	int ig = g;
+	ig = ig & 255;
+	int ib = b;
+	ib = ib & 255;
+	int ia = a;
+	ia = ia & 255;
+
+	int j = id.x * MultipliedValue + id.y;
+	ResultBuffer[j] = ir | (ig << 8) | (ib << 16) | (ia << 24);
+}
