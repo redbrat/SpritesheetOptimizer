@@ -29,6 +29,8 @@ public class Algorythm
     private readonly Type _areaEnumeratorType;
     private readonly ComputeMode _computeMode;
 
+    private readonly ComputeShader _computeShader;
+
     private ConcurrentDictionary<int, MyArea> _allAreas;
     private MapOfEmptiness _mapOfEmptiness;
     private IEnumerable<MyVector2> _areaSizings;
@@ -51,10 +53,13 @@ public class Algorythm
         _scoreCounters = scoreCounters;
 
         _computeMode = computeMode;
+
+        _computeShader = Resources.Load<ComputeShader>("SpritesheetOptimizer/Shaders/AreasFetchingShader");
     }
 
     public async Task Initialize(Vector2Int maxAreaSize, CancellationToken ct)
     {
+        Debug.LogError($"Initialize 1");
         _ct = ct;
         _areaSizings = getAreaSizings(_sprites, maxAreaSize, ct);
 
@@ -63,13 +68,17 @@ public class Algorythm
             areaEnumeratorCtor = _areaEnumeratorType.GetConstructor(new Type[] { typeof(MyColor[][][]), typeof(IEnumerable<MyVector2>) });
         else
             _areaEnumerator = (IAreaEnumerator)areaEnumeratorCtor.Invoke(new object[] { _sprites });
+        Debug.LogError($"Initialize 2");
         if (_areaEnumerator == null && areaEnumeratorCtor == null)
             throw new ArgumentException($"Got AreaEnumerator with unknown set of ctor parameters.");
         else if (_areaEnumerator == null)
             _areaEnumerator = (IAreaEnumerator)areaEnumeratorCtor.Invoke(new object[] { _sprites, _areaSizings });
+        Debug.LogError($"Initialize 3");
         UnprocessedPixels = countUprocessedPixels(MyVector2.One, _areaEnumerator);
-        _mapOfEmptiness = new MapOfEmptiness();
-        await _mapOfEmptiness.Initialize(_areaSizings, _sprites, _areaEnumerator);
+        Debug.LogError($"Initialize 4");
+        //_mapOfEmptiness = new MapOfEmptiness();
+        //await _mapOfEmptiness.Initialize(_areaSizings, _sprites, _areaEnumerator);
+        Debug.LogError($"Initialize 5");
 
         switch (_computeMode)
         {
@@ -80,6 +89,7 @@ public class Algorythm
                 _areaFetcher = new GpuAreaFetcher();
                 break;
         }
+        Debug.LogError($"Initialize 6");
     }
 
     #region Initializing
@@ -105,8 +115,192 @@ public class Algorythm
 
     #endregion Initializing
 
+    private struct areaStruct
+    {
+        public int SpriteIndex;
+        public int XAndY; //Экономим место, т.к. эти буфферы тянут на сотни мегабайт...
+        public int WidthAndHeight;
+
+        public areaStruct(int spriteIndex, int xAndY, int widthAndHeight)
+        {
+            SpriteIndex = spriteIndex;
+            XAndY = xAndY;
+            WidthAndHeight = widthAndHeight;
+        }
+    }
+
+    private struct registryStruct
+    {
+        public int SpritesDataOffset; //С какой позиции в буффере data начинается данный спрайт
+        public int WidthAndHeight;
+
+        public registryStruct(int spritesDataOffset, int widthAndHeight)
+        {
+            SpritesDataOffset = spritesDataOffset;
+            WidthAndHeight = widthAndHeight;
+        }
+    }
+
     public async Task<Dictionary<MyArea, List<MyAreaCoordinates>>> Run()
     {
+        OverallProgressReport.OperationDescription = "Removing areas from picture";
+        OverallProgressReport.OperationsCount = UnprocessedPixels;
+        var result = new Dictionary<MyArea, List<MyAreaCoordinates>>();
+
+        Debug.Log($"Составляем список всех уникальных областей...");
+        await setAreasAndScores();
+        Debug.Log($"Список составили, начали составлять буфер");
+
+        /*
+         * Т.к. это GPU мы должны положить этот список в буфер
+         * Собсно у нас, самое главное, должен быть регистр - список всех спрайтов, по которым бы будем проходиться, 
+         * и из которых будут браться области, т.е. адресное пространство. Собсно, нужно разделить его на регистр и
+         * собсно хранилище. Через регистр у нас будут сдвиги по нужным осям. Собсно ось будет всего одна, т.к. размеры
+         * текстур совершенно разные.
+         */
+
+        //var registryEntrySize = 8;
+        //var registry = new byte[_sprites.Length * registryEntrySize];
+        //var pixelEntrySize = 4;
+        //var dataSize = 0;
+        //for (int i = 0; i < _sprites.Length; i++)
+        //    dataSize += _sprites[i].Length * _sprites[i][0].Length;
+        //var data = new byte[dataSize * pixelEntrySize];
+
+        //var registryOffset = 0;
+        //var dataOffset = 0;
+        //for (int i = 0; i < _sprites.Length; i++)
+        //{
+        //    var sprite = _sprites[i];
+        //    Buffer.BlockCopy(BitConverter.GetBytes(registryOffset), 0, registry, registryOffset, 4);
+        //    var width = (short)sprite.Length;
+        //    var height = (short)sprite[0].Length;
+        //    Buffer.BlockCopy(BitConverter.GetBytes(width), 0, registry, registryOffset + 2, 2);
+        //    Buffer.BlockCopy(BitConverter.GetBytes(height), 0, registry, registryOffset + 4, 2);
+        //    registryOffset += registryEntrySize;
+
+        //    for (int x = 0; x < sprite.Length; x++)
+        //    {
+        //        for (int y = 0; y < sprite[x].Length; y++)
+        //        {
+        //            data[dataOffset++] = sprite[x][y].R;
+        //            data[dataOffset++] = sprite[x][y].G;
+        //            data[dataOffset++] = sprite[x][y].B;
+        //            data[dataOffset++] = sprite[x][y].A;
+        //        }
+        //    }
+        //}
+
+        //var areaEntrySize = 12;
+        //var areas = new byte[areaEntrySize * _allAreas.Count()];
+        //var areaOffset = 0;
+        //foreach (var kvp in _allAreas)
+        //{
+        //    var area = kvp.Value;
+        //    Buffer.BlockCopy(BitConverter.GetBytes(area.SpriteIndex), 0, areas, areaOffset, 4);
+        //    Buffer.BlockCopy(BitConverter.GetBytes((short)area.SpriteRect.X), 0, areas, areaOffset + 4, 2);
+        //    Buffer.BlockCopy(BitConverter.GetBytes((short)area.SpriteRect.Y), 0, areas, areaOffset + 6, 2);
+        //    Buffer.BlockCopy(BitConverter.GetBytes((short)area.SpriteRect.Width), 0, areas, areaOffset + 8, 2);
+        //    Buffer.BlockCopy(BitConverter.GetBytes((short)area.SpriteRect.Height), 0, areas, areaOffset + 10, 2);
+        //    areaOffset += areaEntrySize;
+        //}
+
+        var dataSize = 0;
+        for (int i = 0; i < _sprites.Length; i++)
+            dataSize += _sprites[i].Length * _sprites[i][0].Length;
+        var data = new int[dataSize];
+
+        var registry = new registryStruct[_sprites.Length];
+
+        var dataOffset = 0;
+        for (int i = 0; i < _sprites.Length; i++)
+        {
+            var sprite = _sprites[i];
+            var width = sprite.Length;
+            var height = sprite[0].Length;
+
+            registry[i] = new registryStruct(dataOffset, width << 16 | height);
+
+            for (int x = 0; x < width; x++)
+                for (int y = 0; y < height; y++)
+                    data[dataOffset++] = sprite[x][y].R << 24 | sprite[x][y].G << 16 | sprite[x][y].B << 8 | sprite[x][y].A;
+        }
+
+        var areasList = _allAreas.Select(kvp => kvp.Value).ToList();
+        var areas = new areaStruct[areasList.Count];
+        for (int i = 0; i < areasList.Count; i++)
+        {
+            var area = areasList[i];
+            areas[i] = new areaStruct(area.SpriteIndex, area.SpriteRect.X << 16 | area.SpriteRect.Y, area.SpriteRect.Width << 16 | area.SpriteRect.Height);
+        }
+
+        var algorythmKernel = _computeShader.FindKernel("CSMain");
+        var (groupSizeX, groupSizeY, groupSizeZ) = _computeShader.GetKernelThreadGroupSizes(algorythmKernel);
+
+        var areasBuffer = new ComputeBuffer(areasList.Count, 12);
+        areasBuffer.SetData(areas);
+
+        var registryBuffer = new ComputeBuffer(_sprites.Length, 8);
+        registryBuffer.SetData(registry);
+
+        var dataBuffer = new ComputeBuffer(dataSize, 4);
+        dataBuffer.SetData(data);
+
+        var resultBuffer = new ComputeBuffer(areasList.Count, 4);
+
+        _computeShader.SetBuffer(algorythmKernel, "DataBuffer", dataBuffer);
+        _computeShader.SetBuffer(algorythmKernel, "RegistryBuffer", registryBuffer);
+        _computeShader.SetBuffer(algorythmKernel, "AreasBuffer", areasBuffer);
+        _computeShader.SetBuffer(algorythmKernel, "ResultBuffer", resultBuffer);
+        _computeShader.SetInt("Divider", 1000);
+        _computeShader.SetInt("AreasCount", _allAreas.Count());
+
+        Debug.LogError($"areas.Length = {areas.Length}");
+        Debug.LogError($"registry.Length = {registry.Length}");
+        Debug.LogError($"data.Length = {data.Length}");
+
+        Debug.LogError($"_allAreas.Count() = {_allAreas.Count()}");
+
+        var iterationsCount = Mathf.CeilToInt(_allAreas.Count() / (float)groupSizeX);
+        _computeShader.Dispatch(algorythmKernel, iterationsCount, 1, 1);
+
+        Debug.Log($"Диспатч прошел");
+
+        var resultData = new int[areas.Length];
+        resultBuffer.GetData(resultData);
+
+        Debug.Log($"Забрали результат");
+
+        dataBuffer.Dispose();
+        registryBuffer.Dispose();
+        areasBuffer.Dispose();
+        resultBuffer.Dispose();
+
+        var resultIsCorrect = true;
+        for (int i = 0; i < resultData.Length; i++)
+        {
+            if (resultData[i] != areasList[i].OpaquePixelsCount)
+            {
+                resultIsCorrect = false;
+                break;
+            }
+        }
+
+        Debug.Log($"Результат проверен. Он {resultIsCorrect}.");
+
+        //Debug.Log($"Cписок составили. Начинаем цикл убирания пикселей...");
+        //while (UnprocessedPixels > 0)
+        //{
+        //    if (_ct.IsCancellationRequested)
+        //        break;
+        //}
+
+        return result;
+    }
+
+    public async Task<Dictionary<MyArea, List<MyAreaCoordinates>>> RunCpu()
+    {
+        Debug.LogError($"Run 1");
         OverallProgressReport.OperationDescription = "Removing areas from picture";
         OverallProgressReport.OperationsCount = UnprocessedPixels;
         var map = new Dictionary<MyArea, List<MyAreaCoordinates>>();
@@ -116,10 +310,13 @@ public class Algorythm
         List<KeyValuePair<int, MyArea>> orderedAreas = null;
         while (UnprocessedPixels > 0)
         {
+            Debug.LogError($"Run 2");
             if (_ct.IsCancellationRequested)
                 break;
+            Debug.LogError($"Run 3");
             if (currentAreaIndex % _areasFreshmentSpan == 0)
                 await setAreasAndScores();
+            Debug.LogError($"Run 4");
 
             //После удаления некоторых пикселей рейтинги областей могут меняться - поэтому надо обновлять и переупорядочивать каждый раз.
             if (orderedAreas != null)
@@ -156,6 +353,7 @@ public class Algorythm
                     OperationProgressReport.OperationsDone++;
                 });
             }
+            Debug.LogError($"Run 5");
             orderedAreas?.Clear();
             orderedAreas = _allAreas.OrderByDescending(kvp => kvp.Value.Correlations.Count * kvp.Value.Score).ToList();
             var currentArea = orderedAreas[0];
@@ -167,6 +365,7 @@ public class Algorythm
             OverallProgressReport.OperationsDone += pixelsRemoved;
             UnprocessedPixels -= pixelsRemoved;
             currentAreaIndex++;
+            Debug.LogError($"Run 6");
         }
         Debug.Log($"Done!");
 
@@ -175,7 +374,9 @@ public class Algorythm
 
     private async Task setAreasAndScores()
     {
+        //Debug.LogError($"setAreasAndScores 1");
         _allAreas = await _areaFetcher.FetchAreas(_sprites, _areaSizings, _areaEnumerator, OperationProgressReport);
+        //Debug.LogError($"setAreasAndScores 2");
     }
 
     private int getBestArea(IOrderedEnumerable<KeyValuePair<int, long>> rating) => rating.First().Key;

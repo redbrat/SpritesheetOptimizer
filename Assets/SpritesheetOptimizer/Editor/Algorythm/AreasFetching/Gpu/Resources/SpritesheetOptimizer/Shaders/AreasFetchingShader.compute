@@ -1,15 +1,55 @@
-﻿RWStructuredBuffer<int> SpriteBuffer;
+﻿struct areaStruct
+{
+	int SpriteIndex;
+	int XAndY; //Экономим место, т.к. эти буфферы тянут на сотни мегабайт...
+	int WidthAndHeight;
+}
+
+struct registryStruct
+{
+	int SpritesDataOffset; //С какой позиции в буффере data начинается данный спрайт
+	int WidthAndHeight;
+}
+
+RWStructuredBuffer<registryStruct> RegistryBuffer;
+RWStructuredBuffer<areaStruct> AreasBuffer;
+RWStructuredBuffer<int> DataBuffer;
 RWStructuredBuffer<int> ResultBuffer;
-int MultipliedValue;
-int PreferredAreaWidth;
-int PreferredAreaHeight;
-int SpriteWidth;
-int SpriteHeight;
+
+int Divider; //Чтобы нам хватило места в int для score
+int AreasCount; //Чтобы знать где остановиться
 
 #pragma kernel CSMain
-[numthreads(32,24,1)]
+[numthreads(512,1,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
+	areaStruct area = AreasBuffer[id.x];
+	int areaX = area.XAndY >> 16 & 65535;
+	int areaY = area.XAndY & 65535;
+	int areaWidth = area.WidthAndHeight >> 16 & 65535;
+	int areaHeight = area.WidthAndHeight & 65535;
+
+	registryStruct spriteInfo = RegistryBuffer[area.SpriteIndex];
+	int spriteWidth = spriteInfo.WidthAndHeight >> 16 & 65535;
+	int spriteHeight = spriteInfo.WidthAndHeight & 65535;
+	int spriteOffset = spriteInfo.SpritesDataOffset;
+
+	int opaquePizels = 0;
+	for (int x = 0; x < areaWidth; x++)
+	{
+		for (int y = 0; y < areaHeight; y++)
+		{
+			int xx = x + areaX;
+			int yy = y + areaY;
+			int color = DataBuffer[spriteOffset + xx * spriteWidth + yy];
+			int a = color & 255;
+			if (a != 0)
+				opaquePizels++;
+		}
+	}
+
+	ResultBuffer[id.x] = opaquePizels;/*
+
 	int radiusX = PreferredAreaWidth / 2;
 	int radiusY = PreferredAreaHeight / 2;
 
@@ -62,5 +102,5 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 	ia = ia & 255;
 
 	int j = id.x * MultipliedValue + id.y;
-	ResultBuffer[j] = ir | (ig << 8) | (ib << 16) | (ia << 24);
+	ResultBuffer[j] = ir | (ig << 8) | (ib << 16) | (ia << 24);*/
 }
