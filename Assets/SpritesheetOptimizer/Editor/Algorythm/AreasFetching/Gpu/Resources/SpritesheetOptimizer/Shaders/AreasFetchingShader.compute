@@ -3,13 +3,13 @@
 	int SpriteIndex;
 	int XAndY; //Экономим место, т.к. эти буфферы тянут на сотни мегабайт...
 	int WidthAndHeight;
-}
+};
 
 struct registryStruct
 {
 	int SpritesDataOffset; //С какой позиции в буффере data начинается данный спрайт
 	int WidthAndHeight;
-}
+};
 
 RWStructuredBuffer<registryStruct> RegistryBuffer;
 RWStructuredBuffer<areaStruct> AreasBuffer;

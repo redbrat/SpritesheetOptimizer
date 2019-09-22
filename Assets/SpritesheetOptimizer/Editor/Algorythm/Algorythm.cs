@@ -279,7 +279,9 @@ public class Algorythm
         var resultIsCorrect = true;
         for (int i = 0; i < resultData.Length; i++)
         {
-            if (resultData[i] != areasList[i].OpaquePixelsCount)
+            var a = resultData[i];
+            var b = areasList[i].OpaquePixelsCount;
+            if (a != b)
             {
                 resultIsCorrect = false;
                 break;
