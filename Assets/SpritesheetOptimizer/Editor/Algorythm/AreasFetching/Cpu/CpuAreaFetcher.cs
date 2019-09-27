@@ -77,7 +77,7 @@ public class CpuAreaFetcher : IAreaFetcher
         {
             if (!_mapOfEmptiness.Contains(areaSizing, index, x, y))
             {
-                var area = MyArea.CreateFromSprite(sprite, x, y, areaSizing);
+                var area = MyArea.CreateFromSprite(sprite, spriteIndex, x, y, areaSizing);
                 var hash = area.GetHashCode();
                 if (areas.TryAdd(hash, area))
                     areasUnique++;

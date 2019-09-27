@@ -29,7 +29,7 @@ public class MapOfEmptiness
                     newSizingDict.AddOrUpdate(j, newSpriteDict, (_, __) => newSpriteDict);
                     enumerator.EnumerateThroughSprite(sizing, j, (sprite, spriteIndex, x, y) =>
                     {
-                        var area = MyArea.CreateFromSprite(sprite, x, y, sizing);
+                        var area = MyArea.CreateFromSprite(sprite, spriteIndex, x, y, sizing);
                         if (area.OpaquePixelsCount == 0)
                             newSpriteDict.Add(x + y * _yMultiplier);
                     });

@@ -254,6 +254,7 @@ public class Algorythm
         _computeShader.SetBuffer(algorythmKernel, "ResultBuffer", resultBuffer);
         _computeShader.SetInt("Divider", 1000);
         _computeShader.SetInt("AreasCount", _allAreas.Count());
+        _computeShader.SetInt("SpritesCount", _sprites.Length);
 
         Debug.LogError($"areas.Length = {areas.Length}");
         Debug.LogError($"registry.Length = {registry.Length}");
@@ -261,10 +262,61 @@ public class Algorythm
 
         Debug.LogError($"_allAreas.Count() = {_allAreas.Count()}");
 
+        var maxOpsCountAllowed = 295000;
+
+        var counts = new List<int>();
+
+        for (int a = 0; a < areasList.Count; a++)
+        {
+            var area = areasList[a];
+
+            var countForTheArea = 0;
+            for (int i = 0; i < 8; i++)
+            {
+                var sprite = _sprites[i];
+                var lastSpriteX = sprite.Length - area.Dimensions.X;
+                var lastSpriteY = sprite[0].Length - area.Dimensions.Y;
+
+                countForTheArea += lastSpriteX * lastSpriteY * area.Dimensions.Square;
+
+                //for (int spriteX = 0; spriteX < lastSpriteX; spriteX++)
+                //{
+                //    for (int spriteY = 0; spriteY < lastSpriteY; spriteY++)
+                //    {
+
+                //        for (int areaX = 0; areaX < area.Dimensions.X; areaX++)
+                //        {
+                //            for (int areaY = 0; areaY < area.Dimensions.Y; areaY++)
+                //            {
+
+                //            }
+                //        }
+                //    }
+                //}
+            }
+
+            counts.Add(countForTheArea);
+        }
+
+        counts = counts.OrderByDescending(c => c).ToList();
+        for (int i = 0; i < 100; i++)
+        {
+            Debug.Log($"area #{i}: ops count - {counts[i]}");
+        }
+
+        return result;
+
+        var stopWatch = new System.Diagnostics.Stopwatch();
+        stopWatch.Start();
+
         var iterationsCount = Mathf.CeilToInt(_allAreas.Count() / (float)groupSizeX);
         _computeShader.Dispatch(algorythmKernel, iterationsCount, 1, 1);
 
-        Debug.Log($"Диспатч прошел");
+        stopWatch.Stop();
+        // Get the elapsed time as a TimeSpan value.
+        var ts = stopWatch.Elapsed;
+
+        Debug.Log($"Диспатч прошел. Занял он {ts}");
 
         var resultData = new int[areas.Length];
         resultBuffer.GetData(resultData);
@@ -276,11 +328,25 @@ public class Algorythm
         areasBuffer.Dispose();
         resultBuffer.Dispose();
 
-        var resultIsCorrect = true;
-        for (int i = 0; i < resultData.Length; i++)
+        var scoresList = new List<int>();
+        var testValues1List = new List<int>();
+        var testValues2List = new List<int>();
+
+        for (int j = 0; j < /*areasList.Count*/100; j++)
         {
+            //var i = j;
+            var (count, testValue1, testValue2) = countScoreForArea(areasList[j]);
+            scoresList.Add(count * (int)areasList[j].Score);
+            testValues1List.Add(testValue1);
+            testValues2List.Add(testValue2);
+        }
+
+        var resultIsCorrect = true;
+        for (int i = 0; i < testValues1List.Count; i++)
+        {
+            var s = (int)areasList[i].Score;
             var a = resultData[i];
-            var b = areasList[i].OpaquePixelsCount;
+            var b = testValues1List[i];
             if (a != b)
             {
                 resultIsCorrect = false;
@@ -298,6 +364,64 @@ public class Algorythm
         //}
 
         return result;
+    }
+
+    private (int count, int testValue1, int testValue2) countScoreForArea(MyArea area)
+    {
+        var result = 0;
+        var testValue1 = 0;
+        var testValue2 = 0;
+        for (int i = 0; i < _sprites.Length; i++)
+        {
+            var sprite = _sprites[i];
+            var lastSpriteX = sprite.Length - area.Dimensions.X;
+            var lastSpriteY = sprite[0].Length - area.Dimensions.Y;
+
+            //testValue2 += area.SpriteRect.X + area.SpriteRect.Y + area.SpriteRect.Width + area.SpriteRect.Height;
+
+            for (int spriteX = 0; spriteX < lastSpriteX; spriteX++)
+            {
+                for (int spriteY = 0; spriteY < lastSpriteY; spriteY++)
+                {
+                    var maybeThis = true;
+                    for (int areaX = 0; areaX < area.Dimensions.X; areaX++)
+                    {
+                        for (int areaY = 0; areaY < area.Dimensions.Y; areaY++)
+                        {
+                            //testValue2++;
+                            var pixelX = spriteX + areaX;
+                            var pixelY = spriteY + areaY;
+                            var candidatePixel = sprite[pixelX][pixelY];
+
+                            var areaPixel = _sprites[area.SpriteIndex][area.SpriteRect.X + areaX][area.SpriteRect.Y + areaY];
+                            testValue1 += areaPixel.Color;
+                            testValue2 += candidatePixel.Color;
+                            //if (areaPixel.Color != candidatePixel.Color)
+                            //{
+                            //    maybeThis = false;
+                            //    break;
+                            //}
+                            //if (areaPixel.R != candidatePixel.R || areaPixel.G != candidatePixel.G || areaPixel.B != candidatePixel.B || areaPixel.A != candidatePixel.A)
+                            //{
+                            //    maybeThis = false;
+                            //    break;
+                            //}
+                        }
+
+                        if (!maybeThis)
+                            break;
+                    }
+
+                    if (maybeThis)
+                        result++;
+                }
+            }
+        }
+
+        //if (result > 1)
+        //    Debug.LogError($"result = {result}");
+
+        return (result, testValue1, testValue2);
     }
 
     public async Task<Dictionary<MyArea, List<MyAreaCoordinates>>> RunCpu()
@@ -341,7 +465,7 @@ public class Algorythm
                         else
                         {
                             var sprite = _sprites[correlation.SpriteIndex];
-                            var correlatedArea = MyArea.CreateFromSprite(sprite, correlation.X, correlation.Y, correlation.Dimensions);
+                            var correlatedArea = MyArea.CreateFromSprite(sprite, correlation.SpriteIndex, correlation.X, correlation.Y, correlation.Dimensions);
                             if (correlatedArea.GetHashCode() != area.GetHashCode())
                                 invalidAreas.Add(kvp.Key);
                         }
@@ -397,7 +521,7 @@ public class Algorythm
             if (_mapOfEmptiness.Contains(myAreaCoordinates.Dimensions, myAreaCoordinates.SpriteIndex, myAreaCoordinates.X, myAreaCoordinates.Y))
                 continue;
 
-            var candidateForErasing = MyArea.CreateFromSprite(sprites[myAreaCoordinates.SpriteIndex], myAreaCoordinates.X, myAreaCoordinates.Y, myAreaCoordinates.Dimensions);
+            var candidateForErasing = MyArea.CreateFromSprite(sprites[myAreaCoordinates.SpriteIndex], myAreaCoordinates.SpriteIndex, myAreaCoordinates.X, myAreaCoordinates.Y, myAreaCoordinates.Dimensions);
             if (candidateForErasing.GetHashCode() != bestArea.GetHashCode())
                 continue;
             MyArea.EraseAreaFromSprite(sprites[myAreaCoordinates.SpriteIndex], myAreaCoordinates.X, myAreaCoordinates.Y, myAreaCoordinates.Dimensions);

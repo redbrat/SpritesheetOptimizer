@@ -18,11 +18,70 @@ RWStructuredBuffer<int> ResultBuffer;
 
 int Divider; //Чтобы нам хватило места в int для score
 int AreasCount; //Чтобы знать где остановиться
+int SpritesCount; //По идее можно, наверное, взять из RegistryBuffer, но, даже если можно, быстрее закешировать.
+
+int TestValue1;
+int TestValue2;
+
+int getScoreFromSprite(registryStruct spriteInfo, int areaSpriteOffset, int areaSpriteWidth, int areaX, int areaY, int areaWidth, int areaHeight)
+{
+	int result = 0;
+
+	int spriteOffset = spriteInfo.SpritesDataOffset;
+	int spriteWidth = spriteInfo.WidthAndHeight >> 16 & 65535;
+	int spriteHeight = spriteInfo.WidthAndHeight & 65535;
+
+	int spriteLastX = spriteWidth - areaWidth;
+	int spriteLastY = spriteHeight - areaHeight;
+
+	//TestValue2 += areaX + areaY + areaWidth + areaHeight;
+
+	for (int spriteX = 0; spriteX < spriteLastX; spriteX++)
+	{
+		for (int spriteY = 0; spriteY < spriteLastY; spriteY++)
+		{
+			bool maybeThis = true;
+
+			for (int x = 0; x < areaWidth; x++)
+			{
+				for (int y = 0; y < areaHeight; y++)
+				{
+					//TestValue2++;
+					int sampleX = areaX + x;
+					int sampleY = areaY + y;
+					int candidateX = spriteX + x;
+					int candidateY = spriteY + y;
+
+					int sampleColor = DataBuffer[areaSpriteOffset + sampleX * areaSpriteWidth + sampleY];
+					TestValue1 += sampleColor;
+					int candidateColor = DataBuffer[spriteOffset + candidateX * spriteWidth + candidateY];
+					TestValue2 += candidateColor; 
+					/*if (sampleColor != candidateColor)
+					{
+						maybeThis = false;
+						break;
+					}*/
+				}
+
+				if (!maybeThis)
+					break;
+			}
+
+			if (maybeThis)
+				result++;
+		}
+	}
+
+	return result;
+}
 
 #pragma kernel CSMain
-[numthreads(512,1,1)]
-void CSMain (uint3 id : SV_DispatchThreadID)
+[numthreads(512, 1, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
 {
+	TestValue1 = 0;
+	TestValue2 = 0;
+
 	areaStruct area = AreasBuffer[id.x];
 	int areaX = area.XAndY >> 16 & 65535;
 	int areaY = area.XAndY & 65535;
@@ -30,9 +89,9 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 	int areaHeight = area.WidthAndHeight & 65535;
 
 	registryStruct spriteInfo = RegistryBuffer[area.SpriteIndex];
-	int spriteWidth = spriteInfo.WidthAndHeight >> 16 & 65535;
-	int spriteHeight = spriteInfo.WidthAndHeight & 65535;
-	int spriteOffset = spriteInfo.SpritesDataOffset;
+	int areaSpriteWidth = spriteInfo.WidthAndHeight >> 16 & 65535;
+	int areaspriteHeight = spriteInfo.WidthAndHeight & 65535;
+	int areaSpriteOffset = spriteInfo.SpritesDataOffset;
 
 	int opaquePizels = 0;
 	for (int x = 0; x < areaWidth; x++)
@@ -41,14 +100,25 @@ void CSMain (uint3 id : SV_DispatchThreadID)
 		{
 			int xx = x + areaX;
 			int yy = y + areaY;
-			int color = DataBuffer[spriteOffset + xx * spriteWidth + yy];
+			int color = DataBuffer[areaSpriteOffset + xx * areaSpriteWidth + yy];
 			int a = color & 255;
 			if (a != 0)
 				opaquePizels++;
 		}
 	}
 
-	ResultBuffer[id.x] = opaquePizels;/*
+	float square = areaWidth * areaHeight;
+	int singleScore = opaquePizels * opaquePizels * opaquePizels / square;
+
+	int coincidentsCount = 0;
+	for (int i = 0; i < 8; i++)
+	{
+		registryStruct currentSpriteInfo = RegistryBuffer[area.SpriteIndex];
+		coincidentsCount += getScoreFromSprite(currentSpriteInfo, areaSpriteOffset, areaSpriteWidth, areaX, areaY, areaWidth, areaHeight);
+	}
+
+	ResultBuffer[id.x] = TestValue2;// coincidentsCount* singleScore;
+	/*
 
 	int radiusX = PreferredAreaWidth / 2;
 	int radiusY = PreferredAreaHeight / 2;

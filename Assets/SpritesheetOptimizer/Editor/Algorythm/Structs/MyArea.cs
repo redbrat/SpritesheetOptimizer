@@ -20,24 +20,24 @@ public class MyArea
 
     public readonly MyRect SpriteRect;
 
-    public MyArea(MyVector2 dimensions, params MyColor[] colors)
-    {
-        _colors = colors;
-        Dimensions = dimensions;
-        Correlations = new ConcurrentDictionary<int, MyAreaCoordinates>();
+    //public MyArea(MyVector2 dimensions, params MyColor[] colors)
+    //{
+    //    _colors = colors;
+    //    Dimensions = dimensions;
+    //    Correlations = new ConcurrentDictionary<int, MyAreaCoordinates>();
 
-        OpaquePixelsCount = 0;
-        _hash = 0;
-        for (int i = 0; i < _colors.Length; i++)
-        {
-            if (_colors[i].A > 0f)
-                OpaquePixelsCount++;
-            _hash += (i + 1) * _colors[i].GetHashCode() * short.MaxValue;
-        }
-        _hash += dimensions.GetHashCode();
+    //    OpaquePixelsCount = 0;
+    //    _hash = 0;
+    //    for (int i = 0; i < _colors.Length; i++)
+    //    {
+    //        if (_colors[i].A > 0f)
+    //            OpaquePixelsCount++;
+    //        _hash += (i + 1) * _colors[i].GetHashCode() * short.MaxValue;
+    //    }
+    //    _hash += dimensions.GetHashCode();
 
-        Score = (long)(Mathf.Pow(OpaquePixelsCount, 3f) / Dimensions.Square);
-    }
+    //    Score = (long)(Mathf.Pow(OpaquePixelsCount, 3f) / Dimensions.Square);
+    //}
 
     public MyArea(MyVector2 dimensions, int spriteIndex, MyRect spriteRect, params MyColor[] colors)
     {
@@ -92,25 +92,25 @@ public class MyArea
         return new MyArea(dimensions, spriteIndex, new MyRect(x, y, dimensions.X, dimensions.Y), colors);
     }
 
-    public static MyArea CreateFromSprite(MyColor[][] sprite, int x, int y, MyVector2 dimensions)
-    {
-        var colors = new MyColor[dimensions.Square];
-        for (int xx = 0; xx < dimensions.X; xx++)
-            for (int yy = 0; yy < dimensions.Y; yy++)
-            {
-                var colorsIndex = xx + yy * dimensions.X;
-                var spriteX = x + xx;
-                var spriteY = y + yy;
-                if (colorsIndex > colors.Length - 1)
-                    Debug.LogError($"colors[colorsIndex] is out of range! colors.Length = {colors.Length}, colorsIndex = {colorsIndex}");
-                if (spriteX > sprite.Length - 1)
-                    Debug.LogError($"sprite[spriteX] is out of range! sprite.Length = {sprite.Length}, spriteX = {spriteX}");
-                if (spriteY > sprite[spriteX].Length - 1)
-                    Debug.LogError($"sprite[spriteX][spriteY] is out of range! sprite[spriteX].Length = {sprite[spriteX].Length}, spriteY = {spriteY}");
-                colors[xx + yy * dimensions.X] = sprite[x + xx][y + yy];
-            }
-        return new MyArea(dimensions, colors);
-    }
+    //public static MyArea CreateFromSprite(MyColor[][] sprite, int x, int y, MyVector2 dimensions)
+    //{
+    //    var colors = new MyColor[dimensions.Square];
+    //    for (int xx = 0; xx < dimensions.X; xx++)
+    //        for (int yy = 0; yy < dimensions.Y; yy++)
+    //        {
+    //            var colorsIndex = xx + yy * dimensions.X;
+    //            var spriteX = x + xx;
+    //            var spriteY = y + yy;
+    //            if (colorsIndex > colors.Length - 1)
+    //                Debug.LogError($"colors[colorsIndex] is out of range! colors.Length = {colors.Length}, colorsIndex = {colorsIndex}");
+    //            if (spriteX > sprite.Length - 1)
+    //                Debug.LogError($"sprite[spriteX] is out of range! sprite.Length = {sprite.Length}, spriteX = {spriteX}");
+    //            if (spriteY > sprite[spriteX].Length - 1)
+    //                Debug.LogError($"sprite[spriteX][spriteY] is out of range! sprite[spriteX].Length = {sprite[spriteX].Length}, spriteY = {spriteY}");
+    //            colors[xx + yy * dimensions.X] = sprite[x + xx][y + yy];
+    //        }
+    //    return new MyArea(dimensions, colors);
+    //}
 
     public static void EraseAreaFromSprite(MyColor[][] sprite, int x, int y, MyVector2 dimensions)
     {

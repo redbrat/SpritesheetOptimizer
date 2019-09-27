@@ -29,7 +29,7 @@ public class DefaultScoreCounter : IScoreCounter
             //areaEnumerator.EnumerateCopy(areaDimensions, (sprite, x, y) =>
             areaEnumerator.Enumerate(areaDimensions, (sprite, spriteIndex, x, y) =>
             {
-                var comparedArea = MyArea.CreateFromSprite(sprite, x, y, areaDimensions);
+                var comparedArea = MyArea.CreateFromSprite(sprite, spriteIndex, x, y, areaDimensions);
                 if (comparedArea.GetHashCode() == area.GetHashCode())
                 {
                     //MyArea.EraseAreaFromSprite(sprite, x, y, areaDimensions);

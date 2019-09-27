@@ -144,7 +144,7 @@ public class OptimizerAlgorythm
                     var spriteIndex = index - areaVariantIndex * sprites.Length;
                     var targetArea = areaVariants[areaVariantIndex];
                     var mapOfEmptinessForAreaAndSprite = mapsOfEmptiness[targetArea][spriteIndex];
-                    getUniqueAreas(targetArea, sprites[spriteIndex], areas, areaDirtyScores, mapOfEmptinessForAreaAndSprite);
+                    getUniqueAreas(targetArea, sprites[spriteIndex], spriteIndex, areas, areaDirtyScores, mapOfEmptinessForAreaAndSprite);
                 });
             }
             catch (AggregateException ae)
@@ -224,7 +224,7 @@ public class OptimizerAlgorythm
                         {
                             if (spritesMapOfEmptinessCopy[x][y])
                                 continue;
-                            var comparedArea = MyArea.CreateFromSprite(spriteCopy, x, y, areaDimensions);
+                            var comparedArea = MyArea.CreateFromSprite(spriteCopy, i, x, y, areaDimensions);
                             if (comparedArea.GetHashCode() == candidate.GetHashCode())
                             {
                                 MyArea.EraseAreaFromSprite(spriteCopy, x, y, areaDimensions);
@@ -287,7 +287,7 @@ public class OptimizerAlgorythm
                     {
                         if (spritesMapOfEmptiness[x][y])
                             continue;
-                        var comparedArea = MyArea.CreateFromSprite(sprite, x, y, winnerAreaDimensions);
+                        var comparedArea = MyArea.CreateFromSprite(sprite, i, x, y, winnerAreaDimensions);
                         if (comparedArea.GetHashCode() == winnerArea.GetHashCode())
                         {
                             MyArea.EraseAreaFromSprite(sprite, x, y, winnerAreaDimensions);
@@ -382,7 +382,7 @@ public class OptimizerAlgorythm
         return dest;
     }
 
-    private static void getUniqueAreas(MyVector2 areaResolution, MyColor[][] sprite, ConcurrentDictionary<int, MyArea> areas, ConcurrentDictionary<int, long> areaDirtyScores, bool[][] mapOfEmptiness)
+    private static void getUniqueAreas(MyVector2 areaResolution, MyColor[][] sprite, int spriteIndex, ConcurrentDictionary<int, MyArea> areas, ConcurrentDictionary<int, long> areaDirtyScores, bool[][] mapOfEmptiness)
     {
         var areaSquare = areaResolution.X * areaResolution.Y;
         for (int x = 0; x < sprite.Length - areaResolution.X; x++)
@@ -392,7 +392,7 @@ public class OptimizerAlgorythm
                 ProcessedAreas++;
                 if (mapOfEmptiness[x][y])
                     continue;
-                var area = MyArea.CreateFromSprite(sprite, x, y, areaResolution);
+                var area = MyArea.CreateFromSprite(sprite, spriteIndex, x, y, areaResolution);
                 var hash = area.GetHashCode();
                 if (areas.TryAdd(hash, area))
                     UniqueAreas++;
