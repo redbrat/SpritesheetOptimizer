@@ -1,6 +1,6 @@
 ﻿struct areaStruct
 {
-	int SpriteIndex;
+	int MetaAndSpriteIndex; //Для индекса спрайта вполне хватит и трех байт. Даже двух, я думаю, хватило бы. Поэтому 1й байт - для мета-информации
 	int XAndY; //Экономим место, т.к. эти буфферы тянут на сотни мегабайт...
 	int WidthAndHeight;
 };
@@ -86,12 +86,19 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 	TestValue2 = 0;*/
 
 	areaStruct area = AreasBuffer[id.x];
+
+	int meta = area.MetaAndSpriteIndex >> 24 & 255;
+	if (meta == 0)
+		return;
+
+	int spriteIndex = area.MetaAndSpriteIndex & 16777215;
+
 	int areaX = area.XAndY >> 16 & 65535;
 	int areaY = area.XAndY & 65535;
 	int areaWidth = area.WidthAndHeight >> 16 & 65535;
 	int areaHeight = area.WidthAndHeight & 65535;
 
-	registryStruct spriteInfo = RegistryBuffer[area.SpriteIndex];
+	registryStruct spriteInfo = RegistryBuffer[spriteIndex];
 	int areaSpriteWidth = spriteInfo.WidthAndHeight >> 16 & 65535;
 	int areaspriteHeight = spriteInfo.WidthAndHeight & 65535;
 	int areaSpriteOffset = spriteInfo.SpritesDataOffset;

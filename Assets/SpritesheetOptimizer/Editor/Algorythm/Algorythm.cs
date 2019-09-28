@@ -117,13 +117,13 @@ public class Algorythm
 
     private struct areaStruct
     {
-        public int SpriteIndex;
+        public int MetaAndSpriteIndex; //Для индекса спрайта вполне хватит и трех байт. Даже двух, я думаю, хватило бы. Поэтому 1й байт - для мета-информации
         public int XAndY; //Экономим место, т.к. эти буфферы тянут на сотни мегабайт...
         public int WidthAndHeight;
 
-        public areaStruct(int spriteIndex, int xAndY, int widthAndHeight)
+        public areaStruct(int metaAndSpriteIndex, int xAndY, int widthAndHeight)
         {
-            SpriteIndex = spriteIndex;
+            MetaAndSpriteIndex = metaAndSpriteIndex;
             XAndY = xAndY;
             WidthAndHeight = widthAndHeight;
         }
@@ -231,7 +231,9 @@ public class Algorythm
         for (int i = 0; i < areasList.Count; i++)
         {
             var area = areasList[i];
-            areas[i] = new areaStruct(area.SpriteIndex, area.SpriteRect.X << 16 | area.SpriteRect.Y, area.SpriteRect.Width << 16 | area.SpriteRect.Height);
+            var initialMask = 1;
+            var metaAndSpriteIndex = initialMask << 24 | area.SpriteIndex & 16777215;
+            areas[i] = new areaStruct(metaAndSpriteIndex, area.SpriteRect.X << 16 | area.SpriteRect.Y, area.SpriteRect.Width << 16 | area.SpriteRect.Height);
         }
 
         var algorythmKernel = _computeShader.FindKernel("CSMain");
@@ -248,11 +250,17 @@ public class Algorythm
 
         var resultBuffer = new ComputeBuffer(areasList.Count, 4);
 
-        _computeShader.SetBuffer(algorythmKernel, "DataBuffer", dataBuffer);
         _computeShader.SetBuffer(algorythmKernel, "RegistryBuffer", registryBuffer);
-        _computeShader.SetBuffer(algorythmKernel, "AreasBuffer", areasBuffer);
         _computeShader.SetBuffer(algorythmKernel, "ResultBuffer", resultBuffer);
-        _computeShader.SetInt("Divider", 1000);
+        _computeShader.SetBuffer(algorythmKernel, "DataBuffer", dataBuffer);
+        _computeShader.SetBuffer(algorythmKernel, "AreasBuffer", areasBuffer);
+        //_computeShader.SetInt("Divider", 1000);
+
+        //while (UnprocessedPixels > 0)
+        //{
+        //    if (_ct.IsCancellationRequested)
+        //        break;
+        //}
         _computeShader.SetInt("AreasCount", _allAreas.Count());
         _computeShader.SetInt("SpritesCount", _sprites.Length);
 
