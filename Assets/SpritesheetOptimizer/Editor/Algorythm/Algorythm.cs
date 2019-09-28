@@ -271,7 +271,7 @@ public class Algorythm
             var area = areasList[a];
 
             var countForTheArea = 0;
-            for (int i = 0; i < 8; i++)
+            for (int i = 0; i < _sprites.Length; i++)
             {
                 var sprite = _sprites[i];
                 var lastSpriteX = sprite.Length - area.Dimensions.X;
@@ -298,28 +298,46 @@ public class Algorythm
             counts.Add(countForTheArea);
         }
 
-        counts = counts.OrderByDescending(c => c).ToList();
-        for (int i = 0; i < 100; i++)
-        {
-            Debug.Log($"area #{i}: ops count - {counts[i]}");
-        }
-
-        return result;
+        var maxCount = counts.OrderByDescending(c => c).First();
+        var chunksNumber = Mathf.CeilToInt(maxCount / (float)maxOpsCountAllowed);
+        var span = Mathf.CeilToInt(_sprites.Length / chunksNumber);
+        Debug.LogError($"maxCount = {maxCount}, span = {span}, chunksNumber = {chunksNumber}, sprites.Length = {_sprites.Length}");
+        //for (int i = 0; i < 100; i++)
+        //{
+        //    Debug.Log($"area #{i}: ops count - {counts[i]}");
+        //}
 
         var stopWatch = new System.Diagnostics.Stopwatch();
         stopWatch.Start();
 
+        var chunkResultsList = new List<int[]>();
         var iterationsCount = Mathf.CeilToInt(_allAreas.Count() / (float)groupSizeX);
-        _computeShader.Dispatch(algorythmKernel, iterationsCount, 1, 1);
+        for (int i = 0; i < chunksNumber; i++)
+        {
+            _computeShader.SetInt("SpriteStartIndex", i * span);
+            _computeShader.SetInt("SpriteEndIndex", (i + 1) * span);
+
+            _computeShader.Dispatch(algorythmKernel, iterationsCount, 1, 1);
+
+            var chunkResultsArray = new int[areas.Length];
+            resultBuffer.GetData(chunkResultsArray);
+            chunkResultsList.Add(chunkResultsArray);
+        }
 
         stopWatch.Stop();
         // Get the elapsed time as a TimeSpan value.
         var ts = stopWatch.Elapsed;
 
-        Debug.Log($"Диспатч прошел. Занял он {ts}");
-
         var resultData = new int[areas.Length];
-        resultBuffer.GetData(resultData);
+        for (int i = 0; i < resultData.Length; i++)
+        {
+            var totalScore = 0;
+            for (int j = 0; j < chunkResultsList.Count; j++)
+                totalScore += chunkResultsList[j][i];
+            resultData[i] = totalScore;
+        }
+
+        Debug.Log($"Диспатч прошел. Занял он {ts}");
 
         Debug.Log($"Забрали результат");
 
@@ -332,21 +350,29 @@ public class Algorythm
         var testValues1List = new List<int>();
         var testValues2List = new List<int>();
 
-        for (int j = 0; j < /*areasList.Count*/100; j++)
+        for (int m = 0; m < /*areasList.Count*/100; m++)
         {
             //var i = j;
-            var (count, testValue1, testValue2) = countScoreForArea(areasList[j]);
-            scoresList.Add(count * (int)areasList[j].Score);
-            testValues1List.Add(testValue1);
-            testValues2List.Add(testValue2);
+            var (count, testValue1, testValue2) = countScoreForArea(areasList[m]);
+            var c = count;
+            var ar = areasList[m];
+            var s = (int)ar.Score;
+            if (s == 0 || c == 0)
+            {
+
+            }
+            scoresList.Add(c * s);
+            //testValues1List.Add(testValue1);
+            //testValues2List.Add(testValue2);
         }
 
         var resultIsCorrect = true;
-        for (int i = 0; i < testValues1List.Count; i++)
+        for (int n = 0; n < scoresList.Count; n++)
         {
-            var s = (int)areasList[i].Score;
-            var a = resultData[i];
-            var b = testValues1List[i];
+            //var s = (int)areasList[i].Score;
+            var a = resultData[n];
+            var b = scoresList[n];
+            Debug.Log($"checking id {a} == {b}");
             if (a != b)
             {
                 resultIsCorrect = false;
@@ -396,11 +422,11 @@ public class Algorythm
                             var areaPixel = _sprites[area.SpriteIndex][area.SpriteRect.X + areaX][area.SpriteRect.Y + areaY];
                             testValue1 += areaPixel.Color;
                             testValue2 += candidatePixel.Color;
-                            //if (areaPixel.Color != candidatePixel.Color)
-                            //{
-                            //    maybeThis = false;
-                            //    break;
-                            //}
+                            if (areaPixel.Color != candidatePixel.Color)
+                            {
+                                maybeThis = false;
+                                break;
+                            }
                             //if (areaPixel.R != candidatePixel.R || areaPixel.G != candidatePixel.G || areaPixel.B != candidatePixel.B || areaPixel.A != candidatePixel.A)
                             //{
                             //    maybeThis = false;

@@ -133,6 +133,8 @@ public class GpuAreaFetcher : IAreaFetcher
                 if (mapOfEmptiness[x][y])
                     continue;
                 var area = MyArea.CreateFromSprite(sprite, spriteIndex, x, y, areaResolution);
+                if (area.Score == 0)
+                    continue;
                 var hash = area.GetHashCode();
                 areas.TryAdd(hash, area);
             }

@@ -20,8 +20,11 @@ int Divider; //Чтобы нам хватило места в int для score
 int AreasCount; //Чтобы знать где остановиться
 int SpritesCount; //По идее можно, наверное, взять из RegistryBuffer, но, даже если можно, быстрее закешировать.
 
-int TestValue1;
-int TestValue2;
+int SpriteStartIndex;
+int SpriteEndIndex;
+
+//int TestValue1;
+//int TestValue2;
 
 int getScoreFromSprite(registryStruct spriteInfo, int areaSpriteOffset, int areaSpriteWidth, int areaX, int areaY, int areaWidth, int areaHeight)
 {
@@ -53,14 +56,14 @@ int getScoreFromSprite(registryStruct spriteInfo, int areaSpriteOffset, int area
 					int candidateY = spriteY + y;
 
 					int sampleColor = DataBuffer[areaSpriteOffset + sampleX * areaSpriteWidth + sampleY];
-					TestValue1 += sampleColor;
+					//TestValue1 += sampleColor;
 					int candidateColor = DataBuffer[spriteOffset + candidateX * spriteWidth + candidateY];
-					TestValue2 += candidateColor; 
-					/*if (sampleColor != candidateColor)
+					//TestValue2 += candidateColor; 
+					if (sampleColor != candidateColor)
 					{
 						maybeThis = false;
 						break;
-					}*/
+					}
 				}
 
 				if (!maybeThis)
@@ -79,8 +82,8 @@ int getScoreFromSprite(registryStruct spriteInfo, int areaSpriteOffset, int area
 [numthreads(512, 1, 1)]
 void CSMain(uint3 id : SV_DispatchThreadID)
 {
-	TestValue1 = 0;
-	TestValue2 = 0;
+	/*TestValue1 = 0;
+	TestValue2 = 0;*/
 
 	areaStruct area = AreasBuffer[id.x];
 	int areaX = area.XAndY >> 16 & 65535;
@@ -111,13 +114,13 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 	int singleScore = opaquePizels * opaquePizels * opaquePizels / square;
 
 	int coincidentsCount = 0;
-	for (int i = 0; i < 8; i++)
+	for (int i = SpriteStartIndex; i < SpriteEndIndex && i < SpritesCount; i++)
 	{
-		registryStruct currentSpriteInfo = RegistryBuffer[area.SpriteIndex];
+		registryStruct currentSpriteInfo = RegistryBuffer[i];
 		coincidentsCount += getScoreFromSprite(currentSpriteInfo, areaSpriteOffset, areaSpriteWidth, areaX, areaY, areaWidth, areaHeight);
 	}
 
-	ResultBuffer[id.x] = TestValue2;// coincidentsCount* singleScore;
+	ResultBuffer[id.x] = coincidentsCount * singleScore;
 	/*
 
 	int radiusX = PreferredAreaWidth / 2;
