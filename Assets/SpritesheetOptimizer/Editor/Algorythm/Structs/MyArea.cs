@@ -1,5 +1,4 @@
-﻿using System.Collections.Generic;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using UnityEngine;
 
 public class MyArea
@@ -14,11 +13,15 @@ public class MyArea
 
     public readonly ConcurrentDictionary<int, MyAreaCoordinates> Correlations;
 
+    public readonly ConcurrentBag<MyAreaCoordinates> CorrelationsBag;
+
     public readonly long Score;
 
     public readonly int SpriteIndex;
 
     public readonly MyRect SpriteRect;
+
+    public bool Selected;
 
     //public MyArea(MyVector2 dimensions, params MyColor[] colors)
     //{
@@ -44,6 +47,7 @@ public class MyArea
         _colors = colors;
         Dimensions = dimensions;
         Correlations = new ConcurrentDictionary<int, MyAreaCoordinates>();
+        CorrelationsBag = new ConcurrentBag<MyAreaCoordinates>();
 
         OpaquePixelsCount = 0;
         _hash = 0;

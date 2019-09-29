@@ -141,11 +141,11 @@ public class Algorythm
         }
     }
 
-    public async Task<Dictionary<MyArea, List<MyAreaCoordinates>>> Run()
+    public async Task<List<MyArea>> Run()
     {
         OverallProgressReport.OperationDescription = "Removing areas from picture";
         OverallProgressReport.OperationsCount = UnprocessedPixels;
-        var result = new Dictionary<MyArea, List<MyAreaCoordinates>>();
+        var result = new List<MyArea>();
 
         Debug.Log($"Составляем список всех уникальных областей...");
         await setAreasAndScores();
@@ -220,11 +220,13 @@ public class Algorythm
             var height = sprite[0].Length;
 
             registry[i] = new registryStruct(dataOffset, width << 16 | height);
-
-            for (int x = 0; x < width; x++)
-                for (int y = 0; y < height; y++)
-                    data[dataOffset++] = sprite[x][y].R << 24 | sprite[x][y].G << 16 | sprite[x][y].B << 8 | sprite[x][y].A;
         }
+
+        var algorythmKernel = _computeShader.FindKernel("CSMain");
+        var (groupSizeX, groupSizeY, groupSizeZ) = _computeShader.GetKernelThreadGroupSizes(algorythmKernel);
+
+        var registryBuffer = new ComputeBuffer(_sprites.Length, 8);
+        registryBuffer.SetData(registry);
 
         var areasList = _allAreas.Select(kvp => kvp.Value).ToList();
         var areas = new areaStruct[areasList.Count];
@@ -236,116 +238,189 @@ public class Algorythm
             areas[i] = new areaStruct(metaAndSpriteIndex, area.SpriteRect.X << 16 | area.SpriteRect.Y, area.SpriteRect.Width << 16 | area.SpriteRect.Height);
         }
 
-        var algorythmKernel = _computeShader.FindKernel("CSMain");
-        var (groupSizeX, groupSizeY, groupSizeZ) = _computeShader.GetKernelThreadGroupSizes(algorythmKernel);
-
-        var areasBuffer = new ComputeBuffer(areasList.Count, 12);
-        areasBuffer.SetData(areas);
-
-        var registryBuffer = new ComputeBuffer(_sprites.Length, 8);
-        registryBuffer.SetData(registry);
-
-        var dataBuffer = new ComputeBuffer(dataSize, 4);
-        dataBuffer.SetData(data);
-
         var resultBuffer = new ComputeBuffer(areasList.Count, 4);
 
         _computeShader.SetBuffer(algorythmKernel, "RegistryBuffer", registryBuffer);
         _computeShader.SetBuffer(algorythmKernel, "ResultBuffer", resultBuffer);
-        _computeShader.SetBuffer(algorythmKernel, "DataBuffer", dataBuffer);
-        _computeShader.SetBuffer(algorythmKernel, "AreasBuffer", areasBuffer);
-        //_computeShader.SetInt("Divider", 1000);
-
-        //while (UnprocessedPixels > 0)
-        //{
-        //    if (_ct.IsCancellationRequested)
-        //        break;
-        //}
         _computeShader.SetInt("AreasCount", _allAreas.Count());
         _computeShader.SetInt("SpritesCount", _sprites.Length);
+        //_computeShader.SetInt("Divider", 1000);
 
-        Debug.LogError($"areas.Length = {areas.Length}");
-        Debug.LogError($"registry.Length = {registry.Length}");
-        Debug.LogError($"data.Length = {data.Length}");
-
-        Debug.LogError($"_allAreas.Count() = {_allAreas.Count()}");
+        var dataBuffer = new ComputeBuffer(dataSize, 4);
+        var areasBuffer = new ComputeBuffer(areasList.Count, 12);
 
         var maxOpsCountAllowed = 295000;
 
-        var counts = new List<int>();
-
-        for (int a = 0; a < areasList.Count; a++)
+        while (UnprocessedPixels > 0)
         {
-            var area = areasList[a];
+            if (_ct.IsCancellationRequested)
+                break;
 
-            var countForTheArea = 0;
+            // 1. Устанавливаем самые свежие версии данных и областей
+
+            dataBuffer.SetData(data);
+            areasBuffer.SetData(areas);
+
+            _computeShader.SetBuffer(algorythmKernel, "DataBuffer", dataBuffer);
+            _computeShader.SetBuffer(algorythmKernel, "AreasBuffer", areasBuffer);
+
+
+            // 2. Считаем сколько нам нужно обрабатывать спрайтов за раз, чтобы видюха смогла это переварить
+
+            var counts = new List<int>();
+
+            for (int a = 0; a < areasList.Count; a++)
+            {
+                var area = areasList[a];
+
+                var countForTheArea = 0;
+                for (int i = 0; i < _sprites.Length; i++)
+                {
+                    var sprite = _sprites[i];
+                    var lastSpriteX = sprite.Length - area.Dimensions.X;
+                    var lastSpriteY = sprite[0].Length - area.Dimensions.Y;
+
+                    countForTheArea += lastSpriteX * lastSpriteY * area.Dimensions.Square;
+                }
+
+                counts.Add(countForTheArea);
+            }
+
+            var maxCount = counts.OrderByDescending(c => c).First();
+            var chunksNumber = Mathf.CeilToInt(maxCount / (float)maxOpsCountAllowed);
+            var span = Mathf.CeilToInt(_sprites.Length / chunksNumber);
+            //Debug.LogError($"maxCount = {maxCount}, span = {span}, chunksNumber = {chunksNumber}, sprites.Length = {_sprites.Length}");
+
+
+            // 3. Диспатчим и забираем результат
+
+            var stopWatch = new System.Diagnostics.Stopwatch();
+            stopWatch.Start();
+
+            var chunkResultsList = new List<int[]>();
+            var iterationsCount = Mathf.CeilToInt(_allAreas.Count() / (float)groupSizeX);
+            for (int i = 0; i < chunksNumber; i++)
+            {
+                _computeShader.SetInt("SpriteStartIndex", i * span);
+                _computeShader.SetInt("SpriteEndIndex", (i + 1) * span);
+
+                _computeShader.Dispatch(algorythmKernel, iterationsCount, 1, 1);
+
+                var chunkResultsArray = new int[areas.Length];
+                resultBuffer.GetData(chunkResultsArray);
+                chunkResultsList.Add(chunkResultsArray);
+            }
+
+            stopWatch.Stop();
+            var ts = stopWatch.Elapsed;
+            //Debug.Log($"Диспатч прошел. Занял он {ts}");
+
+            var resultData = new int[areas.Length];
+            for (int i = 0; i < resultData.Length; i++)
+            {
+                var totalScore = 0;
+                for (int j = 0; j < chunkResultsList.Count; j++)
+                    totalScore += chunkResultsList[j][i];
+                resultData[i] = totalScore;
+            }
+
+
+            // 4. Выясняем победителя и забираем его результат из данных
+
+            var maxScoreIndex = 0;
+            var maxScore = -1;
+            for (int i = 0; i < resultData.Length; i++)
+            {
+                if (resultData[i] > maxScore)
+                {
+                    maxScore = resultData[i];
+                    maxScoreIndex = i;
+                }
+            }
+
+            var theWinnerArea = _allAreas[maxScoreIndex];
+            theWinnerArea.Selected = true;
+
+            var pixelsRemoved = 0;
+            Parallel.For(0, _sprites.Length, (spriteIndex, loopState) =>
+            {
+                var sprite = _sprites[spriteIndex];
+                var lastSpriteX = sprite.Length - theWinnerArea.Dimensions.X;
+                var lastSpriteY = sprite[0].Length - theWinnerArea.Dimensions.Y;
+
+                for (int spriteX = 0; spriteX < lastSpriteX; spriteX++)
+                {
+                    for (int spriteY = 0; spriteY < lastSpriteY; spriteY++)
+                    {
+                        var maybeThis = true;
+                        for (int areaX = 0; areaX < theWinnerArea.Dimensions.X; areaX++)
+                        {
+                            for (int areaY = 0; areaY < theWinnerArea.Dimensions.Y; areaY++)
+                            {
+                                var pixelX = spriteX + areaX;
+                                var pixelY = spriteY + areaY;
+                                var candidatePixel = sprite[pixelX][pixelY];
+
+                                var areaPixel = _sprites[theWinnerArea.SpriteIndex][theWinnerArea.SpriteRect.X + areaX][theWinnerArea.SpriteRect.Y + areaY];
+                                if (areaPixel.Color != candidatePixel.Color)
+                                {
+                                    maybeThis = false;
+                                    break;
+                                }
+                            }
+
+                            if (!maybeThis)
+                                break;
+                        }
+
+                        if (maybeThis)
+                        {
+                            var newCorrelation = new MyAreaCoordinates(spriteIndex, spriteX, spriteY, theWinnerArea.Dimensions.X, theWinnerArea.Dimensions.Y);
+                            MyArea.EraseAreaFromSprite(sprite, spriteX, spriteY, theWinnerArea.Dimensions);
+                            pixelsRemoved += theWinnerArea.OpaquePixelsCount;
+                            theWinnerArea.CorrelationsBag.Add(newCorrelation);
+                        }
+                    }
+                }
+            });
+
+            UnprocessedPixels -= pixelsRemoved;
+
+
+            // 5. Обновляем данные и области
+
+            dataOffset = 0;
             for (int i = 0; i < _sprites.Length; i++)
             {
                 var sprite = _sprites[i];
-                var lastSpriteX = sprite.Length - area.Dimensions.X;
-                var lastSpriteY = sprite[0].Length - area.Dimensions.Y;
+                var width = sprite.Length;
+                var height = sprite[0].Length;
 
-                countForTheArea += lastSpriteX * lastSpriteY * area.Dimensions.Square;
-
-                //for (int spriteX = 0; spriteX < lastSpriteX; spriteX++)
-                //{
-                //    for (int spriteY = 0; spriteY < lastSpriteY; spriteY++)
-                //    {
-
-                //        for (int areaX = 0; areaX < area.Dimensions.X; areaX++)
-                //        {
-                //            for (int areaY = 0; areaY < area.Dimensions.Y; areaY++)
-                //            {
-
-                //            }
-                //        }
-                //    }
-                //}
+                for (int x = 0; x < width; x++)
+                    for (int y = 0; y < height; y++)
+                        data[dataOffset++] = sprite[x][y].R << 24 | sprite[x][y].G << 16 | sprite[x][y].B << 8 | sprite[x][y].A;
             }
 
-            counts.Add(countForTheArea);
+            for (int i = 0; i < areasList.Count; i++)
+            {
+                var area = areasList[i];
+                var mask = area.Selected ? 0 : 1;
+                var metaAndSpriteIndex = mask << 24 | area.SpriteIndex & 16777215;
+                areas[i].MetaAndSpriteIndex = metaAndSpriteIndex;
+                //areas[i] = new areaStruct(metaAndSpriteIndex, area.SpriteRect.X << 16 | area.SpriteRect.Y, area.SpriteRect.Width << 16 | area.SpriteRect.Height);
+            }
         }
 
-        var maxCount = counts.OrderByDescending(c => c).First();
-        var chunksNumber = Mathf.CeilToInt(maxCount / (float)maxOpsCountAllowed);
-        var span = Mathf.CeilToInt(_sprites.Length / chunksNumber);
-        Debug.LogError($"maxCount = {maxCount}, span = {span}, chunksNumber = {chunksNumber}, sprites.Length = {_sprites.Length}");
+        //Debug.LogError($"areas.Length = {areas.Length}");
+        //Debug.LogError($"registry.Length = {registry.Length}");
+        //Debug.LogError($"data.Length = {data.Length}");
+
+        //Debug.LogError($"_allAreas.Count() = {_allAreas.Count()}");
+
         //for (int i = 0; i < 100; i++)
         //{
         //    Debug.Log($"area #{i}: ops count - {counts[i]}");
         //}
-
-        var stopWatch = new System.Diagnostics.Stopwatch();
-        stopWatch.Start();
-
-        var chunkResultsList = new List<int[]>();
-        var iterationsCount = Mathf.CeilToInt(_allAreas.Count() / (float)groupSizeX);
-        for (int i = 0; i < chunksNumber; i++)
-        {
-            _computeShader.SetInt("SpriteStartIndex", i * span);
-            _computeShader.SetInt("SpriteEndIndex", (i + 1) * span);
-
-            _computeShader.Dispatch(algorythmKernel, iterationsCount, 1, 1);
-
-            var chunkResultsArray = new int[areas.Length];
-            resultBuffer.GetData(chunkResultsArray);
-            chunkResultsList.Add(chunkResultsArray);
-        }
-
-        stopWatch.Stop();
-        // Get the elapsed time as a TimeSpan value.
-        var ts = stopWatch.Elapsed;
-
-        var resultData = new int[areas.Length];
-        for (int i = 0; i < resultData.Length; i++)
-        {
-            var totalScore = 0;
-            for (int j = 0; j < chunkResultsList.Count; j++)
-                totalScore += chunkResultsList[j][i];
-            resultData[i] = totalScore;
-        }
-
-        Debug.Log($"Диспатч прошел. Занял он {ts}");
 
         Debug.Log($"Забрали результат");
 
@@ -354,48 +429,41 @@ public class Algorythm
         areasBuffer.Dispose();
         resultBuffer.Dispose();
 
-        var scoresList = new List<int>();
-        var testValues1List = new List<int>();
-        var testValues2List = new List<int>();
+        //var scoresList = new List<int>();
+        //var testValues1List = new List<int>();
+        //var testValues2List = new List<int>();
 
-        for (int m = 0; m < /*areasList.Count*/100; m++)
-        {
-            //var i = j;
-            var (count, testValue1, testValue2) = countScoreForArea(areasList[m]);
-            var c = count;
-            var ar = areasList[m];
-            var s = (int)ar.Score;
-            if (s == 0 || c == 0)
-            {
-
-            }
-            scoresList.Add(c * s);
-            //testValues1List.Add(testValue1);
-            //testValues2List.Add(testValue2);
-        }
-
-        var resultIsCorrect = true;
-        for (int n = 0; n < scoresList.Count; n++)
-        {
-            //var s = (int)areasList[i].Score;
-            var a = resultData[n];
-            var b = scoresList[n];
-            Debug.Log($"checking id {a} == {b}");
-            if (a != b)
-            {
-                resultIsCorrect = false;
-                break;
-            }
-        }
-
-        Debug.Log($"Результат проверен. Он {resultIsCorrect}.");
-
-        //Debug.Log($"Cписок составили. Начинаем цикл убирания пикселей...");
-        //while (UnprocessedPixels > 0)
+        //for (int m = 0; m < /*areasList.Count*/100; m++)
         //{
-        //    if (_ct.IsCancellationRequested)
-        //        break;
+        //    //var i = j;
+        //    var (count, testValue1, testValue2) = countScoreForArea(areasList[m]);
+        //    var c = count;
+        //    var ar = areasList[m];
+        //    var s = (int)ar.Score;
+        //    if (s == 0 || c == 0)
+        //    {
+
+        //    }
+        //    scoresList.Add(c * s);
+        //    //testValues1List.Add(testValue1);
+        //    //testValues2List.Add(testValue2);
         //}
+
+        //var resultIsCorrect = true;
+        //for (int n = 0; n < scoresList.Count; n++)
+        //{
+        //    //var s = (int)areasList[i].Score;
+        //    var a = resultData[n];
+        //    var b = scoresList[n];
+        //    Debug.Log($"checking id {a} == {b}");
+        //    if (a != b)
+        //    {
+        //        resultIsCorrect = false;
+        //        break;
+        //    }
+        //}
+
+        //Debug.Log($"Результат проверен. Он {resultIsCorrect}.");
 
         return result;
     }
