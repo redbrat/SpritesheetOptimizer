@@ -89,9 +89,14 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 
 	int meta = area.MetaAndSpriteIndex >> 24 & 255;
 	if (meta == 0)
+	{
+		ResultBuffer[id.x] = -1;
 		return;
+	}
 
 	int spriteIndex = area.MetaAndSpriteIndex & 16777215;
+	/*ResultBuffer[id.x] = SpriteEndIndex;
+	return;*/
 
 	int areaX = area.XAndY >> 16 & 65535;
 	int areaY = area.XAndY & 65535;

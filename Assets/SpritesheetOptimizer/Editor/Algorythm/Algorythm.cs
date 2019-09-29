@@ -147,63 +147,15 @@ public class Algorythm
         OverallProgressReport.OperationsCount = UnprocessedPixels;
         var result = new List<MyArea>();
 
+        Debug.Log($"-3");
+        Thread.Sleep(1000);
+
         Debug.Log($"Составляем список всех уникальных областей...");
         await setAreasAndScores();
         Debug.Log($"Список составили, начали составлять буфер");
 
-        /*
-         * Т.к. это GPU мы должны положить этот список в буфер
-         * Собсно у нас, самое главное, должен быть регистр - список всех спрайтов, по которым бы будем проходиться, 
-         * и из которых будут браться области, т.е. адресное пространство. Собсно, нужно разделить его на регистр и
-         * собсно хранилище. Через регистр у нас будут сдвиги по нужным осям. Собсно ось будет всего одна, т.к. размеры
-         * текстур совершенно разные.
-         */
-
-        //var registryEntrySize = 8;
-        //var registry = new byte[_sprites.Length * registryEntrySize];
-        //var pixelEntrySize = 4;
-        //var dataSize = 0;
-        //for (int i = 0; i < _sprites.Length; i++)
-        //    dataSize += _sprites[i].Length * _sprites[i][0].Length;
-        //var data = new byte[dataSize * pixelEntrySize];
-
-        //var registryOffset = 0;
-        //var dataOffset = 0;
-        //for (int i = 0; i < _sprites.Length; i++)
-        //{
-        //    var sprite = _sprites[i];
-        //    Buffer.BlockCopy(BitConverter.GetBytes(registryOffset), 0, registry, registryOffset, 4);
-        //    var width = (short)sprite.Length;
-        //    var height = (short)sprite[0].Length;
-        //    Buffer.BlockCopy(BitConverter.GetBytes(width), 0, registry, registryOffset + 2, 2);
-        //    Buffer.BlockCopy(BitConverter.GetBytes(height), 0, registry, registryOffset + 4, 2);
-        //    registryOffset += registryEntrySize;
-
-        //    for (int x = 0; x < sprite.Length; x++)
-        //    {
-        //        for (int y = 0; y < sprite[x].Length; y++)
-        //        {
-        //            data[dataOffset++] = sprite[x][y].R;
-        //            data[dataOffset++] = sprite[x][y].G;
-        //            data[dataOffset++] = sprite[x][y].B;
-        //            data[dataOffset++] = sprite[x][y].A;
-        //        }
-        //    }
-        //}
-
-        //var areaEntrySize = 12;
-        //var areas = new byte[areaEntrySize * _allAreas.Count()];
-        //var areaOffset = 0;
-        //foreach (var kvp in _allAreas)
-        //{
-        //    var area = kvp.Value;
-        //    Buffer.BlockCopy(BitConverter.GetBytes(area.SpriteIndex), 0, areas, areaOffset, 4);
-        //    Buffer.BlockCopy(BitConverter.GetBytes((short)area.SpriteRect.X), 0, areas, areaOffset + 4, 2);
-        //    Buffer.BlockCopy(BitConverter.GetBytes((short)area.SpriteRect.Y), 0, areas, areaOffset + 6, 2);
-        //    Buffer.BlockCopy(BitConverter.GetBytes((short)area.SpriteRect.Width), 0, areas, areaOffset + 8, 2);
-        //    Buffer.BlockCopy(BitConverter.GetBytes((short)area.SpriteRect.Height), 0, areas, areaOffset + 10, 2);
-        //    areaOffset += areaEntrySize;
-        //}
+        Debug.Log($"-2");
+        Thread.Sleep(1000);
 
         var dataSize = 0;
         for (int i = 0; i < _sprites.Length; i++)
@@ -220,7 +172,14 @@ public class Algorythm
             var height = sprite[0].Length;
 
             registry[i] = new registryStruct(dataOffset, width << 16 | height);
+
+            for (int x = 0; x < width; x++)
+                for (int y = 0; y < height; y++)
+                    data[dataOffset++] = sprite[x][y].R << 24 | sprite[x][y].G << 16 | sprite[x][y].B << 8 | sprite[x][y].A;
         }
+
+        Debug.Log($"-1");
+        Thread.Sleep(1000);
 
         var algorythmKernel = _computeShader.FindKernel("CSMain");
         var (groupSizeX, groupSizeY, groupSizeZ) = _computeShader.GetKernelThreadGroupSizes(algorythmKernel);
@@ -238,17 +197,21 @@ public class Algorythm
             areas[i] = new areaStruct(metaAndSpriteIndex, area.SpriteRect.X << 16 | area.SpriteRect.Y, area.SpriteRect.Width << 16 | area.SpriteRect.Height);
         }
 
+        Debug.Log($"0");
+        Thread.Sleep(1000);
+
         var resultBuffer = new ComputeBuffer(areasList.Count, 4);
 
         _computeShader.SetBuffer(algorythmKernel, "RegistryBuffer", registryBuffer);
         _computeShader.SetBuffer(algorythmKernel, "ResultBuffer", resultBuffer);
-        _computeShader.SetInt("AreasCount", _allAreas.Count());
+        _computeShader.SetInt("AreasCount", areasList.Count);
         _computeShader.SetInt("SpritesCount", _sprites.Length);
         //_computeShader.SetInt("Divider", 1000);
 
         var dataBuffer = new ComputeBuffer(dataSize, 4);
         var areasBuffer = new ComputeBuffer(areasList.Count, 12);
 
+        //var maxOpsCountAllowed = 150000;
         var maxOpsCountAllowed = 295000;
 
         while (UnprocessedPixels > 0)
@@ -264,6 +227,8 @@ public class Algorythm
             _computeShader.SetBuffer(algorythmKernel, "DataBuffer", dataBuffer);
             _computeShader.SetBuffer(algorythmKernel, "AreasBuffer", areasBuffer);
 
+            Debug.Log($"1");
+            Thread.Sleep(1000);
 
             // 2. Считаем сколько нам нужно обрабатывать спрайтов за раз, чтобы видюха смогла это переварить
 
@@ -291,6 +256,9 @@ public class Algorythm
             var span = Mathf.CeilToInt(_sprites.Length / chunksNumber);
             //Debug.LogError($"maxCount = {maxCount}, span = {span}, chunksNumber = {chunksNumber}, sprites.Length = {_sprites.Length}");
 
+            Debug.Log($"2");
+            Thread.Sleep(1000);
+
 
             // 3. Диспатчим и забираем результат
 
@@ -298,7 +266,7 @@ public class Algorythm
             stopWatch.Start();
 
             var chunkResultsList = new List<int[]>();
-            var iterationsCount = Mathf.CeilToInt(_allAreas.Count() / (float)groupSizeX);
+            var iterationsCount = Mathf.CeilToInt(areasList.Count / (float)groupSizeX);
             for (int i = 0; i < chunksNumber; i++)
             {
                 _computeShader.SetInt("SpriteStartIndex", i * span);
@@ -324,6 +292,9 @@ public class Algorythm
                 resultData[i] = totalScore;
             }
 
+            Debug.Log($"3");
+            Thread.Sleep(1000);
+
 
             // 4. Выясняем победителя и забираем его результат из данных
 
@@ -338,7 +309,13 @@ public class Algorythm
                 }
             }
 
-            var theWinnerArea = _allAreas[maxScoreIndex];
+            for (int u = 0; u < 100; u++)
+            {
+                var score = resultData[u];
+            }
+
+            Debug.Log($"maxScoreIndex = {maxScoreIndex}, maxScore = {maxScore}");
+            var theWinnerArea = areasList[maxScoreIndex];
             theWinnerArea.Selected = true;
 
             var pixelsRemoved = 0;
@@ -386,6 +363,11 @@ public class Algorythm
 
             UnprocessedPixels -= pixelsRemoved;
 
+            Debug.Log($"Удалено: {pixelsRemoved}. Осталось {UnprocessedPixels}");
+
+            Debug.Log($"4");
+            Thread.Sleep(1000);
+
 
             // 5. Обновляем данные и области
 
@@ -409,6 +391,11 @@ public class Algorythm
                 areas[i].MetaAndSpriteIndex = metaAndSpriteIndex;
                 //areas[i] = new areaStruct(metaAndSpriteIndex, area.SpriteRect.X << 16 | area.SpriteRect.Y, area.SpriteRect.Width << 16 | area.SpriteRect.Height);
             }
+
+            Debug.Log($"5");
+            Thread.Sleep(1000);
+
+            break;
         }
 
         //Debug.LogError($"areas.Length = {areas.Length}");
