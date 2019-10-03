@@ -11,22 +11,40 @@ struct registryStruct
 	int WidthAndHeight;
 };
 
+struct taskStruct
+{
+	int MetaAndSpriteIndex; //Целый int для 1 бита данных выделать слишком жирно, поэтому spriteIndex потеснится
+	int SpriteXAndY;
+	int XAndY;
+};
+
+RWStructuredBuffer<taskStruct> TasksBuffer;
 RWStructuredBuffer<registryStruct> RegistryBuffer;
 RWStructuredBuffer<areaStruct> AreasBuffer;
 RWStructuredBuffer<int> DataBuffer;
 RWStructuredBuffer<int> ResultBuffer;
 
-int Divider; //Чтобы нам хватило места в int для score
-int AreasCount; //Чтобы знать где остановиться
+//int Divider; //Чтобы нам хватило места в int для score
+//int AreasCount; //Чтобы знать где остановиться
 int SpritesCount; //По идее можно, наверное, взять из RegistryBuffer, но, даже если можно, быстрее закешировать.
 
-int SpriteStartIndex;
-int SpriteEndIndex;
+int MaxOpsAllowed;
+int CurrentOpsCount;
+
+int _currentSpriteX;
+int _currentSpriteY;
+int _currentX;
+int _currentY;
+
+//int SpriteStartIndex;
+//int SpriteEndIndex;
+
+
 
 //int TestValue1;
 //int TestValue2;
 
-int getScoreFromSprite(registryStruct spriteInfo, int areaSpriteOffset, int areaSpriteWidth, int areaX, int areaY, int areaWidth, int areaHeight)
+int getScoreFromSprite(registryStruct spriteInfo, int currentSpriteX, int currentSpriteY, int currentAreaX, int currentAreaY, int currentOpsCount, int areaSpriteOffset, int areaSpriteWidth, int areaX, int areaY, int areaWidth, int areaHeight)
 {
 	int result = 0;
 
@@ -38,17 +56,28 @@ int getScoreFromSprite(registryStruct spriteInfo, int areaSpriteOffset, int area
 	int spriteLastY = spriteHeight - areaHeight;
 
 	//TestValue2 += areaX + areaY + areaWidth + areaHeight;
+	int opsCount = currentOpsCount;
 
-	for (int spriteX = 0; spriteX < spriteLastX; spriteX++)
+	for (int spriteX = currentSpriteX; spriteX < spriteLastX; spriteX++)
 	{
-		for (int spriteY = 0; spriteY < spriteLastY; spriteY++)
+		for (int spriteY = currentSpriteY; spriteY < spriteLastY; spriteY++)
 		{
 			bool maybeThis = true;
 
-			for (int x = 0; x < areaWidth; x++)
+			for (int x = currentAreaX; x < areaWidth; x++)
 			{
-				for (int y = 0; y < areaHeight; y++)
+				for (int y = currentAreaY; y < areaHeight; y++)
 				{
+					opsCount++;
+					if (opsCount > MaxOpsAllowed)
+					{
+						_currentSpriteX = spriteX;
+						_currentSpriteY = spriteY;
+						_currentX = x;
+						_currentY = y;
+
+						break;
+					}
 					//TestValue2++;
 					int sampleX = areaX + x;
 					int sampleY = areaY + y;
@@ -66,14 +95,34 @@ int getScoreFromSprite(registryStruct spriteInfo, int areaSpriteOffset, int area
 					}
 				}
 
+				if (opsCount > MaxOpsAllowed)
+					break;
 				if (!maybeThis)
 					break;
 			}
 
+			currentAreaX = 0;
+			currentAreaY = 0;
+
+			if (opsCount > MaxOpsAllowed)
+				break;
 			if (maybeThis)
 				result++;
 		}
+		if (opsCount > MaxOpsAllowed)
+			break;
+
+		currentSpriteY = 0;
 	}
+
+	if (opsCount <= MaxOpsAllowed)
+	{
+		_currentSpriteX = 0;
+		_currentSpriteY = 0;
+		_currentX = 0;
+		_currentY = 0;
+	}
+	CurrentOpsCount = opsCount;
 
 	return result;
 }
@@ -88,13 +137,22 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 	areaStruct area = AreasBuffer[id.x];
 
 	int meta = area.MetaAndSpriteIndex >> 24 & 255;
-	if (meta == 0)
+	if (meta == 0) //Если область уже использована, ее на недо считать
 	{
-		ResultBuffer[id.x] = -1;
+		ResultBuffer[id.x] = 0;
 		return;
 	}
 
-	int spriteIndex = area.MetaAndSpriteIndex & 16777215;
+	taskStruct formerTask = TasksBuffer[id.x];
+
+	int taskMeta = formerTask.MetaAndSpriteIndex >> 24 & 255;
+	if (taskMeta == 0) //Если эту область закончили считать - тоже не надо считать (удивительно!)
+	{
+		ResultBuffer[id.x] = 0;
+		return;
+	}
+
+	int areaSpriteIndex = area.MetaAndSpriteIndex & 16777215;
 	/*ResultBuffer[id.x] = SpriteEndIndex;
 	return;*/
 
@@ -103,17 +161,17 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 	int areaWidth = area.WidthAndHeight >> 16 & 65535;
 	int areaHeight = area.WidthAndHeight & 65535;
 
-	registryStruct spriteInfo = RegistryBuffer[spriteIndex];
-	int areaSpriteWidth = spriteInfo.WidthAndHeight >> 16 & 65535;
-	int areaspriteHeight = spriteInfo.WidthAndHeight & 65535;
-	int areaSpriteOffset = spriteInfo.SpritesDataOffset;
+	registryStruct areaSpriteInfo = RegistryBuffer[areaSpriteIndex];
+	int areaSpriteWidth = areaSpriteInfo.WidthAndHeight >> 16 & 65535;
+	int areaspriteHeight = areaSpriteInfo.WidthAndHeight & 65535;
+	int areaSpriteOffset = areaSpriteInfo.SpritesDataOffset;
 
 	int opaquePizels = 0;
 	for (int x = 0; x < areaWidth; x++)
 	{
 		for (int y = 0; y < areaHeight; y++)
 		{
-			int xx = x + areaX;
+	 		int xx = x + areaX;
 			int yy = y + areaY;
 			int color = DataBuffer[areaSpriteOffset + xx * areaSpriteWidth + yy];
 			int a = color & 255;
@@ -126,10 +184,48 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 	int singleScore = opaquePizels * opaquePizels * opaquePizels / square;
 
 	int coincidentsCount = 0;
-	for (int i = SpriteStartIndex; i < SpriteEndIndex && i < SpritesCount; i++)
+
+	int currentSpriteIndex = formerTask.MetaAndSpriteIndex & 16777215;
+	_currentSpriteX = formerTask.SpriteXAndY >> 16 & 65535;
+	_currentSpriteY = formerTask.SpriteXAndY & 65535;
+	_currentX = formerTask.XAndY >> 16 & 65535;
+	_currentY = formerTask.XAndY & 65535;
+
+	for (int i = currentSpriteIndex; i < SpritesCount; i++)
 	{
 		registryStruct currentSpriteInfo = RegistryBuffer[i];
-		coincidentsCount += getScoreFromSprite(currentSpriteInfo, areaSpriteOffset, areaSpriteWidth, areaX, areaY, areaWidth, areaHeight);
+
+		/*int startX = 0;
+		int startY = 0;
+		if (i == lastTask.SpriteIndex)
+		{
+			startX = lastTask.SpriteX;
+			startY = lastTask.SpriteY;
+		}
+		int endX = 0;
+		int endY = 0;
+		if (i == currentTask.SpriteIndex)
+		{
+			endX = currentTask.SpriteX;
+			endY = currentTask.SpriteY;
+		}*/
+
+		coincidentsCount += getScoreFromSprite(currentSpriteInfo, _currentSpriteX, _currentSpriteY, _currentX, _currentY, CurrentOpsCount, areaSpriteOffset, areaSpriteWidth, areaX, areaY, areaWidth, areaHeight);
+		if (CurrentOpsCount > MaxOpsAllowed)
+		{
+			formerTask.MetaAndSpriteIndex = 1 << 24 | i;
+			formerTask.SpriteXAndY = _currentSpriteX << 16 | _currentSpriteY;
+			formerTask.XAndY = _currentX << 16 | _currentY;
+			TasksBuffer[id.x] = formerTask;
+			break;
+		}
+	}
+	if (CurrentOpsCount <= MaxOpsAllowed)
+	{	//Сообщаем, что закончили и обнуляем
+		formerTask.MetaAndSpriteIndex = 0 << 24 | 0;
+		formerTask.SpriteXAndY = 0;
+		formerTask.XAndY = 0;
+		TasksBuffer[id.x] = formerTask;
 	}
 
 	ResultBuffer[id.x] = coincidentsCount * singleScore;

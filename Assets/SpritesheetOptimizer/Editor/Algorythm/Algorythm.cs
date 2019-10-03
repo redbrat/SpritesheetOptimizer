@@ -141,6 +141,20 @@ public class Algorythm
         }
     }
 
+    private struct taskStruct
+    {
+        public int MetaAndSpriteIndex;
+        public int SpriteXAndY;
+        public int XAndY;
+
+        public taskStruct(int metaAndSpriteIndex, int spriteXAndY, int xAndY)
+        {
+            MetaAndSpriteIndex = metaAndSpriteIndex;
+            SpriteXAndY = spriteXAndY;
+            XAndY = xAndY;
+        }
+    }
+
     public async Task<List<MyArea>> Run()
     {
         OverallProgressReport.OperationDescription = "Removing areas from picture";
@@ -202,17 +216,28 @@ public class Algorythm
 
         var resultBuffer = new ComputeBuffer(areasList.Count, 4);
 
-        _computeShader.SetBuffer(algorythmKernel, "RegistryBuffer", registryBuffer);
-        _computeShader.SetBuffer(algorythmKernel, "ResultBuffer", resultBuffer);
-        _computeShader.SetInt("AreasCount", areasList.Count);
+        var tasks = new taskStruct[areasList.Count];
+        {
+            var initialMask = 1;
+            var metaAndSpriteIndex = initialMask << 24;
+            for (int i = 0; i < tasks.Length; i++)
+                tasks[i] = new taskStruct(metaAndSpriteIndex, 0, 0);
+        }
+        var tasksBuffer = new ComputeBuffer(tasks.Length, 12);
+
+        _computeShader.SetBuffer(algorythmKernel, "RegistryBuffer", registryBuffer); //Это мы каидем и никогда не меняем
+        _computeShader.SetBuffer(algorythmKernel, "ResultBuffer", resultBuffer); //Это мы кидаем и только забираем
+        _computeShader.SetBuffer(algorythmKernel, "TasksBuffer", tasksBuffer); //А это мы устанавливаем вначале и дальше он сам по себе, обновляется каждый диспатч
+        //_computeShader.SetInt("AreasCount", areasList.Count);
         _computeShader.SetInt("SpritesCount", _sprites.Length);
+        _computeShader.SetInt("MaxOpsAllowed", 295000);
         //_computeShader.SetInt("Divider", 1000);
 
         var dataBuffer = new ComputeBuffer(dataSize, 4);
         var areasBuffer = new ComputeBuffer(areasList.Count, 12);
 
         //var maxOpsCountAllowed = 150000;
-        var maxOpsCountAllowed = 295000;
+        //var maxOpsCountAllowed = 295000;
 
         while (UnprocessedPixels > 0)
         {
@@ -226,38 +251,37 @@ public class Algorythm
 
             _computeShader.SetBuffer(algorythmKernel, "DataBuffer", dataBuffer);
             _computeShader.SetBuffer(algorythmKernel, "AreasBuffer", areasBuffer);
-
             Debug.Log($"1");
             Thread.Sleep(1000);
 
-            // 2. Считаем сколько нам нужно обрабатывать спрайтов за раз, чтобы видюха смогла это переварить
+            // 2. Разделяем задачу на чанки, чтобы видюха смогла все это переварить
 
-            var counts = new List<int>();
+            //var counts = new List<int>();
 
-            for (int a = 0; a < areasList.Count; a++)
-            {
-                var area = areasList[a];
+            //for (int a = 0; a < areasList.Count; a++)
+            //{
+            //    var area = areasList[a];
 
-                var countForTheArea = 0;
-                for (int i = 0; i < _sprites.Length; i++)
-                {
-                    var sprite = _sprites[i];
-                    var lastSpriteX = sprite.Length - area.Dimensions.X;
-                    var lastSpriteY = sprite[0].Length - area.Dimensions.Y;
+            //    var countForTheArea = 0;
+            //    for (int i = 0; i < _sprites.Length; i++)
+            //    {
+            //        var sprite = _sprites[i];
+            //        var lastSpriteX = sprite.Length - area.Dimensions.X;
+            //        var lastSpriteY = sprite[0].Length - area.Dimensions.Y;
 
-                    countForTheArea += lastSpriteX * lastSpriteY * area.Dimensions.Square;
-                }
+            //        countForTheArea += lastSpriteX * lastSpriteY * area.Dimensions.Square;
+            //    }
 
-                counts.Add(countForTheArea);
-            }
+            //    counts.Add(countForTheArea);
+            //}
 
-            var maxCount = counts.OrderByDescending(c => c).First();
-            var chunksNumber = Mathf.CeilToInt(maxCount / (float)maxOpsCountAllowed);
-            var span = Mathf.CeilToInt(_sprites.Length / chunksNumber);
+            //var maxCount = counts.OrderByDescending(c => c).First();
+            //var chunksNumber = Mathf.CeilToInt(maxCount / (float)maxOpsCountAllowed);
+            //var span = Mathf.CeilToInt(_sprites.Length / chunksNumber);
             //Debug.LogError($"maxCount = {maxCount}, span = {span}, chunksNumber = {chunksNumber}, sprites.Length = {_sprites.Length}");
 
-            Debug.Log($"2");
-            Thread.Sleep(1000);
+            //Debug.Log($"2");
+            //Thread.Sleep(1000);
 
 
             // 3. Диспатчим и забираем результат
@@ -267,17 +291,39 @@ public class Algorythm
 
             var chunkResultsList = new List<int[]>();
             var iterationsCount = Mathf.CeilToInt(areasList.Count / (float)groupSizeX);
-            for (int i = 0; i < chunksNumber; i++)
+            while(true)
             {
-                _computeShader.SetInt("SpriteStartIndex", i * span);
-                _computeShader.SetInt("SpriteEndIndex", (i + 1) * span);
-
                 _computeShader.Dispatch(algorythmKernel, iterationsCount, 1, 1);
+                var tasksUpdated = new taskStruct[areas.Length];
+                tasksBuffer.GetData(tasksUpdated);
+                var allAreasDone = true;
+                for (int i = 0; i < tasksUpdated.Length; i++)
+                {
+                    if ((tasksUpdated[i].MetaAndSpriteIndex >> 24 & 255) == 1)
+                    {
+                        allAreasDone = false; //Продолжаем пока хотя бы одна область нуждается в обработке
+                        break;
+                    }
+                }
 
                 var chunkResultsArray = new int[areas.Length];
                 resultBuffer.GetData(chunkResultsArray);
                 chunkResultsList.Add(chunkResultsArray);
+
+                if (allAreasDone)
+                    break;
             }
+            //for (int i = 0; i < chunksNumber; i++)
+            //{
+            //    _computeShader.SetInt("SpriteStartIndex", i * span);
+            //    _computeShader.SetInt("SpriteEndIndex", (i + 1) * span);
+
+            //    _computeShader.Dispatch(algorythmKernel, iterationsCount, 1, 1);
+
+            //    var chunkResultsArray = new int[areas.Length];
+            //    resultBuffer.GetData(chunkResultsArray);
+            //    chunkResultsList.Add(chunkResultsArray);
+            //}
 
             stopWatch.Stop();
             var ts = stopWatch.Elapsed;
@@ -292,6 +338,45 @@ public class Algorythm
                 resultData[i] = totalScore;
             }
 
+
+            // 3а. Проверяем не надурили ли мы с алгоритмом
+
+            var scoresList = new List<int>();
+            var testValues1List = new List<int>();
+            var testValues2List = new List<int>();
+
+            for (int m = 0; m < /*areasList.Count*/100; m++)
+            {
+                //var i = j;
+                var (count, testValue1, testValue2) = countScoreForArea(areasList[m]);
+                var c = count;
+                var ar = areasList[m];
+                var s = (int)ar.Score;
+                if (s == 0 || c == 0)
+                {
+
+                }
+                scoresList.Add(c * s);
+                //testValues1List.Add(testValue1);
+                //testValues2List.Add(testValue2);
+            }
+
+            var resultIsCorrect = true;
+            for (int n = 0; n < scoresList.Count; n++)
+            {
+                //var s = (int)areasList[i].Score;
+                var a = resultData[n];
+                var b = scoresList[n];
+                Debug.Log($"checking id {a} == {b}");
+                if (a != b)
+                {
+                    resultIsCorrect = false;
+                    break;
+                }
+            }
+
+            Debug.Log($"Результат проверен. Он {resultIsCorrect}.");
+            return result;
             Debug.Log($"3");
             Thread.Sleep(1000);
 
