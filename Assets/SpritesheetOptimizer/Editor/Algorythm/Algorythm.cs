@@ -224,8 +224,9 @@ public class Algorythm
                 tasks[i] = new taskStruct(metaAndSpriteIndex, 0, 0);
         }
         var tasksBuffer = new ComputeBuffer(tasks.Length, 12);
+        tasksBuffer.SetData(tasks);
 
-        _computeShader.SetBuffer(algorythmKernel, "RegistryBuffer", registryBuffer); //Это мы каидем и никогда не меняем
+        _computeShader.SetBuffer(algorythmKernel, "RegistryBuffer", registryBuffer); //Это мы кидаем и никогда не меняем
         _computeShader.SetBuffer(algorythmKernel, "ResultBuffer", resultBuffer); //Это мы кидаем и только забираем
         _computeShader.SetBuffer(algorythmKernel, "TasksBuffer", tasksBuffer); //А это мы устанавливаем вначале и дальше он сам по себе, обновляется каждый диспатч
         //_computeShader.SetInt("AreasCount", areasList.Count);
@@ -291,8 +292,10 @@ public class Algorythm
 
             var chunkResultsList = new List<int[]>();
             var iterationsCount = Mathf.CeilToInt(areasList.Count / (float)groupSizeX);
+            var passes = 0;
             while(true)
             {
+                passes++;
                 _computeShader.Dispatch(algorythmKernel, iterationsCount, 1, 1);
                 var tasksUpdated = new taskStruct[areas.Length];
                 tasksBuffer.GetData(tasksUpdated);
@@ -327,7 +330,7 @@ public class Algorythm
 
             stopWatch.Stop();
             var ts = stopWatch.Elapsed;
-            //Debug.Log($"Диспатч прошел. Занял он {ts}");
+            Debug.Log($"Диспатч прошел. Занял он {ts}. passes = {passes}");
 
             var resultData = new int[areas.Length];
             for (int i = 0; i < resultData.Length; i++)
@@ -357,7 +360,7 @@ public class Algorythm
 
                 }
                 scoresList.Add(c * s);
-                //testValues1List.Add(testValue1);
+                testValues1List.Add(testValue1);
                 //testValues2List.Add(testValue2);
             }
 
@@ -557,19 +560,19 @@ public class Algorythm
             {
                 for (int spriteY = 0; spriteY < lastSpriteY; spriteY++)
                 {
+                    testValue1++;
                     var maybeThis = true;
                     for (int areaX = 0; areaX < area.Dimensions.X; areaX++)
                     {
                         for (int areaY = 0; areaY < area.Dimensions.Y; areaY++)
                         {
-                            //testValue2++;
                             var pixelX = spriteX + areaX;
                             var pixelY = spriteY + areaY;
                             var candidatePixel = sprite[pixelX][pixelY];
 
                             var areaPixel = _sprites[area.SpriteIndex][area.SpriteRect.X + areaX][area.SpriteRect.Y + areaY];
-                            testValue1 += areaPixel.Color;
-                            testValue2 += candidatePixel.Color;
+                            //testValue1 += areaPixel.Color;
+                            //testValue2 += candidatePixel.Color;
                             if (areaPixel.Color != candidatePixel.Color)
                             {
                                 maybeThis = false;
