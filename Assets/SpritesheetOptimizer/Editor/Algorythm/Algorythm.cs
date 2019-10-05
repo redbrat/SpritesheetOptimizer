@@ -157,6 +157,224 @@ public class Algorythm
 
     public async Task<List<MyArea>> Run()
     {
+    //    return await Task.Run(() => getAreas());
+    //}
+
+    //private List<MyArea> getAreas()
+    //{
+        var result = new List<MyArea>();
+
+        OverallProgressReport.OperationDescription = "Removing areas from picture";
+        OverallProgressReport.OperationsCount = UnprocessedPixels;
+
+        var dataSize = 0;
+        for (int i = 0; i < _sprites.Length; i++)
+            dataSize += _sprites[i].Length * _sprites[i][0].Length;
+        var data = new int[dataSize];
+        var registry = new registryStruct[_sprites.Length];
+        var allPossibleAreas = new Dictionary<MyVector2, List<areaStruct>>();
+
+        var dataOffset = 0;
+        for (int i = 0; i < _sprites.Length; i++)
+        {
+            var sprite = _sprites[i];
+            var width = sprite.Length;
+            var height = sprite[0].Length;
+
+            registry[i] = new registryStruct(dataOffset, width << 16 | height);
+
+            for (int x = 0; x < width; x++)
+            {
+                for (int y = 0; y < height; y++)
+                {
+                    data[dataOffset++] = sprite[x][y].R << 24 | sprite[x][y].G << 16 | sprite[x][y].B << 8 | sprite[x][y].A;
+
+                    foreach (var size in _areaSizings)
+                    {
+                        if (x >= width - size.X)
+                            continue;
+                        if (y >= height - size.Y)
+                            continue;
+
+                        if (!allPossibleAreas.ContainsKey(size))
+                            allPossibleAreas.Add(size, new List<areaStruct>());
+                        var list = allPossibleAreas[size];
+                        list.Add(new areaStruct((1 << 24) | (i & 16777215), x << 16 | y, size.X << 16 | size.Y));
+                    }
+                }
+            }
+        }
+
+
+        var algorythmKernel = _computeShader.FindKernel("CSMain");
+        var (groupSizeX, groupSizeY, groupSizeZ) = _computeShader.GetKernelThreadGroupSizes(algorythmKernel);
+
+        var registryBuffer = new ComputeBuffer(_sprites.Length, 8);
+        registryBuffer.SetData(registry);
+
+        //Проставляем константы.
+        _computeShader.SetInt("MaxOpsAllowed", 295000);
+        _computeShader.SetBuffer(algorythmKernel, "RegistryBuffer", registryBuffer);
+
+        var bestOfEachArea = new Dictionary<MyVector2, (int spriteIndex, MyVector2 position, int count, int score)>();
+        var chunkCountArrayList = new List<int[]>();
+
+        while (UnprocessedPixels > 0)
+        {
+            //1. Считаем оценки каждой области...
+
+            var dataBuffer = new ComputeBuffer(dataSize, 4);
+            dataBuffer.SetData(data);
+
+            //Проставляем переменные, не меняющиеся для данного прохода цикла.
+            _computeShader.SetBuffer(algorythmKernel, "DataBuffer", dataBuffer);
+
+            foreach (var kvp in allPossibleAreas)
+            {
+                var size = kvp.Key;
+                var areasOfThatSize = kvp.Value.ToArray();
+
+                var areasBuffer = new ComputeBuffer(areasOfThatSize.Length, 12);
+                areasBuffer.SetData(areasOfThatSize);
+
+                var tasks = new taskStruct[areasOfThatSize.Length];
+                {
+                    var initialMask = 1;
+                    var metaAndSpriteIndex = initialMask << 24;
+                    for (int i = 0; i < tasks.Length; i++)
+                        tasks[i] = new taskStruct(metaAndSpriteIndex, 0, 0);
+                }
+
+                var tasksBuffer = new ComputeBuffer(tasks.Length, 12);
+                tasksBuffer.SetData(tasks);
+
+                var countsBuffer = new ComputeBuffer(areasOfThatSize.Length, 4);
+                var scoresBuffer = new ComputeBuffer(areasOfThatSize.Length, 4);
+
+                //Проставляем переменные, не меняющиеся для данного размера области.
+                _computeShader.SetBuffer(algorythmKernel, "AreasBuffer", registryBuffer);
+                _computeShader.SetBuffer(algorythmKernel, "TasksBuffer", tasksBuffer);
+                _computeShader.SetBuffer(algorythmKernel, "CountsBuffer", countsBuffer);
+                _computeShader.SetBuffer(algorythmKernel, "ScoresBuffer", scoresBuffer);
+
+
+                //Проходимся данным размером области по всем возможным пикселам...
+                var stopWatch = new System.Diagnostics.Stopwatch();
+                stopWatch.Start();
+
+                var scores = new int[areasOfThatSize.Length];
+                var iterationsCount = Mathf.CeilToInt(areasOfThatSize.Length / (float)groupSizeX);
+                var passes = 0;
+                while (true)
+                {
+                    passes++;
+                    _computeShader.Dispatch(algorythmKernel, iterationsCount, 1, 1);
+                    var tasksUpdated = new taskStruct[areasOfThatSize.Length];
+                    tasksBuffer.GetData(tasksUpdated);
+                    var allAreasDone = true;
+                    for (int i = 0; i < tasksUpdated.Length; i++)
+                    {
+                        if ((tasksUpdated[i].MetaAndSpriteIndex >> 24 & 255) == 1)
+                        {
+                            allAreasDone = false; //Продолжаем пока хотя бы одна область нуждается в обработке
+                            break;
+                        }
+                    }
+
+                    var chunkCountsArray = new int[areasOfThatSize.Length];
+                    countsBuffer.GetData(chunkCountsArray);
+                    chunkCountArrayList.Add(chunkCountsArray);
+
+                    if (allAreasDone)
+                    {
+                        scoresBuffer.GetData(scores); //Напоследок забираем оценки каждой отдельной области
+                        break;
+                    }
+                }
+
+                stopWatch.Stop();
+                var ts = stopWatch.Elapsed;
+                Debug.Log($"Диспатч прошел. Занял он {ts}. passes = {passes}");
+
+                var totalCounts = new int[areasOfThatSize.Length];
+                for (int i = 0; i < totalCounts.Length; i++)
+                {
+                    var totalScore = 0;
+                    for (int j = 0; j < chunkCountArrayList.Count; j++)
+                        totalScore += chunkCountArrayList[j][i];
+                    totalCounts[i] = totalScore;
+                }
+
+                chunkCountArrayList.Clear();
+
+                var maxTotalScore = int.MinValue;
+                var maxTotalScoreIndex = -1;
+                for (int i = 0; i < totalCounts.Length; i++)
+                {
+                    var totalScore = totalCounts[i] * scores[i];
+                    if (totalScore > maxTotalScore)
+                    {
+                        maxTotalScore = totalScore;
+                        maxTotalScoreIndex = i;
+                    }
+                }
+
+                bestOfEachArea.Add(size, (
+                    spriteIndex: areasOfThatSize[maxTotalScoreIndex].MetaAndSpriteIndex & 16777215, 
+                    position: new MyVector2(areasOfThatSize[maxTotalScoreIndex].XAndY >> 16 & 65535, areasOfThatSize[maxTotalScoreIndex].XAndY & 65535), 
+                    count: totalCounts[maxTotalScoreIndex], 
+                    score: scores[maxTotalScoreIndex]
+                    )
+                );
+            }
+
+            var bestOfTheBest = bestOfEachArea.OrderByDescending(kvp => kvp.Value.count * kvp.Value.score).First();
+            bestOfEachArea.Clear();
+
+            // 1а. Проверяем не надурили ли мы с алгоритмом
+
+            Debug.Log($"GPU Часть закончена, делаем проверку cpu...");
+
+            var bestCpuCalculatedArea = await getBestCpuCalculatedArea();
+
+            Debug.Log($"bestOfTheBest = {bestOfTheBest.Value.spriteIndex}, ({bestOfTheBest.Value.position.X},{bestOfTheBest.Value.position.X}), ({bestOfTheBest.Key.X},{bestOfTheBest.Key.Y}): {bestOfTheBest.Value.score * bestOfTheBest.Value.count}. bestCpuCalculatedArea = {bestCpuCalculatedArea.area.SpriteIndex}, ({bestCpuCalculatedArea.area.SpriteRect.X},{bestCpuCalculatedArea.area.SpriteRect.Y}), ({bestCpuCalculatedArea.area.SpriteRect.Width},{bestCpuCalculatedArea.area.SpriteRect.Height}): {bestCpuCalculatedArea.score}");
+            return result;
+
+
+            //2. у нас есть победитель - забираем его данные вхождения из данных! 
+
+
+            break;
+        }
+
+        return result;
+    }
+
+    private async Task<(MyArea area, int score)> getBestCpuCalculatedArea()
+    {
+        Debug.Log($"Составляем список всех уникальных областей...");
+        await setAreasAndScores();
+        Debug.Log($"Список составили, начали составлять буфер");
+
+        var scoresList = new List<(MyArea area, int score)>();
+        var testValues1List = new List<int>();
+        var testValues2List = new List<int>();
+        var areasList = _allAreas.Select(kvp => kvp.Value).ToList();
+
+        for (int m = 0; m < areasList.Count; m++)
+        {
+            var (count, testValue1, testValue2) = countScoreForArea(areasList[m]);
+            var c = count;
+            var ar = areasList[m];
+            var s = (int)ar.Score;
+            scoresList.Add((ar, c * s));
+        }
+
+        return scoresList.OrderByDescending(o => o.score).First();
+    }
+
+    public async Task<List<MyArea>> RunLegacy()
+    {
         OverallProgressReport.OperationDescription = "Removing areas from picture";
         OverallProgressReport.OperationsCount = UnprocessedPixels;
         var result = new List<MyArea>();
@@ -293,7 +511,7 @@ public class Algorythm
             var chunkResultsList = new List<int[]>();
             var iterationsCount = Mathf.CeilToInt(areasList.Count / (float)groupSizeX);
             var passes = 0;
-            while(true)
+            while (true)
             {
                 passes++;
                 _computeShader.Dispatch(algorythmKernel, iterationsCount, 1, 1);
