@@ -146,12 +146,14 @@ public class Algorythm
         public int MetaAndSpriteIndex;
         public int SpriteXAndY;
         public int XAndY;
+        public int AreasCounter;
 
-        public taskStruct(int metaAndSpriteIndex, int spriteXAndY, int xAndY)
+        public taskStruct(int metaAndSpriteIndex, int spriteXAndY, int xAndY, int areasCounter)
         {
             MetaAndSpriteIndex = metaAndSpriteIndex;
             SpriteXAndY = spriteXAndY;
             XAndY = xAndY;
+            AreasCounter = areasCounter;
         }
     }
 
@@ -242,10 +244,10 @@ public class Algorythm
                     var initialMask = 1;
                     var metaAndSpriteIndex = initialMask << 24;
                     for (int i = 0; i < tasks.Length; i++)
-                        tasks[i] = new taskStruct(metaAndSpriteIndex, 0, 0);
+                        tasks[i] = new taskStruct(metaAndSpriteIndex, 0, 0, 0);
                 }
 
-                var tasksBuffer = new ComputeBuffer(tasks.Length, 12);
+                var tasksBuffer = new ComputeBuffer(tasks.Length, 16);
                 tasksBuffer.SetData(tasks);
 
                 var countsBuffer = new ComputeBuffer(areasOfThatSize.Length, 4);
@@ -439,9 +441,9 @@ public class Algorythm
             var initialMask = 1;
             var metaAndSpriteIndex = initialMask << 24;
             for (int i = 0; i < tasks.Length; i++)
-                tasks[i] = new taskStruct(metaAndSpriteIndex, 0, 0);
+                tasks[i] = new taskStruct(metaAndSpriteIndex, 0, 0, 0);
         }
-        var tasksBuffer = new ComputeBuffer(tasks.Length, 12);
+        var tasksBuffer = new ComputeBuffer(tasks.Length, 16);
         tasksBuffer.SetData(tasks);
 
         _computeShader.SetBuffer(algorythmKernel, "RegistryBuffer", registryBuffer); //Это мы кидаем и никогда не меняем

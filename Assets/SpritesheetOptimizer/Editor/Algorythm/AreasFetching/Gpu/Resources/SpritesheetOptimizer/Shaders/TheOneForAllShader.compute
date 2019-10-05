@@ -9,6 +9,7 @@ struct taskStruct
 	int MetaAndSpriteIndex; //Целый int для 1 бита данных выделать слишком жирно, поэтому spriteIndex потеснится
 	int SpriteXAndY;
 	int XAndY;
+	int AreasCounter; //Счетчик для областей - если встретили такую же область, не дойдя до id.x, мы - повтор.
 };
 
 struct areaStruct //нам все равно нужны области с самого начала, т.к. мы изнутри никак не можем точно сказать какую область нам обрабатывать, т.к. спрайты могут быть разных размеров
@@ -25,25 +26,14 @@ RWStructuredBuffer<int> DataBuffer; //Цвета спрайтов
 RWStructuredBuffer<int> CountsBuffer; //Count, 0 - это пустая область или повтор, в общем надо игнорить.
 RWStructuredBuffer<int> ScoresBuffer; //Счет области - зачем считать на проце?
 
-//bool Ignoring; //Игнорируем если область пустая или если область - повтор
-//int FitsCount; //Собсно результат - то, сколько раз встречается данная область на картинке. Для повторов - 0.
-//int SingleScore; //Зачем считать на процессоре даже такую мелочь?
-
 int MaxOpsAllowed;
-int CurrentOpsCount;
-
 int SpritesCount; //По идее можно, наверное, взять из RegistryBuffer, но, даже если можно, быстрее закешировать.
 
-//Служебные переменные
-int _currentSpriteX;
-int _currentSpriteY;
-int _currentX;
-int _currentY;
-
-
-int processSprite(registryStruct spriteInfo, int currentSpriteX, int currentSpriteY, int currentAreaX, int currentAreaY, int currentOpsCount, int areaSpriteOffset, int areaSpriteWidth, int areaX, int areaY, int areaWidth, int areaHeight)
+int3 processSprite(int idx, int spriteIndex, registryStruct spriteInfo, int currentSpriteX, int currentSpriteY, int currentAreaX, int currentAreaY, int currentOpsCount, int areaSpriteOffset, int areaSpriteWidth, int areaX, int areaY, int areaWidth, int areaHeight)
 {
 	int result = 0;
+	int opsCountResult = currentOpsCount;
+	int weAreReapeatingResult = 0; //Флаг обозначающий, что мы - повтор
 
 	int spriteOffset = spriteInfo.SpritesDataOffset;
 	int spriteWidth = spriteInfo.WidthAndHeight >> 16 & 65535;
@@ -52,8 +42,7 @@ int processSprite(registryStruct spriteInfo, int currentSpriteX, int currentSpri
 	int spriteLastX = spriteWidth - areaWidth;
 	int spriteLastY = spriteHeight - areaHeight;
 
-	//TestValue2 += areaX + areaY + areaWidth + areaHeight;
-	int opsCount = currentOpsCount;
+	taskStruct task = TasksBuffer[idx];
 
 	for (int spriteX = currentSpriteX; spriteX < spriteLastX; spriteX++)
 	{
@@ -65,13 +54,14 @@ int processSprite(registryStruct spriteInfo, int currentSpriteX, int currentSpri
 			{
 				for (int y = currentAreaY; y < areaHeight; y++)
 				{
-					opsCount++;
-					if (opsCount > MaxOpsAllowed)
+					opsCountResult++;
+
+					//Мы не закончили с этим спрайтом, но у нас уже не осталось доступных операций, так что сохраняем снапшот состояния и выходим из цикла.
+					if (opsCountResult > MaxOpsAllowed)
 					{
-						_currentSpriteX = spriteX;
-						_currentSpriteY = spriteY;
-						_currentX = x;
-						_currentY = y;
+						task.MetaAndSpriteIndex = 1 << 24 | spriteIndex;
+						task.SpriteXAndY = spriteX << 16 | spriteY;
+						task.XAndY = x << 16 | y;
 
 						break;
 					}
@@ -89,7 +79,7 @@ int processSprite(registryStruct spriteInfo, int currentSpriteX, int currentSpri
 					}
 				}
 
-				if (opsCount > MaxOpsAllowed)
+				if (opsCountResult > MaxOpsAllowed)
 					break;
 				if (!maybeThis)
 					break;
@@ -98,27 +88,42 @@ int processSprite(registryStruct spriteInfo, int currentSpriteX, int currentSpri
 			currentAreaX = 0;
 			currentAreaY = 0;
 
-			if (opsCount > MaxOpsAllowed)
+			if (opsCountResult > MaxOpsAllowed)
 				break;
+
 			if (maybeThis)
-				result++;
+			{
+				if (task.AreasCounter != idx)
+					result++;
+				else
+				{
+					weAreReapeatingResult = 1;
+					break;
+				}
+			}
+
+			task.AreasCounter++;
 		}
-		if (opsCount > MaxOpsAllowed)
+		if (opsCountResult > MaxOpsAllowed || weAreReapeatingResult == 1)
 			break;
 
 		currentSpriteY = 0;
 	}
 
-	if (opsCount <= MaxOpsAllowed)
+	//Если закончили этот спрайт и у нас еще остались операции в запасе - мы можем работать со следующим спрайтом (если он есть (мы не знаем)), начиная с нулевых координат.
+	if (opsCountResult <= MaxOpsAllowed)
 	{
-		_currentSpriteX = 0;
-		_currentSpriteY = 0;
-		_currentX = 0;
-		_currentY = 0;
+		task.SpriteXAndY = 0;
+		task.XAndY = 0;
 	}
-	CurrentOpsCount = opsCount;
 
-	return result;
+	TasksBuffer[idx] = task;
+
+	int3 resultVector = { 0, 0, 0 };
+	resultVector[0] = result;
+	resultVector[0] = opsCountResult;
+	resultVector[0] = weAreReapeatingResult;
+	return resultVector;
 }
 
 #pragma kernel CSMain
@@ -128,7 +133,7 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 	areaStruct area = AreasBuffer[id.x];
 
 	int meta = area.MetaAndSpriteIndex >> 24 & 255;
-	if (meta == 0) //Мета области равна 0 если она пустая или если она - повтор.
+	if (meta == 0) //Мета области равна 0, если она пустая или если она - повтор.
 	{
 		CountsBuffer[id.x] = 0;
 		return;
@@ -177,6 +182,7 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 		if (singleScore == 0)
 		{
 			area.MetaAndSpriteIndex = 0 << 24 | areaSpriteIndex; //Область пустая - помечаем это в мете области
+			AreasBuffer[id.x] = area;
 			return;
 		}
 		//Получили счет области - сохраняем
@@ -186,34 +192,47 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 	//Ок, теперь мы проходимся по всем областям и смотрим уникальные ли они и считаем их кол-во
 
 	int coincidentsCount = 0;
-
 	int currentSpriteIndex = formerTask.MetaAndSpriteIndex & 16777215;
-	_currentSpriteX = formerTask.SpriteXAndY >> 16 & 65535;
-	_currentSpriteY = formerTask.SpriteXAndY & 65535;
-	_currentX = formerTask.XAndY >> 16 & 65535;
-	_currentY = formerTask.XAndY & 65535;
+	int currentSpriteX = formerTask.SpriteXAndY >> 16 & 65535;
+	int currentSpriteY = formerTask.SpriteXAndY & 65535;
+	int currentX = formerTask.XAndY >> 16 & 65535;
+	int currentY = formerTask.XAndY & 65535;
+
+	int currentOpsCount = 0;
 
 	for (int i = currentSpriteIndex; i < SpritesCount; i++)
 	{
 		registryStruct currentSpriteInfo = RegistryBuffer[i];
 
-		coincidentsCount += processSprite(currentSpriteInfo, _currentSpriteX, _currentSpriteY, _currentX, _currentY, CurrentOpsCount, areaSpriteOffset, areaSpriteWidth, areaX, areaY, areaWidth, areaHeight);
-		if (CurrentOpsCount > MaxOpsAllowed)
+		int3 result = processSprite(id.x, i, currentSpriteInfo, currentSpriteX, currentSpriteY, currentX, currentY, currentOpsCount, areaSpriteOffset, areaSpriteWidth, areaX, areaY, areaWidth, areaHeight);
+
+		coincidentsCount += result[0];
+		currentOpsCount = result[1];
+		int weAreRepeating = result[2];
+		if (weAreRepeating == 1)
 		{
-			formerTask.MetaAndSpriteIndex = 1 << 24 | i;
-			formerTask.SpriteXAndY = _currentSpriteX << 16 | _currentSpriteY;
-			formerTask.XAndY = _currentX << 16 | _currentY;
-			TasksBuffer[id.x] = formerTask;
+			area.MetaAndSpriteIndex = 0 << 24 & areaSpriteIndex;
+			AreasBuffer[id.x] = area;
 			break;
 		}
+		if (currentOpsCount > MaxOpsAllowed)
+			break;
+
+		formerTask = TasksBuffer[id.x];
+		currentSpriteIndex = formerTask.MetaAndSpriteIndex & 16777215;
+		currentSpriteX = formerTask.SpriteXAndY >> 16 & 65535;
+		currentSpriteY = formerTask.SpriteXAndY & 65535;
+		currentX = formerTask.XAndY >> 16 & 65535;
+		currentY = formerTask.XAndY & 65535;
 	}
-	if (CurrentOpsCount <= MaxOpsAllowed)
-	{	//Сообщаем, что закончили и обнуляем
+
+	//Мы закончили со всеми спрайтами и уложились в доступное кол-во операций (может быть, впритык), так что можем сообщать, что закончили.
+	if (currentOpsCount <= MaxOpsAllowed)
+	{
+		formerTask = TasksBuffer[id.x];
 		formerTask.MetaAndSpriteIndex = 0 << 24 | 0;
-		formerTask.SpriteXAndY = 0;
-		formerTask.XAndY = 0;
 		TasksBuffer[id.x] = formerTask;
 	}
 
-	CountsBuffer[id.x] = coincidentsCount * singleScore;
+	CountsBuffer[id.x] = coincidentsCount;
 }
