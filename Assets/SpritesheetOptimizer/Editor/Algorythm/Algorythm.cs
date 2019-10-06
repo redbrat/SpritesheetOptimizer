@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -223,8 +224,9 @@ public class Algorythm
         _computeShader.SetInt("SpritesCount", _sprites.Length);
         _computeShader.SetBuffer(algorythmKernel, "RegistryBuffer", registryBuffer);
 
-        var bestOfEachArea = new Dictionary<MyVector2, (int spriteIndex, MyVector2 position, int count, int score)>();
+        var bestOfEachArea = new Dictionary<MyVector2, (int spriteIndex, MyVector2 position, int count, int score, string test)>();
         var chunkCountArrayList = new List<int[]>();
+        var chunkCountArrayListDictionary = new Dictionary<MyVector2, List<int[]>>();
 
         while (UnprocessedPixels > 0)
         {
@@ -243,6 +245,8 @@ public class Algorythm
                 //Thread.Sleep(250);
                 var size = kvp.Key;
                 var areasOfThatSize = kvp.Value.ToArray();
+
+                chunkCountArrayListDictionary.Add(size, new List<int[]>());
 
                 var areasBuffer = new ComputeBuffer(areasOfThatSize.Length, 12);
                 areasBuffer.SetData(areasOfThatSize);
@@ -273,6 +277,7 @@ public class Algorythm
                 stopWatch.Start();
 
                 var scores = new int[areasOfThatSize.Length];
+                var tasksUpdated = new taskStruct[areasOfThatSize.Length];
                 var iterationsCount = Mathf.CeilToInt(areasOfThatSize.Length / (float)groupSizeX);
                 var passes = 0;
                 while (true)
@@ -281,7 +286,6 @@ public class Algorythm
                     //Debug.Log($"dispatch #{++passes}");
                     //Thread.Sleep(250);
                     _computeShader.Dispatch(algorythmKernel, iterationsCount, 1, 1);
-                    var tasksUpdated = new taskStruct[areasOfThatSize.Length];
                     tasksBuffer.GetData(tasksUpdated);
                     var allAreasDone = true;
                     for (int i = 0; i < tasksUpdated.Length; i++)
@@ -309,7 +313,15 @@ public class Algorythm
                     //    Debug.Log($"asiojd {asiojd}: {chunkCountsArray[asiojd]}");
                     //}
                     //return result;
-                    chunkCountArrayList.Add(chunkCountsArray);
+
+
+                    //chunkCountArrayList.Add(chunkCountsArray);
+                    chunkCountArrayListDictionary[size].Add(chunkCountsArray);
+                    var zeroes = new int[chunkCountsArray.Length];
+                    //for (int i = 0; i < zeroes.Length; i++)
+                    //    zeroes[i] = 0;
+                    countsBuffer.SetData(zeroes);
+                    //_computeShader.SetBuffer(algorythmKernel, "CountsBuffer", countsBuffer);
 
                     if (allAreasDone)
                     {
@@ -326,15 +338,18 @@ public class Algorythm
                 for (int i = 0; i < totalCounts.Length; i++)
                 {
                     var totalScore = 0;
-                    for (int j = 0; j < chunkCountArrayList.Count; j++)
-                        totalScore += chunkCountArrayList[j][i];
+                    //for (int j = 0; j < chunkCountArrayList.Count; j++)
+                    //    totalScore += chunkCountArrayList[j][i];
+                    for (int j = 0; j < chunkCountArrayListDictionary[size].Count; j++)
+                        totalScore += chunkCountArrayListDictionary[size][j][i];
                     totalCounts[i] = totalScore;
                 }
 
-                chunkCountArrayList.Clear();
+                //chunkCountArrayList.Clear();
 
                 var maxTotalScore = int.MinValue;
                 var maxTotalScoreIndex = -1;
+                var maxTotalScorePos = 0;
                 for (int i = 0; i < totalCounts.Length; i++)
                 {
                     var totalScore = totalCounts[i] * scores[i];
@@ -342,24 +357,40 @@ public class Algorythm
                     {
                         maxTotalScore = totalScore;
                         maxTotalScoreIndex = i;
+                        maxTotalScorePos = areasOfThatSize[i].XAndY;
+                    }
+                    else if (totalScore == maxTotalScore)
+                    {
+                        if (areasOfThatSize[i].XAndY > maxTotalScorePos)
+                        {
+                            maxTotalScore = totalScore;
+                            maxTotalScoreIndex = i;
+                            maxTotalScorePos = areasOfThatSize[i].XAndY;
+                        }
                     }
                 }
+
+                Debug.Log($"Areas count: {areasOfThatSize.Length}. Shader went throu areas count: {tasksUpdated[maxTotalScoreIndex].AreasCounter}");
 
                 bestOfEachArea.Add(size, (
                     spriteIndex: areasOfThatSize[maxTotalScoreIndex].MetaAndSpriteIndex & 16777215, 
                     position: new MyVector2(areasOfThatSize[maxTotalScoreIndex].XAndY >> 16 & 65535, areasOfThatSize[maxTotalScoreIndex].XAndY & 65535), 
                     count: totalCounts[maxTotalScoreIndex], 
-                    score: scores[maxTotalScoreIndex]
+                    score: scores[maxTotalScoreIndex],
+                    test: printChunkCounts(chunkCountArrayListDictionary[size], maxTotalScoreIndex)
                     )
                 );
             }
 
-            var bestOfTheBest = bestOfEachArea.OrderByDescending(kvp => kvp.Value.count * kvp.Value.score).First();
+            var bestScoreKvp = bestOfEachArea.OrderByDescending(kvp => kvp.Value.count * kvp.Value.score).First();
+            var bestScore = bestScoreKvp.Value.score * bestScoreKvp.Value.count;
+
+            var finalOfTheBest = bestOfEachArea.Where(kvp => kvp.Value.count * kvp.Value.score == bestScore).OrderByDescending(kvp => kvp.Value.position.X << 16 | kvp.Value.position.Y).First();
             bestOfEachArea.Clear();
 
             // 1а. Проверяем не надурили ли мы с алгоритмом
 
-            Debug.Log($"bestOfTheBest = {bestOfTheBest.Value.spriteIndex}, ({bestOfTheBest.Value.position.X},{bestOfTheBest.Value.position.Y}), ({bestOfTheBest.Key.X},{bestOfTheBest.Key.Y}): s ({bestOfTheBest.Value.score}) * c ({bestOfTheBest.Value.count}) = {bestOfTheBest.Value.score * bestOfTheBest.Value.count}. bestCpuCalculatedArea = {bestCpuCalculatedArea.area.SpriteIndex}, ({bestCpuCalculatedArea.area.SpriteRect.X},{bestCpuCalculatedArea.area.SpriteRect.Y}), ({bestCpuCalculatedArea.area.SpriteRect.Width},{bestCpuCalculatedArea.area.SpriteRect.Height}): s ({bestCpuCalculatedArea.score}) * c ({bestCpuCalculatedArea.count}) = {bestCpuCalculatedArea.score * bestCpuCalculatedArea.count}");
+            Debug.Log($"bestOfTheBest = {finalOfTheBest.Value.spriteIndex}, ({finalOfTheBest.Value.position.X},{finalOfTheBest.Value.position.Y}), ({finalOfTheBest.Key.X},{finalOfTheBest.Key.Y}): s ({finalOfTheBest.Value.score}) * c ({finalOfTheBest.Value.count}) = {finalOfTheBest.Value.score * finalOfTheBest.Value.count} (areas {finalOfTheBest.Value.test}). bestCpuCalculatedArea = {bestCpuCalculatedArea.area.SpriteIndex}, ({bestCpuCalculatedArea.area.SpriteRect.X},{bestCpuCalculatedArea.area.SpriteRect.Y}), ({bestCpuCalculatedArea.area.SpriteRect.Width},{bestCpuCalculatedArea.area.SpriteRect.Height}): s ({bestCpuCalculatedArea.score}) * c ({bestCpuCalculatedArea.count}) = {bestCpuCalculatedArea.score * bestCpuCalculatedArea.count} (areas {bestCpuCalculatedArea.test})");
 
 
             //2. у нас есть победитель - забираем его данные вхождения из данных! 
@@ -371,13 +402,27 @@ public class Algorythm
         return result;
     }
 
-    private async Task<(MyArea area, int score, int count)> getBestCpuCalculatedArea()
+    private string printChunkCounts(List<int[]> chunkCountArrayList, int maxTotalScoreIndex)
+    {
+        var sb = new StringBuilder();
+
+        for (int i = 0; i < chunkCountArrayList.Count; i++)
+        {
+            if (i > 0)
+                sb.Append($", ");
+            sb.Append(chunkCountArrayList[i][maxTotalScoreIndex]);
+        }
+
+        return sb.ToString();
+    }
+
+    private async Task<(MyArea area, int score, int count, int test)> getBestCpuCalculatedArea()
     {
         Debug.Log($"Составляем список всех уникальных областей...");
         await setAreasAndScores();
         Debug.Log($"Список составили, начали составлять буфер");
 
-        var scoresList = new List<(MyArea area, int score, int count)>();
+        var scoresList = new List<(MyArea area, int score, int count, int test)>();
         var testValues1List = new List<int>();
         var testValues2List = new List<int>();
         var areasList = _allAreas.Select(kvp => kvp.Value).ToList();
@@ -388,7 +433,7 @@ public class Algorythm
             var c = count;
             var ar = areasList[m];
             var s = (int)ar.Score;
-            scoresList.Add((ar, s, c));
+            scoresList.Add((ar, s, c, testValue1));
         }
 
         return scoresList.OrderByDescending(o => o.score * o.count).First();

@@ -29,7 +29,7 @@ RWStructuredBuffer<int> ScoresBuffer; //Счет области - зачем с�
 int MaxOpsAllowed;
 int SpritesCount; //По идее можно, наверное, взять из RegistryBuffer, но, даже если можно, быстрее закешировать.
 
-int3 processSprite(int idx, int spriteIndex, registryStruct spriteInfo, int currentSpriteX, int currentSpriteY, int currentAreaX, int currentAreaY, int currentOpsCount, int areaSpriteOffset, int areaSpriteWidth, int areaX, int areaY, int areaWidth, int areaHeight)
+int3 processSprite(int idx, int spriteIndex, registryStruct spriteInfo, int currentOpsCount, int areaSpriteOffset, int areaSpriteWidth, int areaX, int areaY, int areaWidth, int areaHeight)
 {
 	int result = 0;
 	int opsCountResult = currentOpsCount;
@@ -43,6 +43,10 @@ int3 processSprite(int idx, int spriteIndex, registryStruct spriteInfo, int curr
 	int spriteLastY = spriteHeight - areaHeight;
 
 	taskStruct task = TasksBuffer[idx];
+	int currentSpriteX = task.SpriteXAndY >> 16 & 65535;
+	int currentSpriteY = task.SpriteXAndY & 65535;
+	int currentAreaX = task.XAndY >> 16 & 65535;
+	int currentAreaY = task.XAndY & 65535;
 
 	for (int spriteX = currentSpriteX; spriteX < spriteLastX; spriteX++)
 	{
@@ -79,6 +83,8 @@ int3 processSprite(int idx, int spriteIndex, registryStruct spriteInfo, int curr
 					}
 				}
 
+				currentAreaY = 0;
+
 				if (opsCountResult > MaxOpsAllowed)
 					break;
 				if (!maybeThis)
@@ -86,11 +92,10 @@ int3 processSprite(int idx, int spriteIndex, registryStruct spriteInfo, int curr
 			}
 
 			currentAreaX = 0;
-			currentAreaY = 0;
 
 			if (opsCountResult > MaxOpsAllowed)
 				break;
-
+			else
 			if (maybeThis)
 			{
 				if (task.AreasCounter >= idx)
@@ -104,10 +109,11 @@ int3 processSprite(int idx, int spriteIndex, registryStruct spriteInfo, int curr
 
 			task.AreasCounter++;
 		}
-		if (opsCountResult > MaxOpsAllowed || weAreReapeatingResult == 1)
-			break;
 
 		currentSpriteY = 0;
+
+		if (opsCountResult > MaxOpsAllowed || weAreReapeatingResult == 1)
+			break;
 	}
 
 	//Если закончили этот спрайт и у нас еще остались операции в запасе - мы можем работать со следующим спрайтом (если он есть (мы не знаем)), начиная с нулевых координат.
@@ -200,10 +206,6 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 
 	int coincidentsCount = 0;
 	int currentSpriteIndex = formerTask.MetaAndSpriteIndex & 16777215;
-	int currentSpriteX = formerTask.SpriteXAndY >> 16 & 65535;
-	int currentSpriteY = formerTask.SpriteXAndY & 65535;
-	int currentX = formerTask.XAndY >> 16 & 65535;
-	int currentY = formerTask.XAndY & 65535;
 
 	int currentOpsCount = 0;
 
@@ -211,11 +213,12 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 	{
 		registryStruct currentSpriteInfo = RegistryBuffer[i];
 
-		int3 result = processSprite(id.x, i, currentSpriteInfo, currentSpriteX, currentSpriteY, currentX, currentY, currentOpsCount, areaSpriteOffset, areaSpriteWidth, areaX, areaY, areaWidth, areaHeight);
+		int3 result = processSprite(id.x, i, currentSpriteInfo, currentOpsCount, areaSpriteOffset, areaSpriteWidth, areaX, areaY, areaWidth, areaHeight);
 
 		coincidentsCount += result[0];
 		currentOpsCount = result[1];
 		int weAreRepeating = result[2];
+
 		if (weAreRepeating == 1)
 		{
 			//Тут тоже - если мы повторяемся, то надо заодно еще и таск пометить как завершенный.
@@ -228,13 +231,6 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 		}
 		if (currentOpsCount > MaxOpsAllowed)
 			break;
-
-		formerTask = TasksBuffer[id.x];
-		currentSpriteIndex = formerTask.MetaAndSpriteIndex & 16777215;
-		currentSpriteX = formerTask.SpriteXAndY >> 16 & 65535;
-		currentSpriteY = formerTask.SpriteXAndY & 65535;
-		currentX = formerTask.XAndY >> 16 & 65535;
-		currentY = formerTask.XAndY & 65535;
 	}
 
 	//Мы закончили со всеми спрайтами и уложились в доступное кол-во операций (может быть, впритык), так что можем сообщать, что закончили.
@@ -243,6 +239,9 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 		formerTask = TasksBuffer[id.x];
 		formerTask.MetaAndSpriteIndex = 0 << 24 | 0;
 		TasksBuffer[id.x] = formerTask;
+		////Тут тоже - если мы закончили, то надо заодно еще и таск пометить как завершенный.
+		//area.MetaAndSpriteIndex = 0 << 24 & areaSpriteIndex;
+		//AreasBuffer[id.x] = area;
 	}
 
 	//CountsBuffer[id.x] = 4;
