@@ -54,7 +54,7 @@ public class Algorythm
 
         _computeMode = computeMode;
 
-        _computeShader = Resources.Load<ComputeShader>("SpritesheetOptimizer/Shaders/AreasFetchingShader");
+        _computeShader = Resources.Load<ComputeShader>("SpritesheetOptimizer/Shaders/TheOneForAllShader");
     }
 
     public async Task Initialize(Vector2Int maxAreaSize, CancellationToken ct)
@@ -159,11 +159,15 @@ public class Algorythm
 
     public async Task<List<MyArea>> Run()
     {
-    //    return await Task.Run(() => getAreas());
-    //}
 
-    //private List<MyArea> getAreas()
-    //{
+        Debug.Log($"GPU Часть закончена, делаем проверку cpu...");
+
+        var bestCpuCalculatedArea = await getBestCpuCalculatedArea();
+        //    return await Task.Run(() => getAreas());
+        //}
+
+        //private List<MyArea> getAreas()
+        //{
         var result = new List<MyArea>();
 
         OverallProgressReport.OperationDescription = "Removing areas from picture";
@@ -216,6 +220,7 @@ public class Algorythm
 
         //Проставляем константы.
         _computeShader.SetInt("MaxOpsAllowed", 295000);
+        _computeShader.SetInt("SpritesCount", _sprites.Length);
         _computeShader.SetBuffer(algorythmKernel, "RegistryBuffer", registryBuffer);
 
         var bestOfEachArea = new Dictionary<MyVector2, (int spriteIndex, MyVector2 position, int count, int score)>();
@@ -231,8 +236,11 @@ public class Algorythm
             //Проставляем переменные, не меняющиеся для данного прохода цикла.
             _computeShader.SetBuffer(algorythmKernel, "DataBuffer", dataBuffer);
 
+            var areasCounter = 0;
             foreach (var kvp in allPossibleAreas)
             {
+                //Debug.Log($"area #{++areasCounter}");
+                //Thread.Sleep(250);
                 var size = kvp.Key;
                 var areasOfThatSize = kvp.Value.ToArray();
 
@@ -254,7 +262,7 @@ public class Algorythm
                 var scoresBuffer = new ComputeBuffer(areasOfThatSize.Length, 4);
 
                 //Проставляем переменные, не меняющиеся для данного размера области.
-                _computeShader.SetBuffer(algorythmKernel, "AreasBuffer", registryBuffer);
+                _computeShader.SetBuffer(algorythmKernel, "AreasBuffer", areasBuffer);
                 _computeShader.SetBuffer(algorythmKernel, "TasksBuffer", tasksBuffer);
                 _computeShader.SetBuffer(algorythmKernel, "CountsBuffer", countsBuffer);
                 _computeShader.SetBuffer(algorythmKernel, "ScoresBuffer", scoresBuffer);
@@ -270,6 +278,8 @@ public class Algorythm
                 while (true)
                 {
                     passes++;
+                    //Debug.Log($"dispatch #{++passes}");
+                    //Thread.Sleep(250);
                     _computeShader.Dispatch(algorythmKernel, iterationsCount, 1, 1);
                     var tasksUpdated = new taskStruct[areasOfThatSize.Length];
                     tasksBuffer.GetData(tasksUpdated);
@@ -285,6 +295,20 @@ public class Algorythm
 
                     var chunkCountsArray = new int[areasOfThatSize.Length];
                     countsBuffer.GetData(chunkCountsArray);
+                    //var notZero = chunkCountsArray.Where(v => v != 0).ToArray();
+                    //Debug.Log($"");
+                    //Debug.Log($"Not zero:");
+                    //for (int sofd = 0; sofd < notZero.Length; sofd++)
+                    //{
+                    //    Debug.Log($"sofd {sofd}: {notZero[sofd]}");
+                    //}
+                    //Debug.Log($"");
+                    //Debug.Log($"Zero:");
+                    //for (int asiojd = 0; asiojd < chunkCountsArray.Length; asiojd++)
+                    //{
+                    //    Debug.Log($"asiojd {asiojd}: {chunkCountsArray[asiojd]}");
+                    //}
+                    //return result;
                     chunkCountArrayList.Add(chunkCountsArray);
 
                     if (allAreasDone)
@@ -297,7 +321,7 @@ public class Algorythm
                 stopWatch.Stop();
                 var ts = stopWatch.Elapsed;
                 Debug.Log($"Диспатч прошел. Занял он {ts}. passes = {passes}");
-
+                Thread.Sleep(1000);
                 var totalCounts = new int[areasOfThatSize.Length];
                 for (int i = 0; i < totalCounts.Length; i++)
                 {
@@ -335,12 +359,7 @@ public class Algorythm
 
             // 1а. Проверяем не надурили ли мы с алгоритмом
 
-            Debug.Log($"GPU Часть закончена, делаем проверку cpu...");
-
-            var bestCpuCalculatedArea = await getBestCpuCalculatedArea();
-
-            Debug.Log($"bestOfTheBest = {bestOfTheBest.Value.spriteIndex}, ({bestOfTheBest.Value.position.X},{bestOfTheBest.Value.position.X}), ({bestOfTheBest.Key.X},{bestOfTheBest.Key.Y}): {bestOfTheBest.Value.score * bestOfTheBest.Value.count}. bestCpuCalculatedArea = {bestCpuCalculatedArea.area.SpriteIndex}, ({bestCpuCalculatedArea.area.SpriteRect.X},{bestCpuCalculatedArea.area.SpriteRect.Y}), ({bestCpuCalculatedArea.area.SpriteRect.Width},{bestCpuCalculatedArea.area.SpriteRect.Height}): {bestCpuCalculatedArea.score}");
-            return result;
+            Debug.Log($"bestOfTheBest = {bestOfTheBest.Value.spriteIndex}, ({bestOfTheBest.Value.position.X},{bestOfTheBest.Value.position.Y}), ({bestOfTheBest.Key.X},{bestOfTheBest.Key.Y}): s ({bestOfTheBest.Value.score}) * c ({bestOfTheBest.Value.count}) = {bestOfTheBest.Value.score * bestOfTheBest.Value.count}. bestCpuCalculatedArea = {bestCpuCalculatedArea.area.SpriteIndex}, ({bestCpuCalculatedArea.area.SpriteRect.X},{bestCpuCalculatedArea.area.SpriteRect.Y}), ({bestCpuCalculatedArea.area.SpriteRect.Width},{bestCpuCalculatedArea.area.SpriteRect.Height}): s ({bestCpuCalculatedArea.score}) * c ({bestCpuCalculatedArea.count}) = {bestCpuCalculatedArea.score * bestCpuCalculatedArea.count}");
 
 
             //2. у нас есть победитель - забираем его данные вхождения из данных! 
@@ -352,13 +371,13 @@ public class Algorythm
         return result;
     }
 
-    private async Task<(MyArea area, int score)> getBestCpuCalculatedArea()
+    private async Task<(MyArea area, int score, int count)> getBestCpuCalculatedArea()
     {
         Debug.Log($"Составляем список всех уникальных областей...");
         await setAreasAndScores();
         Debug.Log($"Список составили, начали составлять буфер");
 
-        var scoresList = new List<(MyArea area, int score)>();
+        var scoresList = new List<(MyArea area, int score, int count)>();
         var testValues1List = new List<int>();
         var testValues2List = new List<int>();
         var areasList = _allAreas.Select(kvp => kvp.Value).ToList();
@@ -369,10 +388,10 @@ public class Algorythm
             var c = count;
             var ar = areasList[m];
             var s = (int)ar.Score;
-            scoresList.Add((ar, c * s));
+            scoresList.Add((ar, s, c));
         }
 
-        return scoresList.OrderByDescending(o => o.score).First();
+        return scoresList.OrderByDescending(o => o.score * o.count).First();
     }
 
     public async Task<List<MyArea>> RunLegacy()
