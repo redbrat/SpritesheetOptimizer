@@ -31,7 +31,7 @@ int SpritesCount; //По идее можно, наверное, взять из 
 
 int3 processSprite(int idx, int spriteIndex, registryStruct spriteInfo, int currentOpsCount, int areaSpriteOffset, int areaSpriteWidth, int areaX, int areaY, int areaWidth, int areaHeight)
 {
-	int result = 0;
+	int count = 0;
 	int opsCountResult = currentOpsCount;
 	int weAreReapeatingResult = 0; //Флаг обозначающий, что мы - повтор
 
@@ -99,7 +99,7 @@ int3 processSprite(int idx, int spriteIndex, registryStruct spriteInfo, int curr
 			if (maybeThis)
 			{
 				if (task.AreasCounter >= idx)
-					result++;
+					count++;
 				else
 				{
 					weAreReapeatingResult = 1;
@@ -125,8 +125,8 @@ int3 processSprite(int idx, int spriteIndex, registryStruct spriteInfo, int curr
 
 	TasksBuffer[idx] = task;
 
-	int3 resultVector = { result, opsCountResult, weAreReapeatingResult };
-	/*resultVector[0] = result;
+	int3 resultVector = { count, opsCountResult, weAreReapeatingResult };
+	/*resultVector[0] = count;
 	resultVector[1] = opsCountResult;
 	resultVector[2] = weAreReapeatingResult;*/
 	return resultVector;

@@ -20,19 +20,23 @@
         B = b;
         A = a;
 
-        var ri = (int)r;
-        var gi = g << 8;
-        var bi = b << 16;
-        var ai = a << 24;
+        //var ri = (int)r;
+        //var gi = g << 8;
+        //var bi = b << 16;
+        //var ai = a << 24;
+        var ri = r << 24;
+        var gi = g << 16;
+        var bi = b << 8;
+        var ai = (int)a;
         Color = ri | gi | bi | ai;
 
 
-        int ir = Color & 255;
-        int ig = (Color >> 8) & 255;
-        int ib = (Color >> 16) & 255;
-        int ia = (Color >> 24) & 255;
+        int ir = (Color >> 24) & 255;
+        int ig = (Color >> 16) & 255;
+        int ib = (Color >> 8) & 255;
+        int ia = Color & 255;
 
-        var reconstructed = ir | (ig << 8) | (ib << 16) | (ia << 24);
+        var reconstructed = (ir << 24) | (ig << 16) | (ib << 8) | ia;
 
 
         _hash = (R + G * _byteMax + B * _2bytesMax + A * _4bytesMax).GetHashCode();

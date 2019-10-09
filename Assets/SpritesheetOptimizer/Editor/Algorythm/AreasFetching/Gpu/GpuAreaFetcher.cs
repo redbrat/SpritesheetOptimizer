@@ -45,7 +45,7 @@ public class GpuAreaFetcher : IAreaFetcher
                     {
                         var sprite = sprites[j];
                         var spriteMapOfEmptiness = new bool[sprite.Length - area.X][];
-                        for (int x = 0; x < sprite.Length - area.X; x++)
+                        for (int x = 0; x < sprite.Length - area.X; x++) 
                         {
                             spriteMapOfEmptiness[x] = new bool[sprite[x].Length - area.Y];
                             for (int y = 0; y < sprite[x].Length - area.Y; y++)

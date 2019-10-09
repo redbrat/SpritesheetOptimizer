@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Threading;
 using UnityEditor;
 using UnityEngine;
@@ -37,7 +38,7 @@ public class Optimizer : EditorWindow
 
         if (_sprite != null && _cts == null && GUILayout.Button("Try"))
         {
-            var algorithmBulder = new AlgorythmBuilder();
+            var algorithmBulder = new AlgorythmBuilder(); 
             var algorythm = algorithmBulder
                 .AddSizingsConfigurator<PickySizingConfigurator>(_pickinessLevel)
                 .AddScoreCounter<DefaultScoreCounter>()
@@ -79,6 +80,12 @@ public class Optimizer : EditorWindow
         var texture = sprite.texture;
         var path = AssetDatabase.GetAssetPath(sprite);
         var ti = AssetImporter.GetAtPath(path) as TextureImporter;
+        var fullPath = $"{Application.dataPath.Substring(0, Application.dataPath.Length - "Assets".Length)}{path}";
+        Debug.LogError($"path = {fullPath}");
+        texture = new Texture2D(1, 1, TextureFormat.ARGB32, false);
+        texture.filterMode = FilterMode.Point;
+        texture.LoadImage(File.ReadAllBytes(fullPath));
+        //return null;
         ti.isReadable = true;
         ti.SaveAndReimport();
 
@@ -121,10 +128,10 @@ public class Optimizer : EditorWindow
                 var height = Mathf.CeilToInt(currentSprite.rect.height);
                 var currentColors = new MyColor[width][];
                 for (int x = 0; x < width; x++)
-                {
+                { 
                     currentColors[x] = new MyColor[height];
                     for (int y = 0; y < height; y++)
-                    {
+                    { 
                         var color = texture.GetPixel(xOrigin + x, yOrigin + y);
                         currentColors[x][y] = new MyColor(
                             Convert.ToByte(Mathf.Clamp(color.r * byte.MaxValue, 0, byte.MaxValue)),
