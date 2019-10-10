@@ -161,8 +161,8 @@ public class Algorythm
 
     public async Task<List<MyArea>> Run()
     {
-
-        //Debug.Log($"GPU Часть закончена, делаем проверку cpu...");
+#if CPU
+        Debug.Log($"GPU Часть закончена, делаем проверку cpu...");
 
         var bestCpuCalculatedAreaList = await getBestCpuCalculatedArea();
         var bestScoreItem = bestCpuCalculatedAreaList.OrderByDescending(o => o.score * o.count).First();
@@ -170,12 +170,8 @@ public class Algorythm
         var bestCpuCalculatedArea = bestCpuCalculatedAreaList.Where(o => o.score * o.count == bestCpuScore).OrderByDescending(o => o.area.SpriteRect.X << 16 | o.area.SpriteRect.Y).First();
 
         Debug.LogError($"CPU Unique areas found: {_allAreas.Count}");
+#endif
 
-        //    return await Task.Run(() => getAreas());
-        //}
-
-        //private List<MyArea> getAreas()
-        //{
         var result = new List<MyArea>();
 
         OverallProgressReport.OperationDescription = "Removing areas from picture";
@@ -273,6 +269,7 @@ public class Algorythm
 
             //Проставляем переменные, не меняющиеся для данного прохода цикла.
             _computeShader.SetBuffer(algorythmKernel, "DataBuffer", dataBuffer);
+
             //cpuBugTester.DataBuffer = data;
 
             var areasCounter = 0;
@@ -311,7 +308,6 @@ public class Algorythm
                 //cpuBugTester.TasksBuffer = tasks;
                 //cpuBugTester.CountsBuffer = new int[areasOfThatSize.Length];
                 //cpuBugTester.ScoresBuffer = new int[areasOfThatSize.Length];
-
 
                 //Проходимся данным размером области по всем возможным пикселам...
                 var stopWatch = new System.Diagnostics.Stopwatch();
@@ -439,10 +435,8 @@ public class Algorythm
 
             Debug.LogError($"GPU Unique areas found: {gpuUniqueAreas.Count}");
 
-            var bestScoreKvp = bestOfEachArea.OrderByDescending(kvp => kvp.Value.count * kvp.Value.score).First();
-            var bestScore = bestScoreKvp.Value.score * bestScoreKvp.Value.count;
 
-
+#if CPU
             //Проверяем совпадение кол-ва областей
             var areasCounts = new Dictionary<MyVector2, int>();
             var areasOk = true;
@@ -634,7 +628,10 @@ public class Algorythm
             }
 
             Debug.LogError($"Everything's ok, there's no exceptions, cpu areas are unique");
+#endif
 
+            var bestScoreKvp = bestOfEachArea.OrderByDescending(kvp => kvp.Value.count * kvp.Value.score).First();
+            var bestScore = bestScoreKvp.Value.score * bestScoreKvp.Value.count;
 
             var finalOfTheBest = bestOfEachArea.Where(kvp => kvp.Value.count * kvp.Value.score == bestScore).OrderByDescending(kvp => kvp.Value.position.X << 16 | kvp.Value.position.Y).First();
             bestOfEachArea.Clear();
@@ -648,9 +645,13 @@ public class Algorythm
             //bestOfTheBest = 0, (19,81), (2,3): s (36) * c (3855) = 138780 (areas 72384). bestCpuCalculatedArea = 0, (15,24), (8,7): s (3136) * c (2371) = 7435456 (areas 61088)
 
 
+#if CPU
             Debug.Log($"bestOfTheBest = {finalOfTheBest.Value.spriteIndex}, ({finalOfTheBest.Value.position.X},{finalOfTheBest.Value.position.Y}), ({finalOfTheBest.Key.X},{finalOfTheBest.Key.Y}): s ({finalOfTheBest.Value.score}) * c ({finalOfTheBest.Value.count}) = {finalOfTheBest.Value.score * finalOfTheBest.Value.count} (areas {finalOfTheBest.Value.test}). bestCpuCalculatedArea = {bestCpuCalculatedArea.area.SpriteIndex}, ({bestCpuCalculatedArea.area.SpriteRect.X},{bestCpuCalculatedArea.area.SpriteRect.Y}), ({bestCpuCalculatedArea.area.SpriteRect.Width},{bestCpuCalculatedArea.area.SpriteRect.Height}): s ({bestCpuCalculatedArea.score}) * c ({bestCpuCalculatedArea.count}) = {bestCpuCalculatedArea.score * bestCpuCalculatedArea.count} (areas {bestCpuCalculatedArea.test})");
-            //Debug.Log($"bestOfTheBest = {finalOfTheBest.Value.spriteIndex}, ({finalOfTheBest.Value.position.X},{finalOfTheBest.Value.position.Y}), ({finalOfTheBest.Key.X},{finalOfTheBest.Key.Y}): s ({finalOfTheBest.Value.score}) * c ({finalOfTheBest.Value.count}) = {finalOfTheBest.Value.score * finalOfTheBest.Value.count} (areas {finalOfTheBest.Value.test}).");
+#else
+            Debug.Log($"bestOfTheBest = {finalOfTheBest.Value.spriteIndex}, ({finalOfTheBest.Value.position.X},{finalOfTheBest.Value.position.Y}), ({finalOfTheBest.Key.X},{finalOfTheBest.Key.Y}): s ({finalOfTheBest.Value.score}) * c ({finalOfTheBest.Value.count}) = {finalOfTheBest.Value.score * finalOfTheBest.Value.count} (areas {finalOfTheBest.Value.test}).");
+#endif
 
+#if CPU
             Debug.Log($"Begin comparing best areas");
             var valid = true;
             for (int x = 0; x < finalOfTheBest.Key.X; x++)
@@ -677,7 +678,7 @@ public class Algorythm
             Debug.Log($"Результат: {valid}");
 
             //2. у нас есть победитель - забираем его данные вхождения из данных! 
-
+#endif
 
             break;
         }
