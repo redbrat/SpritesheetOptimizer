@@ -17,14 +17,14 @@ public class CpuAreaFetcher : IAreaFetcher
         _mapOfEmptiness = mapOfEmptiness;
     }
 
-    public Task<ConcurrentDictionary<int, MyArea>> FetchAreas(MyColor[][][] sprites, IEnumerable<MyVector2> areaSizings, IAreaEnumerator areaEnumerator, ProgressReport progressReport)
+    public Task<ConcurrentDictionary<string, MyArea>> FetchAreas(MyColor[][][] sprites, IEnumerable<MyVector2> areaSizings, IAreaEnumerator areaEnumerator, ProgressReport progressReport)
     {
         var result = Task.Run(() => getAllAreas(sprites, areaSizings, areaEnumerator, progressReport));
         return result;
     }
-    private ConcurrentDictionary<int, MyArea> getAllAreas(MyColor[][][] sprites, IEnumerable<MyVector2> areaSizings, IAreaEnumerator areaEnumerator, ProgressReport progressReport)
+    private ConcurrentDictionary<string, MyArea> getAllAreas(MyColor[][][] sprites, IEnumerable<MyVector2> areaSizings, IAreaEnumerator areaEnumerator, ProgressReport progressReport)
     {
-        var areas = new ConcurrentDictionary<int, MyArea>();
+        var areas = new ConcurrentDictionary<string, MyArea>();
 
         var overallOpsCount = areaSizings.Count() * sprites.Length;
 
@@ -69,16 +69,16 @@ public class CpuAreaFetcher : IAreaFetcher
     }
 
     /// <returns>(Overall areas, Unique areas)</returns>
-    private (int total, int unique) getUniqueAreas(MyVector2 areaSizing, int spriteIndex, ConcurrentDictionary<int, MyArea> areas, IAreaEnumerator areaEnumerator, ProgressReport progressReport)
+    private (int total, int unique) getUniqueAreas(MyVector2 areaSizing, int spriteIndex, ConcurrentDictionary<string, MyArea> areas, IAreaEnumerator areaEnumerator, ProgressReport progressReport)
     {
         var areasTotal = 0;
         var areasUnique = 0;
         areaEnumerator .EnumerateThroughSprite(areaSizing, spriteIndex, (sprite, index, x, y) =>
         {
-            if (!_mapOfEmptiness.Contains(areaSizing, index, x, y))
+            if (!_mapOfEmptiness.Contains(areaSizing, index, x, y)) 
             {
                 var area = MyArea.CreateFromSprite(sprite, spriteIndex, x, y, areaSizing);
-                var hash = area.GetHashCode();
+                var hash = area.UniqueString;
                 if (areas.TryAdd(hash, area))
                     areasUnique++;
                 area = areas[hash];

@@ -31,7 +31,7 @@ public class GpuAreaFetcher : IAreaFetcher
      * шейдер идут туда забираер эту область и проходится с ней по всем спрайтам, считает счет и пишет его в соответствующую клетку резултирующего буффера.
      */
 
-    Task<ConcurrentDictionary<int, MyArea>> IAreaFetcher.FetchAreas(MyColor[][][] sprites, IEnumerable<MyVector2> areaSizings, IAreaEnumerator areaEnumerator, ProgressReport progressReport)
+    Task<ConcurrentDictionary<string, MyArea>> IAreaFetcher.FetchAreas(MyColor[][][] sprites, IEnumerable<MyVector2> areaSizings, IAreaEnumerator areaEnumerator, ProgressReport progressReport)
     {
         return Task.Run(() =>
         {
@@ -59,7 +59,7 @@ public class GpuAreaFetcher : IAreaFetcher
                 Debug.LogError($"map estimation end");
             }
 
-            var result = new ConcurrentDictionary<int, MyArea>(); //Тут мы храним все уникальные области по их хешам
+            var result = new ConcurrentDictionary<string, MyArea>(); //Тут мы храним все уникальные области по их хешам
             var overallOpsCount = areaSizings.Count() * sprites.Length;
             var areasArray = areaSizings.ToArray();
 
@@ -123,7 +123,7 @@ public class GpuAreaFetcher : IAreaFetcher
         throw new System.NotImplementedException();
     }
 
-    private static void getUniqueAreas(MyVector2 areaResolution, int spriteIndex, MyColor[][] sprite, ConcurrentDictionary<int, MyArea> areas, bool[][] mapOfEmptiness, ProgressReport progressReport)
+    private static void getUniqueAreas(MyVector2 areaResolution, int spriteIndex, MyColor[][] sprite, ConcurrentDictionary<string, MyArea> areas, bool[][] mapOfEmptiness, ProgressReport progressReport)
     {
         var areaSquare = areaResolution.X * areaResolution.Y;
         for (int x = 0; x < sprite.Length - areaResolution.X; x++)
@@ -135,10 +135,11 @@ public class GpuAreaFetcher : IAreaFetcher
                 var area = MyArea.CreateFromSprite(sprite, spriteIndex, x, y, areaResolution);
                 if (area.Score == 0)
                     continue;
-                var hash = area.GetHashCode();
+                //var hash = area.GetHashCode();
+                var hash = area.UniqueString;
                 areas.TryAdd(hash, area);
             }
-        }
+        } 
         progressReport.OperationsDone++;
     }
 

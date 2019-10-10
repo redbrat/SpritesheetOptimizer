@@ -29,7 +29,7 @@ RWStructuredBuffer<int> ScoresBuffer; //Счет области - зачем с�
 int MaxOpsAllowed;
 int SpritesCount; //По идее можно, наверное, взять из RegistryBuffer, но, даже если можно, быстрее закешировать.
 
-int3 processSprite(int idx, int spriteIndex, registryStruct spriteInfo, int currentOpsCount, int areaSpriteOffset, int areaSpriteWidth, int areaX, int areaY, int areaWidth, int areaHeight)
+int3 processSprite(int idx, int spriteIndex, registryStruct spriteInfo, int currentOpsCount, int areaSpriteOffset, int areaSpriteHeight, int areaX, int areaY, int areaWidth, int areaHeight)
 {
 	int count = 0;
 	int opsCountResult = currentOpsCount;
@@ -74,8 +74,8 @@ int3 processSprite(int idx, int spriteIndex, registryStruct spriteInfo, int curr
 					int candidateX = spriteX + x;
 					int candidateY = spriteY + y;
 
-					int sampleColor = DataBuffer[areaSpriteOffset + sampleX * areaSpriteWidth + sampleY];
-					int candidateColor = DataBuffer[spriteOffset + candidateX * spriteWidth + candidateY];
+					int sampleColor = DataBuffer[areaSpriteOffset + sampleX * areaSpriteHeight + sampleY];
+					int candidateColor = DataBuffer[spriteOffset + candidateX * spriteHeight + candidateY];
 					if (sampleColor != candidateColor)
 					{
 						maybeThis = false;
@@ -163,8 +163,8 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 
 	registryStruct areaSpriteInfo = RegistryBuffer[areaSpriteIndex];
 	int areaSpriteOffset = areaSpriteInfo.SpritesDataOffset;
-	int areaSpriteWidth = areaSpriteInfo.WidthAndHeight >> 16 & 65535;
-	//int areaSpriteHeight = areaSpriteInfo.WidthAndHeight & 65535;
+	//int areaSpriteWidth = areaSpriteInfo.WidthAndHeight >> 16 & 65535;
+	int areaSpriteHeight = areaSpriteInfo.WidthAndHeight & 65535;
 
 	int singleScore = ScoresBuffer[id.x];
 	if (singleScore == 0) //Если счет равен 0, возможен только 1 вариант - это первый проход и мы еще ни разу не считали счет. Потому что если считали он либо не 0 либо мы давно вышли по мете области
@@ -176,7 +176,7 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 			{
 				int xx = x + areaX;
 				int yy = y + areaY;
-				int color = DataBuffer[areaSpriteOffset + xx * areaSpriteWidth + yy];
+				int color = DataBuffer[areaSpriteOffset + xx * areaSpriteHeight + yy];
 				int a = color & 255;
 				if (a != 0)
 					opaquePixels++;
@@ -213,7 +213,7 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 	{
 		registryStruct currentSpriteInfo = RegistryBuffer[i];
 
-		int3 result = processSprite(id.x, i, currentSpriteInfo, currentOpsCount, areaSpriteOffset, areaSpriteWidth, areaX, areaY, areaWidth, areaHeight);
+		int3 result = processSprite(id.x, i, currentSpriteInfo, currentOpsCount, areaSpriteOffset, areaSpriteHeight, areaX, areaY, areaWidth, areaHeight);
 
 		coincidentsCount += result[0];
 		currentOpsCount = result[1];

@@ -33,7 +33,7 @@ public class Algorythm
 
     private readonly ComputeShader _computeShader;
 
-    private ConcurrentDictionary<int, MyArea> _allAreas;
+    private ConcurrentDictionary<string, MyArea> _allAreas;
     private MapOfEmptiness _mapOfEmptiness;
     private IEnumerable<MyVector2> _areaSizings;
     private IAreaEnumerator _areaEnumerator;
@@ -184,7 +184,7 @@ public class Algorythm
         var dataSize = 0;
         for (int i = 0; i < _sprites.Length; i++)
             dataSize += _sprites[i].Length * _sprites[i][0].Length;
-        var data = new int[dataSize]; 
+        var data = new int[dataSize];
         var registry = new registryStruct[_sprites.Length];
         var allPossibleAreas = new Dictionary<MyVector2, List<areaStruct>>();
 
@@ -254,10 +254,10 @@ public class Algorythm
         _computeShader.SetInt("SpritesCount", _sprites.Length);
         _computeShader.SetBuffer(algorythmKernel, "RegistryBuffer", registryBuffer);
 
-        var cpuBugTester = new CpuBugTest();
-        cpuBugTester.MaxOpsAllowed = 295; 
-        cpuBugTester.SpritesCount = _sprites.Length;
-        cpuBugTester.RegistryBuffer = registry;
+        //var cpuBugTester = new CpuBugTest();
+        //cpuBugTester.MaxOpsAllowed = 295;
+        //cpuBugTester.SpritesCount = _sprites.Length;
+        //cpuBugTester.RegistryBuffer = registry;
 
         var bestOfEachArea = new Dictionary<MyVector2, (int spriteIndex, MyVector2 position, int count, int score, string test)>();
         var chunkCountArrayList = new List<int[]>();
@@ -273,7 +273,7 @@ public class Algorythm
 
             //Проставляем переменные, не меняющиеся для данного прохода цикла.
             _computeShader.SetBuffer(algorythmKernel, "DataBuffer", dataBuffer);
-            cpuBugTester.DataBuffer = data;
+            //cpuBugTester.DataBuffer = data;
 
             var areasCounter = 0;
             var gpuUniqueAreas = new List<areaStruct>();
@@ -307,10 +307,10 @@ public class Algorythm
                 _computeShader.SetBuffer(algorythmKernel, "CountsBuffer", countsBuffer);
                 _computeShader.SetBuffer(algorythmKernel, "ScoresBuffer", scoresBuffer);
 
-                cpuBugTester.AreasBuffer = areasOfThatSize;
-                cpuBugTester.TasksBuffer = tasks;
-                cpuBugTester.CountsBuffer = new int[areasOfThatSize.Length];
-                cpuBugTester.ScoresBuffer = new int[areasOfThatSize.Length];
+                //cpuBugTester.AreasBuffer = areasOfThatSize;
+                //cpuBugTester.TasksBuffer = tasks;
+                //cpuBugTester.CountsBuffer = new int[areasOfThatSize.Length];
+                //cpuBugTester.ScoresBuffer = new int[areasOfThatSize.Length];
 
 
                 //Проходимся данным размером области по всем возможным пикселам...
@@ -326,56 +326,56 @@ public class Algorythm
                 {
                     passes++;
 
-                    for (int i = 0; i < areasOfThatSize.Length; i++)
-                        cpuBugTester.Dispatch(i);
+                    //for (int i = 0; i < areasOfThatSize.Length; i++)
+                    //    cpuBugTester.Dispatch(i);
 
-                    var allAreasDone = true;
-                    for (int i = 0; i < cpuBugTester.TasksBuffer.Length; i++)
-                    {
-                        if ((cpuBugTester.TasksBuffer[i].MetaAndSpriteIndex >> 24 & 255) == 1)
-                        {
-                            allAreasDone = false; //Продолжаем пока хотя бы одна область нуждается в обработке
-                            break;
-                        }
-                    }
-
-                    chunkCountArrayList.Add(cpuBugTester.CountsBuffer);
-                    cpuBugTester.CountsBuffer = new int[areasOfThatSize.Length];
-
-                    if (allAreasDone)
-                    {
-                        scores = cpuBugTester.ScoresBuffer;
-                        cpuBugTester.ScoresBuffer = new int[areasOfThatSize.Length];
-                        break;
-                    }
-
-                    //_computeShader.Dispatch(algorythmKernel, iterationsCount, 1, 1);
-
-                    //tasksBuffer.GetData(tasksUpdated);
                     //var allAreasDone = true;
-                    //for (int i = 0; i < tasksUpdated.Length; i++)
+                    //for (int i = 0; i < cpuBugTester.TasksBuffer.Length; i++)
                     //{
-                    //    if ((tasksUpdated[i].MetaAndSpriteIndex >> 24 & 255) == 1)
+                    //    if ((cpuBugTester.TasksBuffer[i].MetaAndSpriteIndex >> 24 & 255) == 1)
                     //    {
                     //        allAreasDone = false; //Продолжаем пока хотя бы одна область нуждается в обработке
                     //        break;
                     //    }
                     //}
 
-                    //var chunkCountsArray = new int[areasOfThatSize.Length];
-                    //countsBuffer.GetData(chunkCountsArray);
-
-                    //var zeroes = new int[areasOfThatSize.Length];
-
-                    //chunkCountArrayList.Add(chunkCountsArray);
-                    //countsBuffer.SetData(zeroes);
+                    //chunkCountArrayList.Add(cpuBugTester.CountsBuffer);
+                    //cpuBugTester.CountsBuffer = new int[areasOfThatSize.Length];
 
                     //if (allAreasDone)
                     //{
-                    //    scoresBuffer.GetData(scores); //Напоследок забираем оценки каждой отдельной области
-                    //    scoresBuffer.SetData(zeroes);
+                    //    scores = cpuBugTester.ScoresBuffer;
+                    //    cpuBugTester.ScoresBuffer = new int[areasOfThatSize.Length];
                     //    break;
                     //}
+
+                    _computeShader.Dispatch(algorythmKernel, iterationsCount, 1, 1);
+
+                    tasksBuffer.GetData(tasksUpdated);
+                    var allAreasDone = true;
+                    for (int i = 0; i < tasksUpdated.Length; i++)
+                    {
+                        if ((tasksUpdated[i].MetaAndSpriteIndex >> 24 & 255) == 1)
+                        {
+                            allAreasDone = false; //Продолжаем пока хотя бы одна область нуждается в обработке
+                            break;
+                        }
+                    }
+
+                    var chunkCountsArray = new int[areasOfThatSize.Length];
+                    countsBuffer.GetData(chunkCountsArray);
+
+                    var zeroes = new int[areasOfThatSize.Length];
+
+                    chunkCountArrayList.Add(chunkCountsArray);
+                    countsBuffer.SetData(zeroes);
+
+                    if (allAreasDone)
+                    {
+                        scoresBuffer.GetData(scores); //Напоследок забираем оценки каждой отдельной области
+                        scoresBuffer.SetData(zeroes);
+                        break;
+                    }
                 }
 
                 stopWatch.Stop();
@@ -534,15 +534,22 @@ public class Algorythm
                 for (int xx = 0; xx < width; xx++)
                 {
                     sb.Append('_');
+                    sb.Append(xx);
                     for (int yy = 0; yy < height; yy++)
                     {
                         var pixel = _sprites[index][x + xx][y + yy];
-                        sb.Append('|');
+
+                        sb.Append('-');
                         sb.Append(xx);
+                        sb.Append('.');
                         sb.Append(yy);
+                        sb.Append('&');
                         sb.Append(pixel.R);
+                        sb.Append('?');
                         sb.Append(pixel.G);
+                        sb.Append('#');
                         sb.Append(pixel.B);
+                        sb.Append('!');
                         sb.Append(pixel.A);
                     }
                 }
@@ -569,7 +576,64 @@ public class Algorythm
                 sb.Clear();
             }
 
-            Debug.LogError($"Everything's ok, there's no exceptions, areas are unique");
+            Debug.LogError($"Everything's ok, there's no exceptions, gpu areas are unique");
+            Debug.LogError($"Starting cpu areas checking");
+
+            var cpuAreaHashes = new Dictionary<string, MyArea>();
+            foreach (var kvp in _allAreas)
+            {
+                var area = kvp.Value;
+                var x = area.SpriteRect.X;
+                var y = area.SpriteRect.Y;
+                var width = area.SpriteRect.Width;
+                var height = area.SpriteRect.Height;
+                var index = area.SpriteIndex;
+                for (int xx = 0; xx < width; xx++)
+                {
+                    sb.Append('_');
+                    sb.Append(xx);
+                    for (int yy = 0; yy < height; yy++)
+                    {
+                        var pixel = _sprites[index][x + xx][y + yy];
+
+                        sb.Append('-');
+                        sb.Append(xx);
+                        sb.Append('.');
+                        sb.Append(yy);
+                        sb.Append('&');
+                        sb.Append(pixel.R);
+                        sb.Append('?');
+                        sb.Append(pixel.G);
+                        sb.Append('#');
+                        sb.Append(pixel.B);
+                        sb.Append('!');
+                        sb.Append(pixel.A);
+                    }
+                }
+                var key = sb.ToString();
+                if (cpuAreaHashes.ContainsKey(key))
+                {
+                    var repeatArea = cpuAreaHashes[key];
+                    Debug.LogError($"repeating area:");
+                    Debug.LogError($"index: {repeatArea.SpriteIndex}");
+                    Debug.LogError($"x: {repeatArea.SpriteRect.X}");
+                    Debug.LogError($"y: {repeatArea.SpriteRect.Y}");
+                    Debug.LogError($"width: {repeatArea.SpriteRect.Width}");
+                    Debug.LogError($"height: {repeatArea.SpriteRect.Height}");
+
+                    Debug.LogError($"");
+                    Debug.LogError($"new area:");
+                    Debug.LogError($"index: {area.SpriteIndex}");
+                    Debug.LogError($"x: {area.SpriteRect.X}");
+                    Debug.LogError($"y: {area.SpriteRect.Y}");
+                    Debug.LogError($"width: {area.SpriteRect.Width}");
+                    Debug.LogError($"height: {area.SpriteRect.Height}");
+                }
+                cpuAreaHashes.Add(key, area);
+                sb.Clear();
+            }
+
+            Debug.LogError($"Everything's ok, there's no exceptions, cpu areas are unique");
 
 
             var finalOfTheBest = bestOfEachArea.Where(kvp => kvp.Value.count * kvp.Value.score == bestScore).OrderByDescending(kvp => kvp.Value.position.X << 16 | kvp.Value.position.Y).First();
@@ -1116,7 +1180,7 @@ public class Algorythm
 
         var currentAreaIndex = 0;
 
-        List<KeyValuePair<int, MyArea>> orderedAreas = null;
+        List<KeyValuePair<string, MyArea>> orderedAreas = null;
         while (UnprocessedPixels > 0)
         {
             Debug.LogError($"Run 2");
@@ -1167,14 +1231,14 @@ public class Algorythm
             orderedAreas = _allAreas.OrderByDescending(kvp => kvp.Value.Correlations.Count * kvp.Value.Score).ToList();
             var currentArea = orderedAreas[0];
 
-            Debug.Log($"Removing area #{currentAreaIndex}: hash {currentArea.Key}, score {currentArea.Value.Correlations.Count * currentArea.Value.Score}");
-            var areasRemoved = await applyBestArea(_sprites, currentArea.Key);
-            var pixelsRemoved = currentArea.Value.OpaquePixelsCount * areasRemoved.Count;
-            map.Add(currentArea.Value, areasRemoved);
-            OverallProgressReport.OperationsDone += pixelsRemoved;
-            UnprocessedPixels -= pixelsRemoved;
-            currentAreaIndex++;
-            Debug.LogError($"Run 6");
+            //Debug.Log($"Removing area #{currentAreaIndex}: hash {currentArea.Key}, score {currentArea.Value.Correlations.Count * currentArea.Value.Score}");
+            //var areasRemoved = await applyBestArea(_sprites, currentArea.Key);
+            //var pixelsRemoved = currentArea.Value.OpaquePixelsCount * areasRemoved.Count;
+            //map.Add(currentArea.Value, areasRemoved);
+            //OverallProgressReport.OperationsDone += pixelsRemoved;
+            //UnprocessedPixels -= pixelsRemoved;
+            //currentAreaIndex++;
+            //Debug.LogError($"Run 6");
         }
         Debug.Log($"Done!");
 
@@ -1190,28 +1254,28 @@ public class Algorythm
 
     private int getBestArea(IOrderedEnumerable<KeyValuePair<int, long>> rating) => rating.First().Key;
 
-    private async Task<List<MyAreaCoordinates>> applyBestArea(MyColor[][][] sprites, int bestAreaIndex)
-    {
-        var result = new List<MyAreaCoordinates>();
-        MyArea bestArea;
-        if (!_allAreas.TryRemove(bestAreaIndex, out bestArea))
-            throw new ApplicationException($"Area is not found!");
+    //private async Task<List<MyAreaCoordinates>> applyBestArea(MyColor[][][] sprites, int bestAreaIndex)
+    //{
+    //    var result = new List<MyAreaCoordinates>();
+    //    MyArea bestArea;
+    //    if (!_allAreas.TryRemove(bestAreaIndex, out bestArea))
+    //        throw new ApplicationException($"Area is not found!");
 
-        var correlations = bestArea.Correlations;
-        foreach (var kvp in correlations)
-        {
-            var myAreaCoordinates = kvp.Value;
-            if (_mapOfEmptiness.Contains(myAreaCoordinates.Dimensions, myAreaCoordinates.SpriteIndex, myAreaCoordinates.X, myAreaCoordinates.Y))
-                continue;
+    //    var correlations = bestArea.Correlations;
+    //    foreach (var kvp in correlations)
+    //    {
+    //        var myAreaCoordinates = kvp.Value;
+    //        if (_mapOfEmptiness.Contains(myAreaCoordinates.Dimensions, myAreaCoordinates.SpriteIndex, myAreaCoordinates.X, myAreaCoordinates.Y))
+    //            continue;
 
-            var candidateForErasing = MyArea.CreateFromSprite(sprites[myAreaCoordinates.SpriteIndex], myAreaCoordinates.SpriteIndex, myAreaCoordinates.X, myAreaCoordinates.Y, myAreaCoordinates.Dimensions);
-            if (candidateForErasing.GetHashCode() != bestArea.GetHashCode())
-                continue;
-            MyArea.EraseAreaFromSprite(sprites[myAreaCoordinates.SpriteIndex], myAreaCoordinates.X, myAreaCoordinates.Y, myAreaCoordinates.Dimensions);
-            _mapOfEmptiness.MakeEmpty(myAreaCoordinates.Dimensions, myAreaCoordinates.SpriteIndex, myAreaCoordinates.X, myAreaCoordinates.Y);
-            result.Add(myAreaCoordinates);
-        }
+    //        var candidateForErasing = MyArea.CreateFromSprite(sprites[myAreaCoordinates.SpriteIndex], myAreaCoordinates.SpriteIndex, myAreaCoordinates.X, myAreaCoordinates.Y, myAreaCoordinates.Dimensions);
+    //        if (candidateForErasing.GetHashCode() != bestArea.GetHashCode())
+    //            continue;
+    //        MyArea.EraseAreaFromSprite(sprites[myAreaCoordinates.SpriteIndex], myAreaCoordinates.X, myAreaCoordinates.Y, myAreaCoordinates.Dimensions);
+    //        _mapOfEmptiness.MakeEmpty(myAreaCoordinates.Dimensions, myAreaCoordinates.SpriteIndex, myAreaCoordinates.X, myAreaCoordinates.Y);
+    //        result.Add(myAreaCoordinates);
+    //    }
 
-        return result;
-    }
+    //    return result;
+    //}
 }
