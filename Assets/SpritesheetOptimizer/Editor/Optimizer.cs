@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Text;
 using System.Threading;
 using UnityEditor;
 using UnityEngine;
@@ -38,7 +39,7 @@ public class Optimizer : EditorWindow
 
         if (_sprite != null && _cts == null && GUILayout.Button("Try"))
         {
-            var algorithmBulder = new AlgorythmBuilder(); 
+            var algorithmBulder = new AlgorythmBuilder();
             var algorythm = algorithmBulder
                 .AddSizingsConfigurator<PickySizingConfigurator>(_pickinessLevel)
                 .AddScoreCounter<DefaultScoreCounter>()
@@ -91,7 +92,7 @@ public class Optimizer : EditorWindow
 
         var spritesCount = ti.spritesheet.Length;
         var sprites = (MyColor[][][])null;
-
+        var sb = new StringBuilder();
         if (spritesCount == 0) //If there're no items in spritesheet - it means there is a single sprite in asset.
         {
             sprites = new MyColor[1][][];
@@ -127,19 +128,34 @@ public class Optimizer : EditorWindow
                 var width = Mathf.CeilToInt(currentSprite.rect.width);
                 var height = Mathf.CeilToInt(currentSprite.rect.height);
                 var currentColors = new MyColor[width][];
+
+                var printing = false;
+
+                if (i == 12 || i == 42)
+                {
+                    sb.AppendLine($"Printing sprite #{i}");
+                    printing = true;
+                }
+
                 for (int x = 0; x < width; x++)
-                { 
+                {
                     currentColors[x] = new MyColor[height];
                     for (int y = 0; y < height; y++)
-                    { 
+                    {
                         var color = texture.GetPixel(xOrigin + x, yOrigin + y);
-                        currentColors[x][y] = new MyColor(
-                            Convert.ToByte(Mathf.Clamp(color.r * byte.MaxValue, 0, byte.MaxValue)),
-                            Convert.ToByte(Mathf.Clamp(color.g * byte.MaxValue, 0, byte.MaxValue)),
-                            Convert.ToByte(Mathf.Clamp(color.b * byte.MaxValue, 0, byte.MaxValue)),
-                            Convert.ToByte(Mathf.Clamp(color.a * byte.MaxValue, 0, byte.MaxValue))
-                        );
+                        var r = (byte)Mathf.Clamp(color.r * byte.MaxValue, 0, byte.MaxValue);
+                        var g = (byte)Mathf.Clamp(color.g * byte.MaxValue, 0, byte.MaxValue);
+                        var b = (byte)Mathf.Clamp(color.b * byte.MaxValue, 0, byte.MaxValue);
+                        var a = (byte)Mathf.Clamp(color.a * byte.MaxValue, 0, byte.MaxValue);
+                        if (printing)
+                            sb.AppendLine($"({x},{y}) = {r},{g},{b},{a}");
+                        currentColors[x][y] = new MyColor(r, g, b, a);
                     }
+                }
+                if (printing)
+                {
+                    File.WriteAllText($"C:\\ABC\\opt-{i}.txt", sb.ToString());
+                    sb.Clear();
                 }
                 sprites[i] = currentColors;
             }

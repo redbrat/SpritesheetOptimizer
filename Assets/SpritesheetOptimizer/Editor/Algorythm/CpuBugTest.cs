@@ -151,10 +151,15 @@
         int areaWidth = area.WidthAndHeight >> 16 & 65535;
         int areaHeight = area.WidthAndHeight & 65535;
 
-        if ((areaSpriteIndex == 2 || areaSpriteIndex == 0) && areaX == 0 && areaY == 0 && areaWidth == 8 && areaHeight == 8)
-        { 
+        if (areaSpriteIndex == 12 && areaX == 26 && areaY == 16 && areaWidth == 5 && areaHeight == 5)
+        {
 
-        } 
+        }
+
+        if (areaSpriteIndex == 42 && areaX == 20 && areaY == 6 && areaWidth == 5 && areaHeight == 5)
+        {
+
+        }
 
         var areaSpriteInfo = RegistryBuffer[areaSpriteIndex];
         int areaSpriteOffset = areaSpriteInfo.SpritesDataOffset;

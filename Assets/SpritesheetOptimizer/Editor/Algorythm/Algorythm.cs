@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -188,6 +189,7 @@ public class Algorythm
         var allPossibleAreas = new Dictionary<MyVector2, List<areaStruct>>();
 
         var dataOffset = 0;
+        var sb = new StringBuilder();
         for (int i = 0; i < _sprites.Length; i++)
         {
             var sprite = _sprites[i];
@@ -195,12 +197,27 @@ public class Algorythm
             var height = sprite[0].Length;
 
             registry[i] = new registryStruct(dataOffset, width << 16 | height);
-
+            var printsCount = 0;
+            var printing = false;
+            if (dataOffset == 11728)
+            {
+                printing = true;
+                printsCount++;
+            }
+            if (dataOffset == 40184)
+            {
+                printing = true;
+                printsCount++;
+            }
+            if (printing)
+                sb.AppendLine($"Printing sprite #{i}:");
             for (int x = 0; x < width; x++)
             {
                 for (int y = 0; y < height; y++)
                 {
                     data[dataOffset++] = sprite[x][y].R << 24 | sprite[x][y].G << 16 | sprite[x][y].B << 8 | sprite[x][y].A;
+                    if (printing)
+                        sb.AppendLine($"({x},{y}) = {sprite[x][y].R},{sprite[x][y].G},{sprite[x][y].B},{sprite[x][y].A}");
 
                     foreach (var size in _areaSizings)
                     {
@@ -216,6 +233,13 @@ public class Algorythm
                     }
                 }
             }
+            if (printing)
+            {
+                File.WriteAllText($"C:\\ABC\\alg-{i}.txt", sb.ToString());
+                sb.Clear();
+            }
+            //if (printsCount == 2)
+            //    return result;
         }
 
 
@@ -495,7 +519,7 @@ public class Algorythm
             //Проверяем действительно ли gpu области все уникальны.
 
             var gpuAreaHashes = new Dictionary<string, areaStruct>();
-            var sb = new StringBuilder();
+            sb = new StringBuilder();
             for (int i = 0; i < gpuUniqueAreas.Count; i++)
             {
                 var area = gpuUniqueAreas[i];
@@ -509,11 +533,14 @@ public class Algorythm
                 //sb.Append(height);
                 for (int xx = 0; xx < width; xx++)
                 {
+                    sb.Append('_');
                     for (int yy = 0; yy < height; yy++)
                     {
                         var pixel = _sprites[index][x + xx][y + yy];
+                        sb.Append('|');
                         sb.Append(xx);
                         sb.Append(yy);
+                        sb.Append(pixel.R);
                         sb.Append(pixel.G);
                         sb.Append(pixel.B);
                         sb.Append(pixel.A);
