@@ -245,15 +245,19 @@ public class Algorythm
         var registryBuffer = new ComputeBuffer(_sprites.Length, 8);
         registryBuffer.SetData(registry);
 
+        var maxOpsAllowed = 295;
+
         //Проставляем константы.
-        _computeShader.SetInt("MaxOpsAllowed", 295000);
+        _computeShader.SetInt("MaxOpsAllowed", maxOpsAllowed);
         _computeShader.SetInt("SpritesCount", _sprites.Length);
         _computeShader.SetBuffer(algorythmKernel, "RegistryBuffer", registryBuffer);
 
-        //var cpuBugTester = new CpuBugTest();
-        //cpuBugTester.MaxOpsAllowed = 295;
-        //cpuBugTester.SpritesCount = _sprites.Length;
-        //cpuBugTester.RegistryBuffer = registry;
+#if GPUEmu
+        var cpuBugTester = new CpuBugTest();
+        cpuBugTester.MaxOpsAllowed = maxOpsAllowed;
+        cpuBugTester.SpritesCount = _sprites.Length;
+        cpuBugTester.RegistryBuffer = registry;
+#endif
 
         var bestOfEachArea = new Dictionary<MyVector2, (int spriteIndex, MyVector2 position, int count, int score, string test)>();
         var chunkCountArrayList = new List<int[]>();
@@ -270,7 +274,9 @@ public class Algorythm
             //Проставляем переменные, не меняющиеся для данного прохода цикла.
             _computeShader.SetBuffer(algorythmKernel, "DataBuffer", dataBuffer);
 
-            //cpuBugTester.DataBuffer = data;
+#if GPUEmu
+            cpuBugTester.DataBuffer = data;
+#endif
 
             var areasCounter = 0;
             var gpuUniqueAreas = new List<areaStruct>();
@@ -304,10 +310,12 @@ public class Algorythm
                 _computeShader.SetBuffer(algorythmKernel, "CountsBuffer", countsBuffer);
                 _computeShader.SetBuffer(algorythmKernel, "ScoresBuffer", scoresBuffer);
 
-                //cpuBugTester.AreasBuffer = areasOfThatSize;
-                //cpuBugTester.TasksBuffer = tasks;
-                //cpuBugTester.CountsBuffer = new int[areasOfThatSize.Length];
-                //cpuBugTester.ScoresBuffer = new int[areasOfThatSize.Length];
+#if GPUEmu
+                cpuBugTester.AreasBuffer = areasOfThatSize;
+                cpuBugTester.TasksBuffer = tasks;
+                cpuBugTester.CountsBuffer = new int[areasOfThatSize.Length];
+                cpuBugTester.ScoresBuffer = new int[areasOfThatSize.Length];
+#endif
 
                 //Проходимся данным размером области по всем возможным пикселам...
                 var stopWatch = new System.Diagnostics.Stopwatch();
@@ -322,29 +330,30 @@ public class Algorythm
                 {
                     passes++;
 
-                    //for (int i = 0; i < areasOfThatSize.Length; i++)
-                    //    cpuBugTester.Dispatch(i);
+#if GPUEmu
+                    for (int i = 0; i < areasOfThatSize.Length; i++)
+                        cpuBugTester.Dispatch(i);
 
-                    //var allAreasDone = true;
-                    //for (int i = 0; i < cpuBugTester.TasksBuffer.Length; i++)
-                    //{
-                    //    if ((cpuBugTester.TasksBuffer[i].MetaAndSpriteIndex >> 24 & 255) == 1)
-                    //    {
-                    //        allAreasDone = false; //Продолжаем пока хотя бы одна область нуждается в обработке
-                    //        break;
-                    //    }
-                    //}
+                    var allAreasDone = true;
+                    for (int i = 0; i < cpuBugTester.TasksBuffer.Length; i++)
+                    {
+                        if ((cpuBugTester.TasksBuffer[i].MetaAndSpriteIndex >> 24 & 255) == 1)
+                        {
+                            allAreasDone = false; //Продолжаем пока хотя бы одна область нуждается в обработке
+                            break;
+                        }
+                    }
 
-                    //chunkCountArrayList.Add(cpuBugTester.CountsBuffer);
-                    //cpuBugTester.CountsBuffer = new int[areasOfThatSize.Length];
+                    chunkCountArrayList.Add(cpuBugTester.CountsBuffer);
+                    cpuBugTester.CountsBuffer = new int[areasOfThatSize.Length];
 
-                    //if (allAreasDone)
-                    //{
-                    //    scores = cpuBugTester.ScoresBuffer;
-                    //    cpuBugTester.ScoresBuffer = new int[areasOfThatSize.Length];
-                    //    break;
-                    //}
-
+                    if (allAreasDone)
+                    {
+                        scores = cpuBugTester.ScoresBuffer;
+                        cpuBugTester.ScoresBuffer = new int[areasOfThatSize.Length];
+                        break;
+                    }
+#else
                     _computeShader.Dispatch(algorythmKernel, iterationsCount, 1, 1);
 
                     tasksBuffer.GetData(tasksUpdated);
@@ -361,17 +370,17 @@ public class Algorythm
                     var chunkCountsArray = new int[areasOfThatSize.Length];
                     countsBuffer.GetData(chunkCountsArray);
 
-                    var zeroes = new int[areasOfThatSize.Length];
-
                     chunkCountArrayList.Add(chunkCountsArray);
-                    countsBuffer.SetData(zeroes);
+                    countsBuffer.SetData(new int[areasOfThatSize.Length]);
 
                     if (allAreasDone)
                     {
+                        scores = new int[areasOfThatSize.Length];
                         scoresBuffer.GetData(scores); //Напоследок забираем оценки каждой отдельной области
-                        scoresBuffer.SetData(zeroes);
+                        scoresBuffer.SetData(new int[areasOfThatSize.Length]);
                         break;
                     }
+#endif
                 }
 
                 stopWatch.Stop();
@@ -387,6 +396,36 @@ public class Algorythm
                 }
 
                 chunkCountArrayList.Clear();
+
+                areasBuffer.GetData(areasOfThatSize);
+                for (int i = 0; i < areasOfThatSize.Length; i++)
+                {
+                    if ((areasOfThatSize[i].MetaAndSpriteIndex >> 24 & 255) == 0)
+                    {
+                        scores[i] = 0;
+                        continue;
+                    }
+                    var index = areasOfThatSize[i].MetaAndSpriteIndex & 16777215;
+                    var x = areasOfThatSize[i].XAndY >> 16 & 65535;
+                    var y = areasOfThatSize[i].XAndY & 65535;
+                    var width = areasOfThatSize[i].WidthAndHeight >> 16 & 65535;
+                    var height = areasOfThatSize[i].WidthAndHeight & 65535;
+
+                    var opaquePixels = 0;
+                    for (int xx = 0; xx < width; xx++)
+                    {
+                        for (int yy = 0; yy < height; yy++)
+                        {
+                            var color = _sprites[index][x + xx][y + yy];
+                            if (color.A != 0)
+                                opaquePixels++;
+                        }
+                    }
+
+                    var square = width * height;
+                    //scores[i] = (int)(opaquePixels * opaquePixels * opaquePixels / square);
+                    scores[i] = Mathf.FloorToInt(Mathf.Pow(opaquePixels, 3f) / square);
+                }
 
                 var maxTotalScore = int.MinValue;
                 var maxTotalScoreIndex = -1;
@@ -418,6 +457,10 @@ public class Algorythm
                     }
                 }
 
+                if (scores[maxTotalScoreIndex] == 16777236)
+                {
+
+                }
                 bestOfEachArea.Add(size, (
                     spriteIndex: areasOfThatSize[maxTotalScoreIndex].MetaAndSpriteIndex & 16777215,
                     position: new MyVector2(areasOfThatSize[maxTotalScoreIndex].XAndY >> 16 & 65535, areasOfThatSize[maxTotalScoreIndex].XAndY & 65535),
