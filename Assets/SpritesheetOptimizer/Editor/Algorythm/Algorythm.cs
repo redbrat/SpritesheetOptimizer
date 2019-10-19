@@ -206,21 +206,21 @@ public class Algorythm
         OverallProgressReport.OperationDescription = "Removing areas from picture";
         OverallProgressReport.OperationsCount = UnprocessedPixels;
         Debug.Log($"UnprocessedPixels total = {UnprocessedPixels}");
-        {
-            var opaquePixelsLeft = 0;
-            for (int i = 0; i < _sprites.Length; i++)
-            {
-                for (int x = 0; x < _sprites[i].Length; x++)
-                {
-                    for (int y = 0; y < _sprites[i][x].Length; y++)
-                    {
-                        if (_sprites[i][x][y].A != 0)
-                            opaquePixelsLeft++;
-                    }
-                }
-            }
-            Debug.Log($"...а на самом деле UnprocessedPixels = {opaquePixelsLeft}.");
-        }
+        //{
+        //    var opaquePixelsLeft = 0;
+        //    for (int i = 0; i < _sprites.Length; i++)
+        //    {
+        //        for (int x = 0; x < _sprites[i].Length; x++)
+        //        {
+        //            for (int y = 0; y < _sprites[i][x].Length; y++)
+        //            {
+        //                if (_sprites[i][x][y].A != 0)
+        //                    opaquePixelsLeft++;
+        //            }
+        //        }
+        //    }
+        //    Debug.Log($"...а на самом деле UnprocessedPixels = {opaquePixelsLeft}.");
+        //}
 
         var dataSize = 0;
         for (int i = 0; i < _sprites.Length; i++)
@@ -421,7 +421,7 @@ public class Algorythm
                         }
                     } 
 
-                    var chunkCountsArray = blockCopy(zeroes);
+                    var chunkCountsArray = new int[areasOfThatSize.Length];
                     countsBuffer.GetData(chunkCountsArray);
                     for (int i = 0; i < chunkCountsArray.Length; i++)
                     {
@@ -436,7 +436,7 @@ public class Algorythm
 
                     if (allAreasDone)
                     {
-                        scores = blockCopy(zeroes);
+                        scores = new int[areasOfThatSize.Length];
                         scoresBuffer.GetData(scores); //Напоследок забираем оценки каждой отдельной области
                         scoresBuffer.SetData(blockCopy(zeroes));
                         break;
@@ -466,101 +466,101 @@ public class Algorythm
 
                 chunkCountArrayList.Clear();
 
-                //Считаем scores на цпу, потому что gpu почему-то часто тупит с этим
-                areasBuffer.GetData(areasOfThatSize);
-                var everyScoreIs0 = true;
-                var everyCountAndScoreIs0 = true;
-                for (int i = 0; i < areasOfThatSize.Length; i++)
-                {
-                    if ((areasOfThatSize[i].MetaAndSpriteIndex >> 24 & 255) == 0)
-                    {
-                        scores[i] = 0; 
-                        continue;
-                    }
-                    var index = areasOfThatSize[i].MetaAndSpriteIndex & 16777215;
-                    var x = areasOfThatSize[i].XAndY >> 16 & 65535;
-                    var y = areasOfThatSize[i].XAndY & 65535;
-                    var width = areasOfThatSize[i].WidthAndHeight >> 16 & 65535;
-                    var height = areasOfThatSize[i].WidthAndHeight & 65535;
+                ////Считаем scores на цпу, потому что gpu почему-то часто тупит с этим
+                //areasBuffer.GetData(areasOfThatSize);
+                //var everyScoreIs0 = true;
+                //var everyCountAndScoreIs0 = true;
+                //for (int i = 0; i < areasOfThatSize.Length; i++)
+                //{
+                //    if ((areasOfThatSize[i].MetaAndSpriteIndex >> 24 & 255) == 0)
+                //    {
+                //        scores[i] = 0; 
+                //        continue;
+                //    }
+                //    var index = areasOfThatSize[i].MetaAndSpriteIndex & 16777215;
+                //    var x = areasOfThatSize[i].XAndY >> 16 & 65535;
+                //    var y = areasOfThatSize[i].XAndY & 65535;
+                //    var width = areasOfThatSize[i].WidthAndHeight >> 16 & 65535;
+                //    var height = areasOfThatSize[i].WidthAndHeight & 65535;
 
-                    var offset = registry[index].SpritesDataOffset;
-                    var spriteHeight = registry[index].WidthAndHeight & 65535;
-                    var opaquePixels = 0;
-                    for (int xx = 0; xx < width; xx++)
-                    {
-                        for (int yy = 0; yy < height; yy++)
-                        {
-                            var color = data[offset + (x + xx) * spriteHeight + y + yy];
-                            if ((color & 255) != 0)
-                                opaquePixels++;
-                        }
-                    }
+                //    var offset = registry[index].SpritesDataOffset;
+                //    var spriteHeight = registry[index].WidthAndHeight & 65535;
+                //    var opaquePixels = 0;
+                //    for (int xx = 0; xx < width; xx++)
+                //    {
+                //        for (int yy = 0; yy < height; yy++)
+                //        {
+                //            var color = data[offset + (x + xx) * spriteHeight + y + yy];
+                //            if ((color & 255) != 0)
+                //                opaquePixels++;
+                //        }
+                //    }
 
-                    var square = width * height;
-                    //scores[i] = (int)(opaquePixels * opaquePixels * opaquePixels / square);
-                    var score = Mathf.FloorToInt(Mathf.Pow(opaquePixels, 3f) / square);
-                    if (score != 0)
-                        everyScoreIs0 = false;
-                    if (score != 0 && totalCounts[i] != 0)
-                        everyCountAndScoreIs0 = false;
-                    scores[i] = score;
-                }
+                //    var square = width * height;
+                //    //scores[i] = (int)(opaquePixels * opaquePixels * opaquePixels / square);
+                //    var score = Mathf.FloorToInt(Mathf.Pow(opaquePixels, 3f) / square);
+                //    if (score != 0)
+                //        everyScoreIs0 = false;
+                //    if (score != 0 && totalCounts[i] != 0)
+                //        everyCountAndScoreIs0 = false;
+                //    scores[i] = score;
+                //}
 
-                if (everyCountAndScoreIs0)
-                {
-                    Debug.LogError($"({size.X},{size.Y}) everyCountAndScoreIs0");
-                }
+                //if (everyCountAndScoreIs0)
+                //{
+                //    Debug.LogError($"({size.X},{size.Y}) everyCountAndScoreIs0");
+                //}
 
-                if (everyScoreIs0)
-                { 
-                    Debug.LogError($"({size.X},{size.Y}) everyScoreIs0");
-                    if (size.X == 1 && size.Y == 1)
-                    {
-                        for (int i = 0; i < areasOfThatSize.Length; i++)
-                        {
-                            if ((areasOfThatSize[i].MetaAndSpriteIndex >> 24 & 255) == 0)
-                            {
-                                scores[i] = 0;
-                                continue;
-                            }
-                            var index = areasOfThatSize[i].MetaAndSpriteIndex & 16777215;
-                            var x = areasOfThatSize[i].XAndY >> 16 & 65535;
-                            var y = areasOfThatSize[i].XAndY & 65535;
-                            var width = areasOfThatSize[i].WidthAndHeight >> 16 & 65535;
-                            var height = areasOfThatSize[i].WidthAndHeight & 65535;
+                //if (everyScoreIs0)
+                //{ 
+                //    Debug.LogError($"({size.X},{size.Y}) everyScoreIs0");
+                //    if (size.X == 1 && size.Y == 1)
+                //    {
+                //        for (int i = 0; i < areasOfThatSize.Length; i++)
+                //        {
+                //            if ((areasOfThatSize[i].MetaAndSpriteIndex >> 24 & 255) == 0)
+                //            {
+                //                scores[i] = 0;
+                //                continue;
+                //            }
+                //            var index = areasOfThatSize[i].MetaAndSpriteIndex & 16777215;
+                //            var x = areasOfThatSize[i].XAndY >> 16 & 65535;
+                //            var y = areasOfThatSize[i].XAndY & 65535;
+                //            var width = areasOfThatSize[i].WidthAndHeight >> 16 & 65535;
+                //            var height = areasOfThatSize[i].WidthAndHeight & 65535;
 
-                            var offset = registry[index].SpritesDataOffset;
-                            var spriteHeight = registry[index].WidthAndHeight & 65535;
-                            var opaquePixels = 0;
-                            for (int xx = 0; xx < width; xx++)
-                            {
-                                for (int yy = 0; yy < height; yy++)
-                                {
-                                    var color = data[offset + (x + xx) * spriteHeight + y + yy];
-                                    if ((color & 255) != 0)
-                                        opaquePixels++;
-                                }
-                            }
+                //            var offset = registry[index].SpritesDataOffset;
+                //            var spriteHeight = registry[index].WidthAndHeight & 65535;
+                //            var opaquePixels = 0;
+                //            for (int xx = 0; xx < width; xx++)
+                //            {
+                //                for (int yy = 0; yy < height; yy++)
+                //                {
+                //                    var color = data[offset + (x + xx) * spriteHeight + y + yy];
+                //                    if ((color & 255) != 0)
+                //                        opaquePixels++;
+                //                }
+                //            }
 
-                            var square = width * height;
-                            //scores[i] = (int)(opaquePixels * opaquePixels * opaquePixels / square);
-                            var score = Mathf.FloorToInt(Mathf.Pow(opaquePixels, 3f) / square);
-                            if (score != 0)
-                                everyScoreIs0 = false;
-                            scores[i] = score;
-                        }
-                    }
-                }
+                //            var square = width * height;
+                //            //scores[i] = (int)(opaquePixels * opaquePixels * opaquePixels / square);
+                //            var score = Mathf.FloorToInt(Mathf.Pow(opaquePixels, 3f) / square);
+                //            if (score != 0)
+                //                everyScoreIs0 = false;
+                //            scores[i] = score;
+                //        }
+                //    }
+                //}
 
                 var maxTotalScore = int.MinValue;
                 var maxTotalScoreIndex = -1;
                 var maxTotalScorePos = 0;
 
-                for (int i = 0; i < scores.Length; i++)
-                {
-                    if (scores[i] > 0)
-                        gpuUniqueAreas.Add(areasOfThatSize[i]);
-                }
+                //for (int i = 0; i < scores.Length; i++)
+                //{
+                //    if (scores[i] > 0)
+                //        gpuUniqueAreas.Add(areasOfThatSize[i]);
+                //}
 
                 for (int i = 0; i < totalCounts.Length; i++)
                 {
@@ -816,71 +816,71 @@ public class Algorythm
 #else
             Debug.Log($"bestOfTheBest = {finalOfTheBest.Value.spriteIndex}, ({finalOfTheBest.Value.position.X},{finalOfTheBest.Value.position.Y}), ({finalOfTheBest.Key.X},{finalOfTheBest.Key.Y}): s ({finalOfTheBest.Value.score}) * c ({finalOfTheBest.Value.count}) = {finalOfTheBest.Value.score * finalOfTheBest.Value.count} (areas {finalOfTheBest.Value.test}).");
 
-            if (finalOfTheBest.Value.score == 0 && finalOfTheBest.Value.count == 0)
-            { 
-                Debug.LogError($"Все по нулям почему-то. Проверяем, правильно ли это.");
+            //if (finalOfTheBest.Value.score == 0 && finalOfTheBest.Value.count == 0)
+            //{ 
+            //    Debug.LogError($"Все по нулям почему-то. Проверяем, правильно ли это.");
 
-                var reg1 = registry[finalOfTheBest.Value.spriteIndex];
-                var h = reg1.WidthAndHeight & 65535;
-                var op = 0;
-                for (int x = 0; x < finalOfTheBest.Key.X; x++)
-                {
-                    for (int y = 0; y < finalOfTheBest.Key.Y; y++)
-                    {
-                        var pixel = data[reg1.SpritesDataOffset + x * h + y];
-                        if ((pixel & 255) != 0)
-                            op++;
-                    }
-                }
+            //    var reg1 = registry[finalOfTheBest.Value.spriteIndex];
+            //    var h = reg1.WidthAndHeight & 65535;
+            //    var op = 0;
+            //    for (int x = 0; x < finalOfTheBest.Key.X; x++)
+            //    {
+            //        for (int y = 0; y < finalOfTheBest.Key.Y; y++)
+            //        {
+            //            var pixel = data[reg1.SpritesDataOffset + x * h + y];
+            //            if ((pixel & 255) != 0)
+            //                op++;
+            //        }
+            //    }
 
-                Debug.LogError($"А на самом деле эта область совсем не пустая, у нее - {op} непрозрачных пикселей!");
+            //    Debug.LogError($"А на самом деле эта область совсем не пустая, у нее - {op} непрозрачных пикселей!");
 
-                Debug.LogError($"И, если посчитать, сколько у нее совпадений, то получится, что их {getCoincidentsCount(finalOfTheBest, registry, data)}");
+            //    Debug.LogError($"И, если посчитать, сколько у нее совпадений, то получится, что их {getCoincidentsCount(finalOfTheBest, registry, data)}");
 
-                var newPixels = new MyColor[_sprites.Length][][];
-                for (int i = 0; i < _sprites.Length; i++)
-                {
-                    newPixels[i] = new MyColor[_sprites[i].Length][];
-                    for (int x = 0; x < newPixels[i].Length; x++)
-                    {
-                        newPixels[i][x] = new MyColor[_sprites[i][x].Length];
-                        for (int y = 0; y < newPixels[i][x].Length; y++)
-                        {
-                            newPixels[i][x][y] = _sprites[i][x][y];
-                        }
-                    }
-                }
+            //    var newPixels = new MyColor[_sprites.Length][][];
+            //    for (int i = 0; i < _sprites.Length; i++)
+            //    {
+            //        newPixels[i] = new MyColor[_sprites[i].Length][];
+            //        for (int x = 0; x < newPixels[i].Length; x++)
+            //        {
+            //            newPixels[i][x] = new MyColor[_sprites[i][x].Length];
+            //            for (int y = 0; y < newPixels[i][x].Length; y++)
+            //            {
+            //                newPixels[i][x][y] = _sprites[i][x][y];
+            //            }
+            //        }
+            //    }
 
-                for (int i = 0; i < _sprites.Length; i++)
-                {
-                    var reg = registry[i];
-                    var width = reg.WidthAndHeight << 16 & 65535;
-                    var height = reg.WidthAndHeight & 65535;
+            //    for (int i = 0; i < _sprites.Length; i++)
+            //    {
+            //        var reg = registry[i];
+            //        var width = reg.WidthAndHeight << 16 & 65535;
+            //        var height = reg.WidthAndHeight & 65535;
 
-                    for (int x = 0; x < width; x++)
-                    {
-                        for (int y = 0; y < height; y++)
-                        {
-                            var color = data[reg.SpritesDataOffset + x * height + y];
-                            _sprites[i][x][y] = new MyColor(color);
-                        }
-                    }
-                }
-                Debug.LogError($"!!! Начинаем сначала.");
-                var result = await Run();
+            //        for (int x = 0; x < width; x++)
+            //        {
+            //            for (int y = 0; y < height; y++)
+            //            {
+            //                var color = data[reg.SpritesDataOffset + x * height + y];
+            //                _sprites[i][x][y] = new MyColor(color);
+            //            }
+            //        }
+            //    }
+            //    Debug.LogError($"!!! Начинаем сначала.");
+            //    var result = await Run();
 
-                return result;
-                var opaquePixelsLeft = 0;
-                for (int i = 0; i < data.Length; i++)
-                {
-                    if ((data[i] & 255) != 0) 
-                    {
-                        opaquePixelsLeft++;
-                    }
-                }
-                if (opaquePixelsLeft > 0)
-                    throw new ApplicationException($"Неправильно - осталось {opaquePixelsLeft} непрозрачных пикселей, а значит не может быть чтобы лучшая область имела score и count равные 0!");
-            }
+            //    return result;
+            //    var opaquePixelsLeft = 0;
+            //    for (int i = 0; i < data.Length; i++)
+            //    {
+            //        if ((data[i] & 255) != 0) 
+            //        {
+            //            opaquePixelsLeft++;
+            //        }
+            //    }
+            //    if (opaquePixelsLeft > 0)
+            //        throw new ApplicationException($"Неправильно - осталось {opaquePixelsLeft} непрозрачных пикселей, а значит не может быть чтобы лучшая область имела score и count равные 0!");
+            //}
              
             bestOfEachArea.Clear();
 
@@ -946,9 +946,9 @@ public class Algorythm
             var pixelsRemoved = 0;
             var actualPixelsRemoved = 0;
             var @lock = new object();
-            var @lock2 = new object();
-            for (int spriteIndex = 0; spriteIndex < _sprites.Length; spriteIndex++)
-            //Parallel.For(0, _sprites.Length, (spriteIndex, loopState) =>
+            //var @lock2 = new object();
+            //for (int spriteIndex = 0; spriteIndex < _sprites.Length; spriteIndex++)
+            Parallel.For(0, _sprites.Length, (spriteIndex, loopState) =>
             {
                 var sprite = _sprites[spriteIndex];
                 var spriteWidth = sprite.Length;
@@ -994,7 +994,7 @@ public class Algorythm
                         {
                             var newCorrelation = new MyAreaCoordinates(spriteIndex, spriteX, spriteY, finalOfTheBest.Key.X, finalOfTheBest.Key.Y);
                             //MyArea.EraseAreaFromSprite(sprite, spriteX, spriteY, theWinnerArea.Dimensions);
-                            lock(@lock)
+                            lock (@lock)
                                 pixelsRemoved += opaqueCount;
                             listOfCorrelations.Add(newCorrelation);
 
@@ -1008,14 +1008,14 @@ public class Algorythm
                                     //if ((pixel & 255) != 0)
                                     //    lock (@lock)
                                     //        actualPixelsRemoved++;
-                                    lock(@lock2)
+                                    //lock(@lock2)
                                         data[spriteDataOffset + pixelX * spriteHeight + pixelY] = 0;
                                 } 
                             }
                         }
                     }
                 }
-            }//);
+            });
 
             resultList.Add(new Correlation(areaColors, listOfCorrelations.ToArray()));
 
@@ -1023,17 +1023,17 @@ public class Algorythm
 
             Debug.Log($"Удалено: {pixelsRemoved}. actualPixelsRemoved = {actualPixelsRemoved}. Осталось {UnprocessedPixels}");
 
-            {
-                var opaquePixelsLeft = 0;
-                for (int i = 0; i < data.Length; i++)
-                {
-                    if ((data[i] & 255) != 0)
-                    {
-                        opaquePixelsLeft++;
-                    }
-                }
-                Debug.Log($"...а на самом деле осталось {opaquePixelsLeft}.");
-            }
+            //{
+            //    var opaquePixelsLeft = 0;
+            //    for (int i = 0; i < data.Length; i++)
+            //    {
+            //        if ((data[i] & 255) != 0)
+            //        {
+            //            opaquePixelsLeft++;
+            //        }
+            //    }
+            //    Debug.Log($"...а на самом деле осталось {opaquePixelsLeft}.");
+            //}
 
             Debug.Log($"Проход {fullpasses + 1} завершен.");
             if (++fullpasses >= 300)
