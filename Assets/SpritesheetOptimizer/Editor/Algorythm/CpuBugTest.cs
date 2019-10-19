@@ -20,8 +20,8 @@
         int spriteWidth = spriteInfo.WidthAndHeight >> 16 & 65535;
         int spriteHeight = spriteInfo.WidthAndHeight & 65535;
 
-        int spriteLastX = spriteWidth - areaWidth;
-        int spriteLastY = spriteHeight - areaHeight;
+        int spriteLastX = spriteWidth - areaWidth + 1;
+        int spriteLastY = spriteHeight - areaHeight + 1;
 
         var task = TasksBuffer[idx];
         int currentSpriteX = task.SpriteXAndY >> 16 & 65535;
@@ -66,6 +66,9 @@
                         var candidateG = candidateColor >> 16 & 255;
                         var candidateB = candidateColor >> 8 & 255;
                         var candidateA = candidateColor & 255;
+
+                        if (sampleA == 0 && candidateA == 0)
+                            continue;
 
                         if (sampleColor != candidateColor)
                         {

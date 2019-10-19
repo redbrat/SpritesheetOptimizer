@@ -39,8 +39,8 @@ int3 processSprite(int idx, int spriteIndex, registryStruct spriteInfo, int curr
 	int spriteWidth = spriteInfo.WidthAndHeight >> 16 & 65535;
 	int spriteHeight = spriteInfo.WidthAndHeight & 65535;
 
-	int spriteLastX = spriteWidth - areaWidth;
-	int spriteLastY = spriteHeight - areaHeight;
+	int spriteLastX = spriteWidth - areaWidth + 1;
+	int spriteLastY = spriteHeight - areaHeight + 1;
 
 	taskStruct task = TasksBuffer[idx];
 	int currentSpriteX = task.SpriteXAndY >> 16 & 65535;
@@ -53,6 +53,7 @@ int3 processSprite(int idx, int spriteIndex, registryStruct spriteInfo, int curr
 		for (int spriteY = currentSpriteY; spriteY < spriteLastY; spriteY++)
 		{
 			bool maybeThis = true;
+			//bool atLeastOneOpaque = false;
 
 			for (int x = currentAreaX; x < areaWidth; x++)
 			{
@@ -76,6 +77,12 @@ int3 processSprite(int idx, int spriteIndex, registryStruct spriteInfo, int curr
 
 					int sampleColor = DataBuffer[areaSpriteOffset + sampleX * areaSpriteHeight + sampleY];
 					int candidateColor = DataBuffer[spriteOffset + candidateX * spriteHeight + candidateY];
+
+					if ((sampleColor & 255) == 0 && (candidateColor & 255) == 0)
+						continue;
+
+					//atLeastOneOpaque = true;
+
 					if (sampleColor != candidateColor)
 					{
 						maybeThis = false;
@@ -96,7 +103,7 @@ int3 processSprite(int idx, int spriteIndex, registryStruct spriteInfo, int curr
 			if (opsCountResult > MaxOpsAllowed)
 				break;
 			else
-			if (maybeThis)
+			if (maybeThis/* && atLeastOneOpaque*/)
 			{
 				if (task.AreasCounter >= idx)
 					count++;
@@ -222,7 +229,7 @@ void CSMain(uint3 id : SV_DispatchThreadID)
 		if (weAreRepeating == 1)
 		{
 			//Тут тоже - если мы повторяемся, то надо заодно еще и таск пометить как завершенный.
-			area.MetaAndSpriteIndex = 0 << 24 & areaSpriteIndex;
+			//area.MetaAndSpriteIndex = 0 << 24 & areaSpriteIndex;
 			formerTask.MetaAndSpriteIndex = 0 << 24 | 0;
 			AreasBuffer[id.x] = area;
 			TasksBuffer[id.x] = formerTask;

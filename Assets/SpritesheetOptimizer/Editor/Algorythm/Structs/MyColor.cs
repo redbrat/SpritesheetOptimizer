@@ -13,6 +13,23 @@
 
     private readonly int _hash;
 
+    public MyColor (int color)
+    {
+        var r = (byte)(color << 24 & 255);
+        var g = (byte)(color << 16 & 255);
+        var b = (byte)(color << 8 & 255);
+        var a = (byte)(color & 255);
+
+        R = r;
+        G = g;
+        B = b;
+        A = a;
+
+        Color = color;
+
+        _hash = (R + G * _byteMax + B * _2bytesMax + A * _4bytesMax).GetHashCode();
+    }
+
     public MyColor(byte r, byte g, byte b, byte a)
     {
         R = r;
@@ -20,24 +37,12 @@
         B = b;
         A = a;
 
-        //var ri = (int)r;
-        //var gi = g << 8;
-        //var bi = b << 16;
-        //var ai = a << 24;
         var ri = r << 24;
         var gi = g << 16;
         var bi = b << 8;
         var ai = (int)a;
+
         Color = ri | gi | bi | ai;
-
-
-        int ir = (Color >> 24) & 255;
-        int ig = (Color >> 16) & 255;
-        int ib = (Color >> 8) & 255;
-        int ia = Color & 255;
-
-        var reconstructed = (ir << 24) | (ig << 16) | (ib << 8) | ia;
-
 
         _hash = (R + G * _byteMax + B * _2bytesMax + A * _4bytesMax).GetHashCode();
     }
