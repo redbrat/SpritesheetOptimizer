@@ -190,6 +190,9 @@ public class Algorythm
 
     public async Task<Correlation[]> Run()
     {
+        var stopwatch = new MyStopwatch();
+
+        stopwatch.Start($"The Holde Initialization");
 #if CPU
         Debug.Log($"GPU Часть закончена, делаем проверку cpu...");
 
@@ -205,7 +208,9 @@ public class Algorythm
 
         OverallProgressReport.OperationDescription = "Removing areas from picture";
         OverallProgressReport.OperationsCount = UnprocessedPixels;
+        stopwatch.Start($"Debug.Log's");
         Debug.Log($"UnprocessedPixels total = {UnprocessedPixels}");
+        stopwatch.Stop($"Debug.Log's");
         //{
         //    var opaquePixelsLeft = 0;
         //    for (int i = 0; i < _sprites.Length; i++)
@@ -288,7 +293,9 @@ public class Algorythm
         var (groupSizeX, groupSizeY, groupSizeZ) = _computeShader.GetKernelThreadGroupSizes(algorythmKernel);
          
         var registryBuffer = new ComputeBuffer(_sprites.Length, 8);
+        stopwatch.Start($"SetData");
         registryBuffer.SetData(registry);
+        stopwatch.Stop($"SetData");
 
         var maxOpsAllowed = 295000;
         var maxBufferLength = 131072;
@@ -311,11 +318,16 @@ public class Algorythm
         var dataBuffer = new ComputeBuffer(dataSize, 4);
 
         var fullpasses = 0;
+        stopwatch.Stop($"The Holde Initialization");
+        stopwatch.Start($"The Hole Main Loop");
         while (UnprocessedPixels > 0)
         {
+            stopwatch.Start($"The Hole Non GPU Dispatch in the loop");
             //1. Считаем оценки каждой области...
 
+            stopwatch.Start($"SetData");
             dataBuffer.SetData(data);
+            stopwatch.Stop($"SetData");
 
             //Проставляем переменные, не меняющиеся для данного прохода цикла.
             _computeShader.SetBuffer(algorythmKernel, "DataBuffer", dataBuffer);
@@ -326,8 +338,10 @@ public class Algorythm
 
             var areasCounter = 0;
             var gpuUniqueAreas = new List<areaStruct>();
+            stopwatch.Stop($"The Hole Non GPU Dispatch in the loop");
             foreach (var kvp in allPossibleAreas)
             {
+                stopwatch.Start($"The Hole Non GPU Dispatch in the loop");
                 //Debug.Log($"area #{++areasCounter}");
                 //Thread.Sleep(250);
                 var size = kvp.Key;
@@ -338,7 +352,9 @@ public class Algorythm
                     zeroes[i] = 0;
 
                 var areasBuffer = new ComputeBuffer(areasOfThatSize.Length, 12);
+                stopwatch.Start($"SetData");
                 areasBuffer.SetData(areasOfThatSize);
+                stopwatch.Stop($"SetData");
 
                 var tasks = new taskStruct[areasOfThatSize.Length];
                 {
@@ -349,7 +365,9 @@ public class Algorythm
                 }
 
                 var tasksBuffer = new ComputeBuffer(areasOfThatSize.Length, 16);
+                stopwatch.Start($"SetData");
                 tasksBuffer.SetData(tasks);
+                stopwatch.Stop($"SetData");
 
                 var countsBuffer = new ComputeBuffer(areasOfThatSize.Length, 4);
                 var scoresBuffer = new ComputeBuffer(areasOfThatSize.Length, 4);
@@ -366,19 +384,23 @@ public class Algorythm
                 cpuBugTester.CountsBuffer = blockCopy(zeroes);
                 cpuBugTester.ScoresBuffer = blockCopy(zeroes);
 #else
-                countsBuffer.SetData(blockCopy(zeroes));
-                scoresBuffer.SetData(blockCopy(zeroes));
+                var zeroezInstance1 = blockCopy(zeroes);
+                stopwatch.Start($"SetData");
+                countsBuffer.SetData(zeroezInstance1);
+                stopwatch.Stop($"SetData");
+                var zeroezInstance2 = blockCopy(zeroes);
+                stopwatch.Start($"SetData");
+                scoresBuffer.SetData(zeroezInstance2);
+                stopwatch.Stop($"SetData");
 #endif
 
 
                 //Проходимся данным размером области по всем возможным пикселам...
-                var stopWatch = new System.Diagnostics.Stopwatch();
-                stopWatch.Start();
-
                 var scores = new int[0];
                 var tasksUpdated = new taskStruct[areasOfThatSize.Length];
                 var iterationsCount = Mathf.CeilToInt(areasOfThatSize.Length / (float)groupSizeX);
                 var passes = 0;
+                stopwatch.Stop($"The Hole Non GPU Dispatch in the loop");
 
                 while (true)
                 {
@@ -408,9 +430,15 @@ public class Algorythm
                         break;
                     }
 #else
+                    stopwatch.Start($"Dispatch");
                     _computeShader.Dispatch(algorythmKernel, iterationsCount, 1, 1);
+                    stopwatch.Stop($"Dispatch");
 
+                    stopwatch.Start($"The Hole Non GPU Dispatch in the loop");
+
+                    stopwatch.Start($"GetData");
                     tasksBuffer.GetData(tasksUpdated);
+                    stopwatch.Stop($"GetData");
                     var allAreasDone = true;
                     for (int i = 0; i < tasksUpdated.Length; i++)
                     {
@@ -422,7 +450,9 @@ public class Algorythm
                     } 
 
                     var chunkCountsArray = new int[areasOfThatSize.Length];
+                    stopwatch.Start($"GetData");
                     countsBuffer.GetData(chunkCountsArray);
+                    stopwatch.Stop($"GetData");
                     for (int i = 0; i < chunkCountsArray.Length; i++)
                     {
                         if (chunkCountsArray[i] > 10_000_000)
@@ -432,37 +462,45 @@ public class Algorythm
                     }
 
                     chunkCountArrayList.Add(chunkCountsArray);
-                    countsBuffer.SetData(blockCopy(zeroes));
+                    var zeroezInstance3 = blockCopy(zeroes);
+                    stopwatch.Start($"SetData");
+                    countsBuffer.SetData(zeroezInstance3);
+                    stopwatch.Stop($"SetData");
 
                     if (allAreasDone)
                     {
                         scores = new int[areasOfThatSize.Length];
+                        stopwatch.Start($"GetData");
                         scoresBuffer.GetData(scores); //Напоследок забираем оценки каждой отдельной области
-                        scoresBuffer.SetData(blockCopy(zeroes));
+                        stopwatch.Stop($"GetData");
+                        var zeroezInstance4 = blockCopy(zeroes);
+                        stopwatch.Start($"SetData");
+                        scoresBuffer.SetData(zeroezInstance4);
+                        stopwatch.Stop($"SetData");
                         break;
                     }
+                    stopwatch.Stop($"The Hole Non GPU Dispatch in the loop");
 #endif
                 }
 
-                stopWatch.Stop();
-                var ts = stopWatch.Elapsed;
+                stopwatch.Start($"The Hole Non GPU Dispatch in the loop");
                 //Debug.Log($"Диспатч прошел. Занял он {ts}. passes = {passes}");
 
                 var totalCounts = new int[areasOfThatSize.Length];
-                var everyCountIs0 = true;
+                //var everyCountIs0 = true;
                 for (int i = 0; i < totalCounts.Length; i++)
                 {
                     var totalScore = 0;
                     for (int j = 0; j < chunkCountArrayList.Count; j++)
                         totalScore += chunkCountArrayList[j][i];
-                    if (totalScore != 0)
-                        everyCountIs0 = false;
+                    //if (totalScore != 0)
+                    //    everyCountIs0 = false;
                     totalCounts[i] = totalScore;
                 }
-                if (everyCountIs0)
-                {
-                    Debug.LogError($"({size.X},{size.Y}) everyCountIs0");
-                }
+                //if (everyCountIs0)
+                //{
+                //    Debug.LogError($"({size.X},{size.Y}) everyCountIs0");
+                //}
 
                 chunkCountArrayList.Clear();
 
@@ -599,7 +637,9 @@ public class Algorythm
                 tasksBuffer.Dispose();
                 countsBuffer.Dispose();
                 scoresBuffer.Dispose();
+                stopwatch.Stop($"The Hole Non GPU Dispatch in the loop");
             }
+            stopwatch.Start($"The Hole Non GPU Dispatch in the loop");
 
             //Debug.LogError($"GPU Unique areas found: {gpuUniqueAreas.Count}");
 
@@ -814,7 +854,9 @@ public class Algorythm
 #if CPU
             Debug.Log($"bestOfTheBest = {finalOfTheBest.Value.spriteIndex}, ({finalOfTheBest.Value.position.X},{finalOfTheBest.Value.position.Y}), ({finalOfTheBest.Key.X},{finalOfTheBest.Key.Y}): s ({finalOfTheBest.Value.score}) * c ({finalOfTheBest.Value.count}) = {finalOfTheBest.Value.score * finalOfTheBest.Value.count} (areas {finalOfTheBest.Value.test}). bestCpuCalculatedArea = {bestCpuCalculatedArea.area.SpriteIndex}, ({bestCpuCalculatedArea.area.SpriteRect.X},{bestCpuCalculatedArea.area.SpriteRect.Y}), ({bestCpuCalculatedArea.area.SpriteRect.Width},{bestCpuCalculatedArea.area.SpriteRect.Height}): s ({bestCpuCalculatedArea.score}) * c ({bestCpuCalculatedArea.count}) = {bestCpuCalculatedArea.score * bestCpuCalculatedArea.count} (areas {bestCpuCalculatedArea.test})");
 #else
+            stopwatch.Start($"Debug.Log's");
             Debug.Log($"bestOfTheBest = {finalOfTheBest.Value.spriteIndex}, ({finalOfTheBest.Value.position.X},{finalOfTheBest.Value.position.Y}), ({finalOfTheBest.Key.X},{finalOfTheBest.Key.Y}): s ({finalOfTheBest.Value.score}) * c ({finalOfTheBest.Value.count}) = {finalOfTheBest.Value.score * finalOfTheBest.Value.count} (areas {finalOfTheBest.Value.test}).");
+            stopwatch.Stop($"Debug.Log's");
 
             //if (finalOfTheBest.Value.score == 0 && finalOfTheBest.Value.count == 0)
             //{ 
@@ -881,7 +923,7 @@ public class Algorythm
             //    if (opaquePixelsLeft > 0)
             //        throw new ApplicationException($"Неправильно - осталось {opaquePixelsLeft} непрозрачных пикселей, а значит не может быть чтобы лучшая область имела score и count равные 0!");
             //}
-             
+
             bestOfEachArea.Clear();
 
 #endif
@@ -916,6 +958,7 @@ public class Algorythm
             //2. у нас есть победитель - забираем его данные вхождения из данных! 
 
             //var theWinnerArea = MyArea.CreateFromSprite(_sprites[finalOfTheBest.Value.spriteIndex], finalOfTheBest.Value.spriteIndex, finalOfTheBest.Value.position.X, finalOfTheBest.Value.position.Y, finalOfTheBest.Key);
+            stopwatch.Start($"Areas removing from data");
             var opaqueCount = 0;
             var theWinnerAreaSpriteDataOffset = registry[finalOfTheBest.Value.spriteIndex].SpritesDataOffset;
             var theWinnerAreaSpriteHeight = registry[finalOfTheBest.Value.spriteIndex].WidthAndHeight & 65535;
@@ -930,7 +973,9 @@ public class Algorythm
                         opaqueCount++;
                 }
             }
+            stopwatch.Start($"Debug.Log's");
             Debug.Log($"theWinnerArea opaque count: {opaqueCount}");
+            stopwatch.Stop($"Debug.Log's");
 
             var areaColors = new MyColor[finalOfTheBest.Key.X][];
             for (int x = 0; x < areaColors.Length; x++)
@@ -1016,12 +1061,15 @@ public class Algorythm
                     }
                 }
             });
+            stopwatch.Stop($"Areas removing from data");
 
             resultList.Add(new Correlation(areaColors, listOfCorrelations.ToArray()));
 
             UnprocessedPixels -= pixelsRemoved;
 
+            stopwatch.Start($"Debug.Log's");
             Debug.Log($"Удалено: {pixelsRemoved}. actualPixelsRemoved = {actualPixelsRemoved}. Осталось {UnprocessedPixels}");
+            stopwatch.Stop($"Debug.Log's");
 
             //{
             //    var opaquePixelsLeft = 0;
@@ -1035,13 +1083,19 @@ public class Algorythm
             //    Debug.Log($"...а на самом деле осталось {opaquePixelsLeft}.");
             //}
 
+            stopwatch.Start($"Debug.Log's");
             Debug.Log($"Проход {fullpasses + 1} завершен.");
+            stopwatch.Stop($"Debug.Log's");
+            stopwatch.Stop($"The Hole Non GPU Dispatch in the loop");
             if (++fullpasses >= 300)
                 break;
         }
+        stopwatch.Stop($"The Hole Main Loop");
 
         registryBuffer.Dispose();
         dataBuffer.Dispose();
+
+        Debug.Log(stopwatch.PrintResults());
 
         return resultList.ToArray();
     }
