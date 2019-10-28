@@ -29,6 +29,8 @@ public class SpritesheetOptimizerWindow : EditorWindow
 
     private static string _rootFolder = "Assets/TestFolder";
 
+    private static UnityOptimizedSpritesStructure _chunksInfo;
+
     private static Vector2Int _areaResolution = Vector2Int.one * 4;
 
     [MenuItem("AwesomeTools/SpritesheetOptimizer")]
@@ -41,6 +43,8 @@ public class SpritesheetOptimizerWindow : EditorWindow
     {
         _areaResolution = EditorGUILayout.Vector2IntField("Choose area size:", _areaResolution);
 
+        _chunksInfo = (UnityOptimizedSpritesStructure)EditorGUILayout.ObjectField("Chunks", _chunksInfo, typeof(UnityOptimizedSpritesStructure));
+
         _rootFolder = EditorGUILayout.TextField("Root folder:", _rootFolder);
         if (GUILayout.Button("Choose folder..."))
         {
@@ -50,7 +54,7 @@ public class SpritesheetOptimizerWindow : EditorWindow
         }
             //_rootFolder = $"Assets/{EditorUtility.OpenFolderPanel("Optimized animator controllers folder", "", "").Split(new string[] { "Assets" }, StringSplitOptions.None)[1]}";
         //_rootFolder = EditorUtility.OpenFolderPanel("Optimized animator controllers folder", "", "");
-        if (GUILayout.Button("Do"))
+        if (_chunksInfo != default && GUILayout.Button("Do"))
             doAllControllers();
     }
 
@@ -73,22 +77,22 @@ public class SpritesheetOptimizerWindow : EditorWindow
             Debug.Log($"doing controller {controller.name}");
         }
 
-        var futureSpriteSheet = new List<SpritesheetChunk>();
-
         var structures = new List<OptimizedControllerStructure>();
         foreach (var controller in allAnimatorControllers)
         {
             var structure = new OptimizedControllerStructure();
-            @do(controller, structure, futureSpriteSheet);
+            var controllerFolder = Path.Combine(_rootFolder, controller.name);
+            Directory.CreateDirectory(controllerFolder);
+            AnimatorControllerDoer.Do(controller, structure, controllerFolder, _chunksInfo);
         }
     }
 
-    private static void @do(AnimatorController controller, OptimizedControllerStructure structure, List<SpritesheetChunk> futureSpriteSheet)
-    {
-        var controllerFolder = Path.Combine(_rootFolder, controller.name);
-        Directory.CreateDirectory(controllerFolder);
-        AnimatorControllerDoer.Do(controller, structure, futureSpriteSheet, controllerFolder);
-    }
+    //private static void @do(AnimatorController controller, OptimizedControllerStructure structure, List<SpritesheetChunk> futureSpriteSheet)
+    //{
+    //    var controllerFolder = Path.Combine(_rootFolder, controller.name);
+    //    Directory.CreateDirectory(controllerFolder);
+    //    AnimatorControllerDoer.Do(controller, structure, futureSpriteSheet, controllerFolder);
+    //}
 
     /// <summary>
     /// Used to get assets of a certain type and file extension from entire project

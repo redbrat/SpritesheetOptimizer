@@ -178,10 +178,10 @@ public class Algorythm
 
     public class Correlation
     {
-        public readonly MyColor[][] Colors;
+        public readonly MySerializableColor[][] Colors;
         public readonly MyAreaCoordinates[] Coordinates;
 
-        public Correlation(MyColor[][] colors, MyAreaCoordinates[] coordinates)
+        public Correlation(MySerializableColor[][] colors, MyAreaCoordinates[] coordinates)
         {
             Colors = colors;
             Coordinates = coordinates;
@@ -192,7 +192,7 @@ public class Algorythm
     {
         var stopwatch = new MyStopwatch();
 
-        stopwatch.Start($"The Holde Initialization");
+        stopwatch.Start($"The Hole Initialization");
 #if CPU
         Debug.Log($"GPU Часть закончена, делаем проверку cpu...");
 
@@ -318,7 +318,7 @@ public class Algorythm
         var dataBuffer = new ComputeBuffer(dataSize, 4);
 
         var fullpasses = 0;
-        stopwatch.Stop($"The Holde Initialization");
+        stopwatch.Stop($"The Hole Initialization");
         stopwatch.Start($"The Hole Main Loop");
         while (UnprocessedPixels > 0)
         {
@@ -977,13 +977,13 @@ public class Algorythm
             Debug.Log($"theWinnerArea opaque count: {opaqueCount}");
             stopwatch.Stop($"Debug.Log's");
 
-            var areaColors = new MyColor[finalOfTheBest.Key.X][];
+            var areaColors = new MySerializableColor[finalOfTheBest.Key.X][];
             for (int x = 0; x < areaColors.Length; x++)
             {
-                areaColors[x] = new MyColor[finalOfTheBest.Key.Y];
+                areaColors[x] = new MySerializableColor[finalOfTheBest.Key.Y];
                 for (int y = 0; y < areaColors[x].Length; y++)
                 {
-                    areaColors[x][y] = new MyColor(data[theWinnerAreaSpriteDataOffset + (finalOfTheBest.Value.position.X + x) * theWinnerAreaSpriteHeight + (finalOfTheBest.Value.position.Y + y)]);
+                    areaColors[x][y] = new MySerializableColor(data[theWinnerAreaSpriteDataOffset + (finalOfTheBest.Value.position.X + x) * theWinnerAreaSpriteHeight + (finalOfTheBest.Value.position.Y + y)]);
                 }
             }
 

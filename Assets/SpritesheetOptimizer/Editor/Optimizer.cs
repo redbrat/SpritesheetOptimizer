@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using UnityEditor;
@@ -14,6 +16,7 @@ public class Optimizer : EditorWindow
     private static int _areasVolatilityRange = 100;
     private static PickySizingConfigurator.PickynessLevel _pickinessLevel;
     private static ComputeMode _computeMode;
+    private static string _resultFileName = "Assets/spriteChunks.asset";
 
     [MenuItem("Optimizer/Optimize")]
     private static void Main()
@@ -35,10 +38,12 @@ public class Optimizer : EditorWindow
         _areasVolatilityRange = EditorGUILayout.IntField("Areas volatility range:", _areasVolatilityRange);
         _resolution = EditorGUILayout.Vector2IntField("Area:", _resolution);
         _pickinessLevel = (PickySizingConfigurator.PickynessLevel)EditorGUILayout.EnumPopup($"Sizings variety level", _pickinessLevel);
+        _resultFileName = EditorGUILayout.TextField("Result path:", _resultFileName);
         _computeMode = (ComputeMode)EditorGUILayout.EnumPopup($"Compute on", _computeMode);
 
         if (_sprite != null && _cts == null && GUILayout.Button("Try"))
         {
+            var colorResults = getColors(_sprite);
             var algorithmBulder = new AlgorythmBuilder();
             var algorythm = algorithmBulder
                 .AddSizingsConfigurator<PickySizingConfigurator>(_pickinessLevel)
@@ -46,11 +51,11 @@ public class Optimizer : EditorWindow
                 .SetAreaEnumerator<DefaultAreaEnumerator>()
                 .SetAreasFreshmentSpan(_areaFreshmentSpan)
                 .SetAreasVolatilityRange(_areasVolatilityRange)
-                .Build(getColors(_sprite), _computeMode);
+                .Build(colorResults.colors, _computeMode);
             _operationProgressReport = algorythm.OperationProgressReport;
             _overallProgressReport = algorythm.OverallProgressReport;
             _cts = new CancellationTokenSource();
-            launch(algorythm);
+            launch(algorythm, colorResults.sprites);
         }
         if (_cts != null)
         {
@@ -68,18 +73,87 @@ public class Optimizer : EditorWindow
         Repaint();
     }
 
-    private async void launch(Algorythm algorythm)
+    private async void launch(Algorythm algorythm, Sprite[] sprites)
     {
         await algorythm.Initialize(_resolution, _cts.Token);
-        await algorythm.Run();
+        var correlations = await algorythm.Run();
+        var areasPerSprite = getAreasPerSprite(correlations);
+
+        Debug.Log($"Максимальное кол-во областей в одном спрайте: {areasPerSprite.OrderByDescending(aps => aps.Value.Count).First().Value.Count}");
+        Debug.Log($"Минимальное кол-во областей в одном спрайте: {areasPerSprite.OrderBy(aps => aps.Value.Count).First().Value.Count}");
+        Debug.Log($"Общее кол-во непрозрачных пикселей: {correlations.Aggregate(0, (count, cor) => count += cor.Colors.Length, count => count)}");
+        Debug.Log($"Общее кол-во ссылок: {correlations.Aggregate(0, (count, cor) => count += cor.Coordinates.Length, count => count)}");
+
         _operationProgressReport = null;
         _cts = null;
+
+        saveSpritesInfo(areasPerSprite, sprites);
     }
 
-    private MyColor[][][] getColors(Sprite sprite)
+    private void saveSpritesInfo(Dictionary<int, List<SpriteChunk>> areasPerSprite, Sprite[] sprites)
+    {
+        var newSpritesInfo = ScriptableObject.CreateInstance<UnityOptimizedSpritesStructure>();
+        AssetDatabase.CreateAsset(newSpritesInfo, _resultFileName);
+
+        newSpritesInfo.Sprites = sprites;
+        
+        var chunks = new SpriteChunkArrayWrapper[sprites.Length];
+        foreach (var kvp in areasPerSprite)
+        {
+            var spriteIndex = kvp.Key;
+            var currentChunks = kvp.Value;
+            var currentChunksArray = currentChunks.ToArray();
+
+            var references = new Dictionary<MySerializableColor[][], ColorsReference>();
+
+            for (int i = 0; i < currentChunksArray.Length; i++)
+            {
+                var currentColors = currentChunksArray[i].Colors;
+                if (!references.ContainsKey(currentColors))
+                {
+                    var newColorsReference = ScriptableObject.CreateInstance<ColorsReference>();
+                    newColorsReference.Colors = currentColors;
+                    references.Add(currentColors, newColorsReference);
+
+                    AssetDatabase.AddObjectToAsset(newColorsReference, _resultFileName);
+                }
+                currentChunksArray[i].ColorsReference = references[currentColors];
+                currentChunksArray[i].Colors = default;
+            }
+
+            chunks[spriteIndex] = new SpriteChunkArrayWrapper(currentChunksArray);
+        }
+
+        newSpritesInfo.Chunks = chunks;
+
+        AssetDatabase.SaveAssets();
+    }
+
+    private Dictionary<int, List<SpriteChunk>> getAreasPerSprite(Algorythm.Correlation[] correlations)
+    {
+        var result = new Dictionary<int, List<SpriteChunk>>();
+
+        for (int i = 0; i < correlations.Length; i++)
+        {
+            for (int j = 0; j < correlations[i].Coordinates.Length; j++)
+            {
+                var info = correlations[i].Coordinates[j];
+                if (!result.ContainsKey(info.SpriteIndex))
+                    result.Add(info.SpriteIndex, new List<SpriteChunk>());
+
+                result[info.SpriteIndex].Add(new SpriteChunk(correlations[i].Colors, info));
+            }
+        }
+
+        return result;
+    }
+
+    private (MyColor[][][] colors, Sprite[] sprites) getColors(Sprite sprite)
     {
         var texture = sprite.texture;
         var path = AssetDatabase.GetAssetPath(sprite);
+        var allAssetsAtPath = AssetDatabase.LoadAllAssetsAtPath(path);
+        var allSptitesAtPath = allAssetsAtPath.OfType<Sprite>().ToArray();
         var ti = AssetImporter.GetAtPath(path) as TextureImporter;
         var fullPath = $"{Application.dataPath.Substring(0, Application.dataPath.Length - "Assets".Length)}{path}";
         Debug.LogError($"path = {fullPath}");
@@ -91,21 +165,24 @@ public class Optimizer : EditorWindow
         ti.SaveAndReimport();
 
         var spritesCount = ti.spritesheet.Length;
-        var sprites = (MyColor[][][])null;
+        var colors = default(MyColor[][][]);
+        var sprites = default(Sprite[]);
         var sb = new StringBuilder();
         if (spritesCount == 0) //If there're no items in spritesheet - it means there is a single sprite in asset.
         {
-            sprites = new MyColor[1][][];
+            colors = new MyColor[1][][];
+            sprites = new Sprite[1];
+            sprites[0] = sprite;
 
             var tex = sprite.texture;
-            var colors = new MyColor[tex.width][];
+            var currentColors = new MyColor[tex.width][];
             for (int x = 0; x < tex.width; x++)
             {
-                colors[x] = new MyColor[tex.height];
+                currentColors[x] = new MyColor[tex.height];
                 for (int y = 0; y < tex.height; y++)
                 {
                     var color = texture.GetPixel(x, y);
-                    colors[x][y] = new MyColor(
+                    currentColors[x][y] = new MyColor(
                         Convert.ToByte(Mathf.Clamp(color.r * byte.MaxValue, 0, byte.MaxValue)),
                         Convert.ToByte(Mathf.Clamp(color.g * byte.MaxValue, 0, byte.MaxValue)),
                         Convert.ToByte(Mathf.Clamp(color.b * byte.MaxValue, 0, byte.MaxValue)),
@@ -113,15 +190,17 @@ public class Optimizer : EditorWindow
                     );
                 }
             }
-            sprites[0] = colors;
+            colors[0] = currentColors;
         }
         else
         {
-            sprites = new MyColor[spritesCount][][];
+            colors = new MyColor[spritesCount][][];
+            sprites = new Sprite[spritesCount];
 
             for (int i = 0; i < spritesCount; i++)
             {
                 var currentSprite = ti.spritesheet[i];
+                sprites[i] = allSptitesAtPath.Where(s => s.name == currentSprite.name).First();
 
                 var xOrigin = Mathf.FloorToInt(currentSprite.rect.x);
                 var yOrigin = Mathf.CeilToInt(currentSprite.rect.y);
@@ -157,10 +236,10 @@ public class Optimizer : EditorWindow
                     File.WriteAllText($"C:\\ABC\\opt-{i}.txt", sb.ToString());
                     sb.Clear();
                 }
-                sprites[i] = currentColors;
+                colors[i] = currentColors;
             }
         }
 
-        return sprites;
+        return (colors, sprites);
     }
 }

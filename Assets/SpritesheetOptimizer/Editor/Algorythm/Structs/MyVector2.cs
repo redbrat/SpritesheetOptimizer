@@ -24,3 +24,11 @@ public struct MyVector2
 
     public override int GetHashCode() => X + Y * 100_000;
 }
+
+[Serializable]
+public struct MySerializableVector2
+{
+    public int Square;
+    public int X;
+    public int Y;
+}

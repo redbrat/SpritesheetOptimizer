@@ -1,4 +1,6 @@
-﻿public struct MyAreaCoordinates
+﻿using System;
+
+public struct MyAreaCoordinates
 {
     public readonly int SpriteIndex;
     public readonly int X;
@@ -26,4 +28,15 @@
     }
 
     public override int GetHashCode() => _hash;
+}
+
+[Serializable]
+public struct MySerializableAreaCoordinates
+{
+    public int SpriteIndex;
+    public int X;
+    public int Y;
+    public int Width;
+    public int Height;
+    public MySerializableVector2 Dimensions;
 }
