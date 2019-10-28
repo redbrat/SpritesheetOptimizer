@@ -304,7 +304,7 @@ public static class AnimatorControllerDoer
             {
                 optBindings[j].SpriteKeyframes[i] = new ObjectReferenceKeyframe();
                 optBindings[j].SpriteKeyframes[i].time = keyframe.time;
-                optBindings[j].SpriteKeyframes[i].value = chunks.Array.;
+                optBindings[j].SpriteKeyframes[i].value = chunks[j].ColorsReference;
             }
         }
 
