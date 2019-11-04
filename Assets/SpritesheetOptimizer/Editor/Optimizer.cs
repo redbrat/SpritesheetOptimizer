@@ -56,7 +56,7 @@ public class Optimizer : EditorWindow
             _operationProgressReport = algorythm.OperationProgressReport;
             _overallProgressReport = algorythm.OverallProgressReport;
             _cts = new CancellationTokenSource();
-            launch(algorythm, colorResults.sprites);
+            launch(algorythm, colorResults.sprites, colorResults.colors);
         }
         if (_cts != null)
         {
@@ -74,7 +74,7 @@ public class Optimizer : EditorWindow
         Repaint();
     }
 
-    private async void launch(Algorythm algorythm, Sprite[] sprites)
+    private async void launch(Algorythm algorythm, Sprite[] sprites, MyColor[][][] colors)
     {
         await algorythm.Initialize(_resolution, _cts.Token);
         var correlations = await algorythm.Run();
@@ -85,6 +85,46 @@ public class Optimizer : EditorWindow
         Debug.Log($"Минимальное кол-во областей в одном спрайте: {areasPerSprite.OrderBy(aps => aps.Value.Count).First().Value.Count}");
         Debug.Log($"Общее кол-во непрозрачных пикселей: {correlations.Aggregate(0, (count, cor) => count += cor.Colors.Length, count => count)}");
         Debug.Log($"Общее кол-во ссылок: {correlations.Aggregate(0, (count, cor) => count += cor.Coordinates.Length, count => count)}");
+
+        Debug.Log($"Проверка на кол-во непрозрачных пикселей по спрайтам:");
+        var beforeCounts = new int[colors.Length];
+        for (int i = 0; i < colors.Length; i++)
+        {
+            var width = colors[i].Length;
+            for (int x = 0; x < width; x++)
+            {
+                var height = colors[i][x].Length;
+                for (int y = 0; y < height; y++)
+                {
+                    var color = colors[i][x][y];
+                    if (color.A > 0)
+                        beforeCounts[i]++;
+                }
+            }
+        }
+
+        var afterCounts = new int[colors.Length]; 
+        for (int i = 0; i < colors.Length; i++) 
+        {
+            var spriteChunks = areasPerSprite[i];
+            for (int j = 0; j < spriteChunks.Count; j++)
+            {
+                var currentChunk = spriteChunks[j];
+                for (int x = 0; x < currentChunk.Colors.Length; x++)
+                {
+                    for (int y = 0; y < currentChunk.Colors[x].Length; y++)
+                    {
+                        var color = currentChunk.Colors[x][y];
+                        if (color.A > 0)
+                            afterCounts[i]++;
+                    }
+                }
+            }
+        }
+        for (int i = 0; i < beforeCounts.Length; i++)
+        {
+            Debug.Log($" #{i + 1}. {beforeCounts[i]} = {afterCounts[i]}");
+        }
 
         _operationProgressReport = null;
         _cts = null;

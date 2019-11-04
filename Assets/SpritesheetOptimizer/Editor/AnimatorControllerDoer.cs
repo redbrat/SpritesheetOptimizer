@@ -365,6 +365,7 @@ public static class AnimatorControllerDoer
             optBindingsTracks.Add(binds);
         }
 
+        var isOptimized = false;
         //Теперь мы проходимся по каждому кифрейму оригинальной дороги и инициализируем все альтернативные соответствующие кифреймы
         for (int i = 0; i < keyframes.Length; i++)
         {
@@ -427,6 +428,7 @@ public static class AnimatorControllerDoer
                 continue;
             }
 
+            isOptimized = true;
             var chunkedSprites = chunksInfo.First().Sprites;
             var chunks = default(SpriteChunk[]);
             for (int j = 0; j < chunkedSprites.Length; j++)
@@ -479,6 +481,40 @@ public static class AnimatorControllerDoer
         {
             optBindingsTracks[i].TransformCurveX.keys = optBindingsTracks[i].TransformCurveKeyframesX.Select(v => v.Value).ToArray();
             optBindingsTracks[i].TransformCurveY.keys = optBindingsTracks[i].TransformCurveKeyframesY.Select(v => v.Value).ToArray();
+        }
+
+        if (isOptimized)
+        {
+            var counts = new Dictionary<int, int>();
+            for (int i = 0; i < optBindingsTracks.Count; i++)
+            {
+                var keys = optBindingsTracks[i].SpriteKeyframes.Select(v => v.Value).ToArray();
+                for (int j = 0; j < keys.Length; j++)
+                {
+                    if (!counts.ContainsKey(j))
+                        counts.Add(j, 0);
+
+                    var spriteChunk = keys[j].value;
+                    if (spriteChunk != default)
+                    {
+                        var texture = (spriteChunk as Sprite).texture;
+                        for (int x = 0; x < texture.width; x++)
+                        {
+                            for (int y = 0; y < texture.height; y++)
+                            {
+                                var pixel = texture.GetPixel(x, y);
+                                if (pixel.a > 0f)
+                                    counts[j]++;
+                            }
+                        }
+                    }
+                }
+            }
+
+            foreach (var count in counts)
+            {
+                Debug.Log($"count #{count.Key}: {count.Value}");
+            }
         }
 
         for (int i = 0; i < optBindingsTracks.Count; i++)
