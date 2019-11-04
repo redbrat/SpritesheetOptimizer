@@ -72,14 +72,10 @@ public class SpritesheetOptimizerWindow : EditorWindow
 
         Debug.Log($"animatorControllers fount: {allAnimatorControllers.Length}");
 
-        foreach (var controller in allAnimatorControllers)
-        {
-            Debug.Log($"doing controller {controller.name}");
-        }
-
         var structures = new List<OptimizedControllerStructure>();
         foreach (var controller in allAnimatorControllers)
         {
+            Debug.Log($"doing controller {controller.name}");
             var structure = new OptimizedControllerStructure();
             var controllerFolder = Path.Combine(_rootFolder, controller.name);
             Directory.CreateDirectory(controllerFolder);

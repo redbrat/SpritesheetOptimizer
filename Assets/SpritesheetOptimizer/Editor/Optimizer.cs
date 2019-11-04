@@ -39,6 +39,7 @@ public class Optimizer : EditorWindow
         _resolution = EditorGUILayout.Vector2IntField("Area:", _resolution);
         _pickinessLevel = (PickySizingConfigurator.PickynessLevel)EditorGUILayout.EnumPopup($"Sizings variety level", _pickinessLevel);
         _resultFileName = EditorGUILayout.TextField("Result path:", _resultFileName);
+        _computeMode = ComputeMode.Gpu;
         _computeMode = (ComputeMode)EditorGUILayout.EnumPopup($"Compute on", _computeMode);
 
         if (_sprite != null && _cts == null && GUILayout.Button("Try"))
@@ -79,6 +80,7 @@ public class Optimizer : EditorWindow
         var correlations = await algorythm.Run();
         var areasPerSprite = getAreasPerSprite(correlations);
 
+        Debug.Log($"correlations.Count = {correlations.Length}");
         Debug.Log($"Максимальное кол-во областей в одном спрайте: {areasPerSprite.OrderByDescending(aps => aps.Value.Count).First().Value.Count}");
         Debug.Log($"Минимальное кол-во областей в одном спрайте: {areasPerSprite.OrderBy(aps => aps.Value.Count).First().Value.Count}");
         Debug.Log($"Общее кол-во непрозрачных пикселей: {correlations.Aggregate(0, (count, cor) => count += cor.Colors.Length, count => count)}");
@@ -94,17 +96,19 @@ public class Optimizer : EditorWindow
     {
         var newSpritesInfo = ScriptableObject.CreateInstance<UnityOptimizedSpritesStructure>();
         AssetDatabase.CreateAsset(newSpritesInfo, _resultFileName);
+        AssetDatabase.CreateFolder(Path.GetDirectoryName(_resultFileName), Path.GetFileNameWithoutExtension(_resultFileName));
+        var spritesDirectory = Path.Combine(Path.GetDirectoryName(_resultFileName), Path.GetFileNameWithoutExtension(_resultFileName));
 
         newSpritesInfo.Sprites = sprites;
-        
+
+        var references = new Dictionary<MySerializableColor[][], (ColorsReference reference, Sprite sprite)>();
+
         var chunks = new SpriteChunkArrayWrapper[sprites.Length];
         foreach (var kvp in areasPerSprite)
         {
             var spriteIndex = kvp.Key;
             var currentChunks = kvp.Value;
             var currentChunksArray = currentChunks.ToArray();
-
-            var references = new Dictionary<MySerializableColor[][], ColorsReference>();
 
             for (int i = 0; i < currentChunksArray.Length; i++)
             {
@@ -113,11 +117,38 @@ public class Optimizer : EditorWindow
                 {
                     var newColorsReference = ScriptableObject.CreateInstance<ColorsReference>();
                     newColorsReference.Colors = currentColors;
-                    references.Add(currentColors, newColorsReference);
+
+                    var width = currentColors.Length;
+                    var height = currentColors[0].Length;
+                    var newTexture = new Texture2D(width, height, TextureFormat.RGBA32, false, false);
+                    newTexture.filterMode = FilterMode.Point;
+                    for (int x = 0; x < width; x++)
+                    {
+                        for (int y = 0; y < height; y++)
+                        {
+                            var currentColor = currentColors[x][y];
+                            var color = new Color(currentColor.R / 255f, currentColor.G / 255f, currentColor.B / 255f, currentColor.A / 255f);
+                            newTexture.SetPixel(x, y, color);
+                            //Debug.Log($"color = {color}");
+                        }
+                    }
+                    var texturePath = Path.Combine(spritesDirectory, $"Sprite_{references.Count}.png");
+                    File.WriteAllBytes(texturePath, newTexture.EncodeToPNG());
+                    AssetDatabase.ImportAsset(texturePath);
+                    var ti = AssetImporter.GetAtPath(texturePath) as TextureImporter;
+                    ti.textureType = TextureImporterType.Sprite;
+                    ti.filterMode = FilterMode.Point;
+                    ti.alphaIsTransparency = true;
+                    ti.mipmapEnabled = false;
+                    AssetDatabase.ImportAsset(texturePath);
+                    var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(texturePath);
+
+                    references.Add(currentColors, (newColorsReference, sprite));
 
                     AssetDatabase.AddObjectToAsset(newColorsReference, _resultFileName);
                 }
-                currentChunksArray[i].ColorsReference = references[currentColors];
+                currentChunksArray[i].ColorsReference = references[currentColors].reference;
+                currentChunksArray[i].ChunkSprite = references[currentColors].sprite;
                 currentChunksArray[i].Colors = default;
             }
 
@@ -127,7 +158,15 @@ public class Optimizer : EditorWindow
         newSpritesInfo.Chunks = chunks;
 
         AssetDatabase.SaveAssets();
+
+        //packAndCreateSpritesForEachReference(references.Values.ToArray());
     }
+
+    //private void packAndCreateSpritesForEachReference(ColorsReference[] colorsReferences)
+    //{
+    //    Debug.Log($"Trying to pack and create {colorsReferences.Length} sprites");
+    //    throw new NotImplementedException();
+    //}
 
     private Dictionary<int, List<SpriteChunk>> getAreasPerSprite(Algorythm.Correlation[] correlations)
     {
@@ -156,7 +195,7 @@ public class Optimizer : EditorWindow
         var allSptitesAtPath = allAssetsAtPath.OfType<Sprite>().ToArray();
         var ti = AssetImporter.GetAtPath(path) as TextureImporter;
         var fullPath = $"{Application.dataPath.Substring(0, Application.dataPath.Length - "Assets".Length)}{path}";
-        Debug.LogError($"path = {fullPath}");
+        //Debug.LogError($"path = {fullPath}");
         texture = new Texture2D(1, 1, TextureFormat.ARGB32, false);
         texture.filterMode = FilterMode.Point;
         texture.LoadImage(File.ReadAllBytes(fullPath));

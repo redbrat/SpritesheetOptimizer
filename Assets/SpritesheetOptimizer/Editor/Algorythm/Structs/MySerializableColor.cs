@@ -12,9 +12,9 @@ public struct MySerializableColor
 
     public MySerializableColor(int color)
     {
-        var r = (byte)(color << 24 & 255);
-        var g = (byte)(color << 16 & 255);
-        var b = (byte)(color << 8 & 255);
+        var r = (byte)(color >> 24 & 255);
+        var g = (byte)(color >> 16 & 255);
+        var b = (byte)(color >> 8 & 255);
         var a = (byte)(color & 255);
 
         R = r;

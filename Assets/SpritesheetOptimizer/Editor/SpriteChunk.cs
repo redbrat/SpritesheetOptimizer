@@ -1,9 +1,11 @@
 ﻿using System;
+using UnityEngine;
 
 [Serializable]
 public class SpriteChunk
 {
     public ColorsReference ColorsReference;
+    public Sprite ChunkSprite;
     [NonSerialized]
     public MySerializableColor[][] Colors;
     public MySerializableAreaCoordinates Area;

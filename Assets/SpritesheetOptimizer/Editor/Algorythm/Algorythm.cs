@@ -983,7 +983,9 @@ public class Algorythm
                 areaColors[x] = new MySerializableColor[finalOfTheBest.Key.Y];
                 for (int y = 0; y < areaColors[x].Length; y++)
                 {
-                    areaColors[x][y] = new MySerializableColor(data[theWinnerAreaSpriteDataOffset + (finalOfTheBest.Value.position.X + x) * theWinnerAreaSpriteHeight + (finalOfTheBest.Value.position.Y + y)]);
+                    var color = data[theWinnerAreaSpriteDataOffset + (finalOfTheBest.Value.position.X + x) * theWinnerAreaSpriteHeight + (finalOfTheBest.Value.position.Y + y)];
+                    areaColors[x][y] = new MySerializableColor(color);
+                    Debug.Log($"data = {color}. Color = {areaColors[x][y].R},{areaColors[x][y].G},{areaColors[x][y].B},{areaColors[x][y].A}");
                 }
             }
 
@@ -1063,6 +1065,13 @@ public class Algorythm
             });
             stopwatch.Stop($"Areas removing from data");
 
+            //for (int x = 0; x < areaColors.Length; x++)
+            //{
+            //    for (int y = 0; y < areaColors[x].Length; y++)
+            //    {
+            //        Debug.Log($"areaColors[{x}][{y}] = {areaColors[x][y].R},{areaColors[x][y].G},{areaColors[x][y].B},{areaColors[x][y].A}");
+            //    }
+            //}
             resultList.Add(new Correlation(areaColors, listOfCorrelations.ToArray()));
 
             UnprocessedPixels -= pixelsRemoved;

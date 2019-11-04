@@ -43,6 +43,8 @@ public static class AnimatorControllerDoer
                 return (T)(UnityEngine.Object)getOptimizedStateMachine(original as AnimatorStateMachine, structure, originalToOptObjectReferences, animationClipsFolder);
             else if (typeof(T).Equals(typeof(AnimatorState)))
                 return (T)(UnityEngine.Object)getOptimizedState(original as AnimatorState, structure, originalToOptObjectReferences, animationClipsFolder);
+            else if (typeof(Motion).IsAssignableFrom(typeof(T)))
+                return (T)(UnityEngine.Object)getOptimizedMotion(original as Motion, structure, originalToOptObjectReferences, animationClipsFolder);
             else
                 throw new ApplicationException($"Unknown reference type occured :{typeof(T).FullName}!");
         }
@@ -99,7 +101,8 @@ public static class AnimatorControllerDoer
         optAnimatorState.mirror = originalAnimatorState.mirror;
         optAnimatorState.mirrorParameter = originalAnimatorState.mirrorParameter;
         optAnimatorState.mirrorParameterActive = originalAnimatorState.mirrorParameterActive;
-        optAnimatorState.motion = getOptimizedMotion(originalAnimatorState.motion, structure, originalToOptObjectReferences, animationClipsFolder);
+        //optAnimatorState.motion = getOptimizedMotion(originalAnimatorState.motion, structure, originalToOptObjectReferences, animationClipsFolder);
+        optAnimatorState.motion = getOptReference(originalAnimatorState.motion, structure, originalToOptObjectReferences, animationClipsFolder);
         optAnimatorState.name = originalAnimatorState.name;
         optAnimatorState.speed = originalAnimatorState.speed;
         optAnimatorState.speedParameter = originalAnimatorState.speedParameter;
@@ -120,8 +123,9 @@ public static class AnimatorControllerDoer
             throw new ApplicationException($"Unknown type of motion - {originalMotion.GetType().FullName}. Never done this before...");
 
         var originalAnimationClip = originalMotion as AnimationClip;
-
         var optMotion = new AnimationClip();
+        originalToOptObjectReferences.Add(originalMotion, optMotion);
+
         optMotion.frameRate = originalAnimationClip.frameRate;
         AnimationUtility.SetAnimationEvents(optMotion, getOptimizedAnimationClipEvents(originalAnimationClip.events));
         optMotion.hideFlags = originalAnimationClip.hideFlags;
@@ -143,41 +147,73 @@ public static class AnimatorControllerDoer
         if (bindings != default)
             for (int i = 0; i < bindings.Length; i++)
             {
-                var editorCurve = AnimationUtility.GetEditorCurve(originalMotion as AnimationClip, bindings[i]);
+                var originalBinging = bindings[i];
+                var optBinding = originalBinging;//.MemberwiseClone();
+                var originalCurve = AnimationUtility.GetEditorCurve(originalMotion as AnimationClip, bindings[i]);
+                //var optCurve = originalCurve.MemberwiseClone();
+                setOptBindings(optMotion, originalCurve, optBinding);
+                //AnimationUtility.SetEditorCurve(optMotion, optBinding, optCurve);
             }
         //var optimizedBindingsList = new List<EditorCurveBinding>();
-        for (int i = 0; i < objectReferenceBindings.Length; i++)
-        {
-            var originalBinding = objectReferenceBindings[i];
-            Debug.Log($"originalBinding.propertyName = {originalBinding.propertyName}");
-            Debug.Log($"originalBinding.path = {originalBinding.path}");
-            Debug.Log($"originalBinding.type = {originalBinding.type.FullName}");
-            var keyframes = AnimationUtility.GetObjectReferenceCurve(originalAnimationClip, originalBinding);
-            setOptBindings(optMotion, structure, originalBinding, keyframes);
-            //setOptimizedCurvesBasedOnOriginalCurve(optMotion, structure, originalBinding, keyframes);
-            //AnimationUtility.SetObjectReferenceCurve(optMotion, originalBinding, optimizedBindingsList.ToArray());
-        }
+        if (objectReferenceBindings != default)
+            for (int i = 0; i < objectReferenceBindings.Length; i++)
+            {
+                var originalBinding = objectReferenceBindings[i];
+                Debug.Log($"originalBinding.propertyName = {originalBinding.propertyName}");
+                Debug.Log($"originalBinding.path = {originalBinding.path}");
+                Debug.Log($"originalBinding.type = {originalBinding.type.FullName}");
+                var keyframes = AnimationUtility.GetObjectReferenceCurve(originalAnimationClip, originalBinding);
+                setOptObjectReferenceBindings(optMotion, structure, originalBinding, keyframes);
+                //setOptimizedCurvesBasedOnOriginalCurve(optMotion, structure, originalBinding, keyframes);
+                //AnimationUtility.SetObjectReferenceCurve(optMotion, originalBinding, optimizedBindingsList.ToArray());
+            }
 
         var animationClipPath = Path.Combine(animationClipsFolder, $"{originalAnimationClip.name}.anim");
         AssetDatabase.CreateAsset(optMotion, animationClipPath);
+        //AssetDatabase.SaveAssets();
         return optMotion;
     }
 
-    private class BindingKeyframes
+    private static void setOptBindings(AnimationClip optMotion, AnimationCurve originalCurve, EditorCurveBinding optBinding)
+    {
+        var optCurve = new AnimationCurve();
+        var optKeyframes = new Keyframe[originalCurve.keys.Length];
+        for (int i = 0; i < optKeyframes.Length; i++)
+        {
+            optKeyframes[i] = originalCurve.keys[i];
+        }
+        optCurve.keys = optKeyframes;
+        AnimationUtility.SetEditorCurve(optMotion, optBinding, optCurve);
+    }
+
+    private class BindingTracks
     {
         public EditorCurveBinding SpriteBinding;
         public EditorCurveBinding TransformBindingX;
         public EditorCurveBinding TransformBindingY;
-        public ObjectReferenceKeyframe[] SpriteKeyframes;
+        public List<ObjectReferenceKeyframe?> SpriteKeyframes;
         public AnimationCurve TransformCurveX;
         public AnimationCurve TransformCurveY;
+        public List<Keyframe?> TransformCurveKeyframesX; //Все эти приблуды нужны для того, чтобы не было проблем с работой с массивами структур
+        public List<Keyframe?> TransformCurveKeyframesY;
     }
 
-    private static void setOptBindings(AnimationClip optMotion, OptimizedControllerStructure structure, EditorCurveBinding originalBinding, ObjectReferenceKeyframe[] keyframes)
+    private static void setOptObjectReferenceBindings(AnimationClip optMotion, OptimizedControllerStructure structure, EditorCurveBinding originalBinding, ObjectReferenceKeyframe[] keyframes)
     {
         /*
          * Ок, тут мы имеем на входе 1 дорожку - originalBinding и кифреймы, описанные keyframes. И задача у нас - 
          * проставить optMotion набор дорожек, заменяющих входящую дорожку.
+         */
+
+        /*
+         * Ок, тут мы имеем на входе AnimationClip, в котором могут анимироваться какое угодно кол-во параметров - ссылочные и не очень.
+         * Ссылочные могут быть как спрайтами так и не очень. Спрайты могут быть те, которые мы оптимизировали, а могут быть вообще левые
+         * спрайты, которые надо просто скопировать. Поэтому мы должны иметь в общем две структуры: та, в которой оптимизируемые спрайты,
+         * и другая, в которой все остальное. При этом может быть так что какая-то из этих структур не будет представлена вовсе.
+         */
+
+        /*
+         * Ок, нет, на самом деле, мы тут на вход имеем 1 дорожку. В ней может быть что угодно. А результат мы должны вознать в ANimationClip
          */
 
 
@@ -185,17 +221,23 @@ public static class AnimatorControllerDoer
         var maxOptSpritesCount = 0;
         for (int i = 0; i < keyframes.Length; i++)
         {
-            var currentChunksCount = 0;
             var keyframe = keyframes[i];
             if (keyframe.value == null)
                 continue;
+
             if (!(keyframe.value is Sprite))
-                throw new ApplicationException($"keyframe.value is not Sprite. Don't know what to do.");
+            {
+                //Если мы анимируем не спрайт, то нас это не интересует - мы просто копируем ссылку
+                if (maxOptSpritesCount < 1)
+                    maxOptSpritesCount = 1;
+                continue;
+            }
 
             var chunksInfo = _chunksInfos.Where(info => info.Sprites.Contains(keyframe.value));
             if (!chunksInfo.Any()) //Если оптимизированной структуры не найдено, то просто ставим оригинал, т.е. 1 спрайт.
             {
-                currentChunksCount = 1;
+                if (maxOptSpritesCount < 1)
+                    maxOptSpritesCount = 1;
                 continue;
             }
 
@@ -209,86 +251,123 @@ public static class AnimatorControllerDoer
                     break;
                 }
             }
-            currentChunksCount = chunks.Array.Length;
 
-            if (currentChunksCount > maxOptSpritesCount)
-                maxOptSpritesCount = currentChunksCount;
+            if (chunks.Array.Length > maxOptSpritesCount)
+                maxOptSpritesCount = chunks.Array.Length;
         }
         Debug.Log($"Ок, максимальное кол-во дорожек у нас {maxOptSpritesCount}");
 
-        var optBindings = new List<BindingKeyframes>();
+        //Создаем дорожки
+        var optBindingsTracks = new List<BindingTracks>();
         for (int i = 0; i < maxOptSpritesCount; i++)
         {
-            var binds = new BindingKeyframes();
+            var binds = new BindingTracks();
             var spriteBinding = new EditorCurveBinding();
             var transformBindingX = new EditorCurveBinding();
             var transformBindingY = new EditorCurveBinding();
 
-            spriteBinding.propertyName = "m_Sprite";
+            spriteBinding.propertyName = originalBinding.propertyName;
             spriteBinding.path = $"{originalBinding.path}/OptimizerSpriteRenderer_{i}";
-            spriteBinding.type = typeof(SpriteRenderer);
-
-            transformBindingX.propertyName = "m_LocalPosition.x";
-            transformBindingX.path = $"{originalBinding.path}/OptimizerSpriteRenderer_{i}";
-            transformBindingX.type = typeof(Transform);
-
-            transformBindingY.propertyName = "m_LocalPosition.y";
-            transformBindingY.path = $"{originalBinding.path}/OptimizerSpriteRenderer_{i}";
-            transformBindingY.type = typeof(Transform);
+            spriteBinding.type = originalBinding.type;
 
             binds.SpriteBinding = spriteBinding;
-            binds.TransformBindingX = transformBindingX;
-            binds.TransformBindingY = transformBindingY;
 
-            binds.SpriteKeyframes = new ObjectReferenceKeyframe[keyframes.Length];
-            binds.TransformCurveX = new AnimationCurve();
-            binds.TransformCurveX.keys = new Keyframe[keyframes.Length];
-            binds.TransformCurveY = new AnimationCurve();
-            binds.TransformCurveY.keys = new Keyframe[keyframes.Length];
-            optBindings.Add(binds);
+            binds.SpriteKeyframes = new  List<ObjectReferenceKeyframe?>();
+            for (int j = 0; j < keyframes.Length; j++)
+                binds.SpriteKeyframes.Add(new ObjectReferenceKeyframe());
+
+            //Кол-во дорожек может быть больше 1 только в случае, если мы оптимизируем спрайт, во всех остальных случаях
+            //мы оставляем оригинальные дорожки и ссылки. Т.ч. если дорожка 1, нам не нужны дополнительные дороги трансформации
+            if (maxOptSpritesCount > 1)
+            {
+                transformBindingX.propertyName = "m_LocalPosition.x";
+                transformBindingX.path = $"{originalBinding.path}/OptimizerSpriteRenderer_{i}";
+                transformBindingX.type = typeof(Transform);
+
+                transformBindingY.propertyName = "m_LocalPosition.y";
+                transformBindingY.path = $"{originalBinding.path}/OptimizerSpriteRenderer_{i}";
+                transformBindingY.type = typeof(Transform);
+
+                binds.TransformBindingX = transformBindingX;
+                binds.TransformBindingY = transformBindingY;
+
+                binds.TransformCurveX = new AnimationCurve();
+                binds.TransformCurveY = new AnimationCurve();
+                binds.TransformCurveKeyframesX = new List<Keyframe?>();
+                binds.TransformCurveKeyframesY = new List<Keyframe?>();
+
+                for (int j = 0; j < keyframes.Length; j++)
+                {
+                    binds.TransformCurveKeyframesX.Add(new Keyframe());
+                    binds.TransformCurveKeyframesY.Add(new Keyframe());
+                }
+            }
+
+            optBindingsTracks.Add(binds);
         }
 
+        //Теперь мы проходимся по каждому кифрейму оригинальной дороги и инициализируем все альтернативные соответствующие кифреймы
         for (int i = 0; i < keyframes.Length; i++)
         {
             var keyframe = keyframes[i];
             if (keyframe.value == default)
             {
-                for (int j = 0; j < optBindings.Count; j++)
+                for (int j = 0; j < optBindingsTracks.Count; j++)
                 {
-                    optBindings[j].SpriteKeyframes[i] = new ObjectReferenceKeyframe();
-                    optBindings[j].SpriteKeyframes[i].time = keyframe.time;
-                    optBindings[j].SpriteKeyframes[i].value = default;
+                    var key = optBindingsTracks[j].SpriteKeyframes[i].Value;
+                    key.time = keyframe.time;
+                    optBindingsTracks[j].SpriteKeyframes[i] = key;
                 }
 
                 continue;
             }
-            if (!(keyframe.value is Sprite))
-                throw new ApplicationException($"keyframe.value is not Sprite. Don't know what to do.");
+            if (!(keyframe.value is Sprite)) //Если у нас не спрайт, то дорожка всего 1
+            {
+                var key = optBindingsTracks[0].SpriteKeyframes[i].Value;
+                key.time = keyframe.time;
+                key.value = keyframe.value;
+                optBindingsTracks[0].SpriteKeyframes[i] = key;
+                continue;
+            }
 
             var chunksInfo = _chunksInfos.Where(info => info.Sprites.Contains(keyframe.value));
-            if (!chunksInfo.Any()) //Если оптимизированной структуры не найдено, то просто ставим оригинал
+            if (!chunksInfo.Any()) //Если оптимизированной структуры для спрайта на данном кадре не найдено, то просто ставим оригинал
             {
-                optBindings[0].SpriteKeyframes[i] = new ObjectReferenceKeyframe();
-                optBindings[0].SpriteKeyframes[i].time = keyframe.time;
-                optBindings[0].SpriteKeyframes[i].value = keyframe.value;
-
-                optBindings[0].TransformCurveX.keys[i] = new Keyframe();
-                optBindings[0].TransformCurveX.keys[i].time = keyframe.time;
-                optBindings[0].TransformCurveX.keys[i].value = 0;
-
-                optBindings[0].TransformCurveY.keys[i] = new Keyframe();
-                optBindings[0].TransformCurveY.keys[i].time = keyframe.time;
-                optBindings[0].TransformCurveY.keys[i].value = 0;
-
-                for (int j = 1; j < optBindings.Count; j++)
                 {
-                    optBindings[j].SpriteKeyframes[i] = new ObjectReferenceKeyframe();
-                    optBindings[j].SpriteKeyframes[i].time = keyframe.time;
-                    optBindings[j].SpriteKeyframes[i].value = default;
+                    var key = optBindingsTracks[0].SpriteKeyframes[i].Value;
+                    key.time = keyframe.time;
+                    key.value = keyframe.value;
+                    optBindingsTracks[0].SpriteKeyframes[i] = key;
+                }
+
+
+                if (optBindingsTracks[0].TransformCurveX != default) //Такое может быть, если по какой-то причине у нас всего 1 дорожка
+                {
+                    {
+                        var key = optBindingsTracks[0].TransformCurveKeyframesX[i].Value;
+                        key.time = keyframe.time;
+                        key.value = 0;
+                        optBindingsTracks[0].TransformCurveKeyframesX[i] = key;
+                    }
+
+                    {
+                        var key = optBindingsTracks[0].TransformCurveKeyframesY[i].Value;
+                        key.time = keyframe.time;
+                        key.value = 0;
+                        optBindingsTracks[0].TransformCurveKeyframesY[i] = key;
+                    }
+                }
+
+                for (int j = 1; j < optBindingsTracks.Count; j++)
+                {
+                    var key = optBindingsTracks[j].SpriteKeyframes[i].Value;
+                    key.time = keyframe.time;
+                    key.value = default;
+                    optBindingsTracks[j].SpriteKeyframes[i] = key;
                 }
                 continue;
             }
-            
+
             var chunkedSprites = chunksInfo.First().Sprites;
             var chunks = default(SpriteChunk[]);
             for (int j = 0; j < chunkedSprites.Length; j++)
@@ -300,11 +379,57 @@ public static class AnimatorControllerDoer
                 }
             }
 
-            for (int j = 0; j < optBindings.Count; j++)
+            for (int j = 0; j < optBindingsTracks.Count; j++)
             {
-                optBindings[j].SpriteKeyframes[i] = new ObjectReferenceKeyframe();
-                optBindings[j].SpriteKeyframes[i].time = keyframe.time;
-                optBindings[j].SpriteKeyframes[i].value = chunks[j].ColorsReference;
+                if (j < chunks.Length)
+                {
+                    {
+                        var key = optBindingsTracks[j].SpriteKeyframes[i].Value;
+                        key.time = keyframe.time;
+                        key.value = chunks[j].ChunkSprite;
+                        optBindingsTracks[j].SpriteKeyframes[i] = key;
+                    }
+
+                    if (optBindingsTracks[j].TransformBindingX != default)
+                    {
+                        var keyX = new Keyframe();
+                        keyX.time = keyframe.time;
+                        keyX.value = chunks[j].Area.X;
+
+                        var keyY = new Keyframe();
+                        keyY.time = keyframe.time;
+                        keyY.value = chunks[j].Area.Y;
+
+                        optBindingsTracks[j].TransformCurveKeyframesX[i] = keyX;
+                        optBindingsTracks[j].TransformCurveKeyframesY[i] = keyY;
+                        //optBindingsTracks[j].TransformCurveX.keys[i] = keyX;
+                        //optBindingsTracks[j].TransformCurveY.keys[i] = keyY;
+                    }
+                }
+                else
+                {
+                    var key = optBindingsTracks[j].SpriteKeyframes[i].Value;
+                    key.time = keyframe.time;
+                    key.value = default;
+                    optBindingsTracks[j].SpriteKeyframes[i] = key;
+                }
+            }
+        }
+
+        for (int i = 0; i < optBindingsTracks.Count; i++)
+        {
+            optBindingsTracks[i].TransformCurveX.keys = optBindingsTracks[i].TransformCurveKeyframesX.Select(v => v.Value).ToArray();
+            optBindingsTracks[i].TransformCurveY.keys = optBindingsTracks[i].TransformCurveKeyframesY.Select(v => v.Value).ToArray();
+        }
+
+        for (int i = 0; i < optBindingsTracks.Count; i++)
+        {
+            var currentTracks = optBindingsTracks[i];
+            AnimationUtility.SetObjectReferenceCurve(optMotion, currentTracks.SpriteBinding, currentTracks.SpriteKeyframes.Select(v => v.Value).ToArray());
+            if (currentTracks.TransformCurveX != default)
+            {
+                AnimationUtility.SetEditorCurve(optMotion, currentTracks.TransformBindingX, currentTracks.TransformCurveX);
+                AnimationUtility.SetEditorCurve(optMotion, currentTracks.TransformBindingY, currentTracks.TransformCurveY);
             }
         }
 
