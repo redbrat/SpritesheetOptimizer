@@ -58,13 +58,6 @@ public class SpritesheetOptimizerWindow : EditorWindow
             doAllControllers();
     }
 
-    internal class OptimizedControllerStructure
-    {
-        public AnimatorController[] OptimizedControllers;
-        public GameObject[] Originals;
-        public GameObject[] Optimized;
-    }
-
     private static void doAllControllers()
     {
         //var allAnimatorControllers = AssetDatabase.FindAssets("t:AnimatorController", null);
@@ -72,14 +65,12 @@ public class SpritesheetOptimizerWindow : EditorWindow
 
         Debug.Log($"animatorControllers fount: {allAnimatorControllers.Length}");
 
-        var structures = new List<OptimizedControllerStructure>();
         foreach (var controller in allAnimatorControllers)
         {
             Debug.Log($"doing controller {controller.name}");
-            var structure = new OptimizedControllerStructure();
             var controllerFolder = Path.Combine(_rootFolder, controller.name);
             Directory.CreateDirectory(controllerFolder);
-            AnimatorControllerDoer.Do(controller, structure, controllerFolder, _chunksInfo);
+            AnimatorControllerDoer.Do(controller, controllerFolder, _chunksInfo);
         }
     }
 

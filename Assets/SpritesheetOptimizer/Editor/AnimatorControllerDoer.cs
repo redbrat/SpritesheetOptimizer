@@ -11,14 +11,17 @@ public static class AnimatorControllerDoer
 {
     private static UnityOptimizedSpritesStructure[] _chunksInfos;
 
-    internal static void Do(AnimatorController originalCtrlr, OptimizedControllerStructure structure, string folderPath, params UnityOptimizedSpritesStructure[] chunksInfo)
+    internal static void Do(AnimatorController originalCtrlr, string folderPath, params UnityOptimizedSpritesStructure[] chunksInfo)
     {
         _chunksInfos = chunksInfo;
 
-        var path = Path.Combine(folderPath, $"{originalCtrlr.name}-optimized.controller");
+        var optName = $"{originalCtrlr.name}-optimized";
+        var path = Path.Combine(folderPath, $"{optName}.controller");
         Debug.Log($"Do {path}");
         var optCtrlr = AnimatorController.CreateAnimatorControllerAtPath(path);
         optCtrlr.RemoveLayer(0);
+
+        var optGo = new GameObject(optName);
 
         var animationClipsFolder = Path.Combine(folderPath, "AnimationClips");
         if (!Directory.Exists(animationClipsFolder))
@@ -28,23 +31,27 @@ public static class AnimatorControllerDoer
 
         for (int i = 0; i < originalCtrlr.layers.Length; i++)
         {
-            var optLayer = getOptimizedLayer(originalCtrlr.layers[i], structure, originalToOptObjectReferences, animationClipsFolder);
+            var optLayer = getOptimizedLayer(originalCtrlr.layers[i], optGo, originalToOptObjectReferences, animationClipsFolder);
             optCtrlr.AddLayer(optLayer);
         }
+
+        var prefabPath = Path.Combine(folderPath, $"{optName}.prefab");
+        PrefabUtility.SaveAsPrefabAsset(optGo, prefabPath);
+        UnityEngine.Object.DestroyImmediate(optGo);
     }
 
-    private static T getOptReference<T>(T original, OptimizedControllerStructure structure, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder) where T : UnityEngine.Object
+    private static T getOptReference<T>(T original, GameObject prefab, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder) where T : UnityEngine.Object
     {
         if (original == null)
             return null;
         if (!originalToOptObjectReferences.ContainsKey(original))
         {
             if (typeof(T).Equals(typeof(AnimatorStateMachine)))
-                return (T)(UnityEngine.Object)getOptimizedStateMachine(original as AnimatorStateMachine, structure, originalToOptObjectReferences, animationClipsFolder);
+                return (T)(UnityEngine.Object)getOptimizedStateMachine(original as AnimatorStateMachine, prefab, originalToOptObjectReferences, animationClipsFolder);
             else if (typeof(T).Equals(typeof(AnimatorState)))
-                return (T)(UnityEngine.Object)getOptimizedState(original as AnimatorState, structure, originalToOptObjectReferences, animationClipsFolder);
+                return (T)(UnityEngine.Object)getOptimizedState(original as AnimatorState, prefab, originalToOptObjectReferences, animationClipsFolder);
             else if (typeof(Motion).IsAssignableFrom(typeof(T)))
-                return (T)(UnityEngine.Object)getOptimizedMotion(original as Motion, structure, originalToOptObjectReferences, animationClipsFolder);
+                return (T)(UnityEngine.Object)getOptimizedMotion(original as Motion, prefab, originalToOptObjectReferences, animationClipsFolder);
             else
                 throw new ApplicationException($"Unknown reference type occured :{typeof(T).FullName}!");
         }
@@ -52,7 +59,7 @@ public static class AnimatorControllerDoer
             return (T)originalToOptObjectReferences[original];
     }
 
-    private static AnimatorControllerLayer getOptimizedLayer(AnimatorControllerLayer originalLayer, OptimizedControllerStructure structure, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
+    private static AnimatorControllerLayer getOptimizedLayer(AnimatorControllerLayer originalLayer, GameObject prefab, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
     {
         var optLayer = new AnimatorControllerLayer();
 
@@ -60,14 +67,14 @@ public static class AnimatorControllerDoer
         optLayer.defaultWeight = originalLayer.defaultWeight;
         optLayer.iKPass = originalLayer.iKPass;
         optLayer.name = originalLayer.name;
-        optLayer.stateMachine = getOptReference(originalLayer.stateMachine, structure, originalToOptObjectReferences, animationClipsFolder);
+        optLayer.stateMachine = getOptReference(originalLayer.stateMachine, prefab, originalToOptObjectReferences, animationClipsFolder);
         optLayer.syncedLayerAffectsTiming = originalLayer.syncedLayerAffectsTiming;
         optLayer.syncedLayerIndex = originalLayer.syncedLayerIndex;
 
         return optLayer;
     }
 
-    private static AnimatorStateMachine getOptimizedStateMachine(AnimatorStateMachine originalStateMachine, OptimizedControllerStructure structure, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
+    private static AnimatorStateMachine getOptimizedStateMachine(AnimatorStateMachine originalStateMachine, GameObject prefab, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
     {
         var optStateMachine = new AnimatorStateMachine();
         originalToOptObjectReferences.Add(originalStateMachine, optStateMachine);
@@ -79,7 +86,7 @@ public static class AnimatorControllerDoer
         optStateMachine.parentStateMachinePosition = originalStateMachine.parentStateMachinePosition;
 
         for (int i = 0; i < originalStateMachine.states.Length; i++)
-            optStateMachine.AddState(getOptReference(originalStateMachine.states[i].state, structure, originalToOptObjectReferences, animationClipsFolder), originalStateMachine.states[i].position);
+            optStateMachine.AddState(getOptReference(originalStateMachine.states[i].state, prefab, originalToOptObjectReferences, animationClipsFolder), originalStateMachine.states[i].position);
 
         //for (int i = 0; i < originalStateMachine.anyStateTransitions.Length; i++)
         //{
@@ -89,7 +96,7 @@ public static class AnimatorControllerDoer
         return optStateMachine;
     }
 
-    private static AnimatorState getOptimizedState(AnimatorState originalAnimatorState, OptimizedControllerStructure structure, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
+    private static AnimatorState getOptimizedState(AnimatorState originalAnimatorState, GameObject prefab, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
     {
         var optAnimatorState = new AnimatorState();
         originalToOptObjectReferences.Add(originalAnimatorState, optAnimatorState);
@@ -102,7 +109,7 @@ public static class AnimatorControllerDoer
         optAnimatorState.mirrorParameter = originalAnimatorState.mirrorParameter;
         optAnimatorState.mirrorParameterActive = originalAnimatorState.mirrorParameterActive;
         //optAnimatorState.motion = getOptimizedMotion(originalAnimatorState.motion, structure, originalToOptObjectReferences, animationClipsFolder);
-        optAnimatorState.motion = getOptReference(originalAnimatorState.motion, structure, originalToOptObjectReferences, animationClipsFolder);
+        optAnimatorState.motion = getOptReference(originalAnimatorState.motion, prefab, originalToOptObjectReferences, animationClipsFolder);
         optAnimatorState.name = originalAnimatorState.name;
         optAnimatorState.speed = originalAnimatorState.speed;
         optAnimatorState.speedParameter = originalAnimatorState.speedParameter;
@@ -112,12 +119,12 @@ public static class AnimatorControllerDoer
         optAnimatorState.timeParameterActive = originalAnimatorState.timeParameterActive;
         optAnimatorState.writeDefaultValues = originalAnimatorState.writeDefaultValues;
 
-        optAnimatorState.transitions = getOptimizedAnimatorStateTransition(originalAnimatorState.transitions, structure, originalToOptObjectReferences, animationClipsFolder);
+        optAnimatorState.transitions = getOptimizedAnimatorStateTransition(originalAnimatorState.transitions, prefab, originalToOptObjectReferences, animationClipsFolder);
 
         return optAnimatorState;
     }
 
-    private static Motion getOptimizedMotion(Motion originalMotion, OptimizedControllerStructure structure, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
+    private static Motion getOptimizedMotion(Motion originalMotion, GameObject prefab, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
     {
         if (!(originalMotion is AnimationClip))
             throw new ApplicationException($"Unknown type of motion - {originalMotion.GetType().FullName}. Never done this before...");
@@ -149,6 +156,7 @@ public static class AnimatorControllerDoer
             {
                 var originalBinging = bindings[i];
                 var optBinding = originalBinging;//.MemberwiseClone();
+                createWhatToBindTo(optBinding, prefab);
                 var originalCurve = AnimationUtility.GetEditorCurve(originalMotion as AnimationClip, bindings[i]);
                 //var optCurve = originalCurve.MemberwiseClone();
                 setOptBindings(optMotion, originalCurve, optBinding);
@@ -163,7 +171,8 @@ public static class AnimatorControllerDoer
                 Debug.Log($"originalBinding.path = {originalBinding.path}");
                 Debug.Log($"originalBinding.type = {originalBinding.type.FullName}");
                 var keyframes = AnimationUtility.GetObjectReferenceCurve(originalAnimationClip, originalBinding);
-                setOptObjectReferenceBindings(optMotion, structure, originalBinding, keyframes);
+                //createWhatToBindTo(originalBinding, prefab);
+                setOptObjectReferenceBindings(optMotion, prefab, originalBinding, keyframes);
                 //setOptimizedCurvesBasedOnOriginalCurve(optMotion, structure, originalBinding, keyframes);
                 //AnimationUtility.SetObjectReferenceCurve(optMotion, originalBinding, optimizedBindingsList.ToArray());
             }
@@ -172,6 +181,43 @@ public static class AnimatorControllerDoer
         AssetDatabase.CreateAsset(optMotion, animationClipPath);
         //AssetDatabase.SaveAssets();
         return optMotion;
+    }
+
+    private static GameObject createWhatToBindTo(EditorCurveBinding optBinding, GameObject prefab)
+    {
+        var path = optBinding.path;
+        var targetGo = prefab;
+        var address = new List<string>();
+        if (!string.IsNullOrEmpty(path))
+        {
+            if (path.Contains('/'))
+                address.AddRange(path.Split('/'));
+            else
+                address.Add(path);
+        }
+        return createWhatToBindToRecursively(prefab, address, optBinding);
+    }
+
+    private static GameObject createWhatToBindToRecursively(GameObject currentGo, List<string> address, EditorCurveBinding optBinding)
+    {
+        if (address.Count > 0)
+        {
+            var currentAddressee = address[0];
+            address.RemoveAt(0);
+            var addresseeTr = currentGo.transform.Find(currentAddressee);
+            if (addresseeTr == default)
+            {
+                var newGo = new GameObject(currentAddressee);
+                addresseeTr = newGo.transform;
+                addresseeTr.SetParent(currentGo.transform);
+            }
+            return createWhatToBindToRecursively(addresseeTr.gameObject, address, optBinding); ;
+        }
+
+        var component = currentGo.GetComponent(optBinding.type);
+        if (component == default)
+            component = currentGo.AddComponent(optBinding.type);
+        return currentGo;
     }
 
     private static void setOptBindings(AnimationClip optMotion, AnimationCurve originalCurve, EditorCurveBinding optBinding)
@@ -198,7 +244,7 @@ public static class AnimatorControllerDoer
         public List<Keyframe?> TransformCurveKeyframesY;
     }
 
-    private static void setOptObjectReferenceBindings(AnimationClip optMotion, OptimizedControllerStructure structure, EditorCurveBinding originalBinding, ObjectReferenceKeyframe[] keyframes)
+    private static void setOptObjectReferenceBindings(AnimationClip optMotion, GameObject prefab, EditorCurveBinding originalBinding, ObjectReferenceKeyframe[] keyframes)
     {
         /*
          * Ок, тут мы имеем на входе 1 дорожку - originalBinding и кифреймы, описанные keyframes. И задача у нас - 
@@ -266,9 +312,14 @@ public static class AnimatorControllerDoer
             var transformBindingX = new EditorCurveBinding();
             var transformBindingY = new EditorCurveBinding();
 
+            var gameObjectName = $"OptimizerSpriteRenderer_{i}";
             spriteBinding.propertyName = originalBinding.propertyName;
-            spriteBinding.path = $"{originalBinding.path}/OptimizerSpriteRenderer_{i}";
+            var path = gameObjectName;
+            if (!string.IsNullOrEmpty(originalBinding.path))
+                path = $"{originalBinding.path}/{path}";
+            spriteBinding.path = path;
             spriteBinding.type = originalBinding.type;
+            createWhatToBindTo(spriteBinding, prefab);
 
             binds.SpriteBinding = spriteBinding;
 
@@ -281,12 +332,20 @@ public static class AnimatorControllerDoer
             if (maxOptSpritesCount > 1)
             {
                 transformBindingX.propertyName = "m_LocalPosition.x";
-                transformBindingX.path = $"{originalBinding.path}/OptimizerSpriteRenderer_{i}";
+                path = gameObjectName;
+                if (!string.IsNullOrEmpty(originalBinding.path))
+                    path = $"{originalBinding.path}/{path}";
+                transformBindingX.path = path;
                 transformBindingX.type = typeof(Transform);
+                createWhatToBindTo(transformBindingX, prefab);
 
                 transformBindingY.propertyName = "m_LocalPosition.y";
-                transformBindingY.path = $"{originalBinding.path}/OptimizerSpriteRenderer_{i}";
+                path = gameObjectName;
+                if (!string.IsNullOrEmpty(originalBinding.path))
+                    path = $"{originalBinding.path}/{path}";
+                transformBindingY.path = path;
                 transformBindingY.type = typeof(Transform);
+                createWhatToBindTo(transformBindingY, prefab);
 
                 binds.TransformBindingX = transformBindingX;
                 binds.TransformBindingY = transformBindingY;
@@ -394,11 +453,11 @@ public static class AnimatorControllerDoer
                     {
                         var keyX = new Keyframe();
                         keyX.time = keyframe.time;
-                        keyX.value = chunks[j].Area.X;
+                        keyX.value = chunks[j].Area.X / 100f;
 
                         var keyY = new Keyframe();
                         keyY.time = keyframe.time;
-                        keyY.value = chunks[j].Area.Y;
+                        keyY.value = chunks[j].Area.Y / 100f;
 
                         optBindingsTracks[j].TransformCurveKeyframesX[i] = keyX;
                         optBindingsTracks[j].TransformCurveKeyframesY[i] = keyY;
@@ -551,7 +610,7 @@ public static class AnimatorControllerDoer
         return result;
     }
 
-    private static AnimatorStateTransition[] getOptimizedAnimatorStateTransition(AnimatorStateTransition[] originalTransitions, OptimizedControllerStructure structure, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
+    private static AnimatorStateTransition[] getOptimizedAnimatorStateTransition(AnimatorStateTransition[] originalTransitions, GameObject prefab, Dictionary<UnityEngine.Object, UnityEngine.Object> originalToOptObjectReferences, string animationClipsFolder)
     {
         var optTransitions = new AnimatorStateTransition[originalTransitions.Length];
 
@@ -574,8 +633,8 @@ public static class AnimatorControllerDoer
                 optConditions[j] = newCondition;
             }
             newTransition.conditions = optConditions;
-            newTransition.destinationState = getOptReference(originalTransition.destinationState, structure, originalToOptObjectReferences, animationClipsFolder);
-            newTransition.destinationStateMachine = getOptReference(originalTransition.destinationStateMachine, structure, originalToOptObjectReferences, animationClipsFolder);
+            newTransition.destinationState = getOptReference(originalTransition.destinationState, prefab, originalToOptObjectReferences, animationClipsFolder);
+            newTransition.destinationStateMachine = getOptReference(originalTransition.destinationStateMachine, prefab, originalToOptObjectReferences, animationClipsFolder);
             newTransition.exitTime = originalTransition.exitTime;
             newTransition.hasExitTime = originalTransition.hasExitTime;
             newTransition.hasFixedDuration = originalTransition.hasFixedDuration;
