@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 public class AlgorythmBuilder
 {
@@ -45,7 +46,7 @@ public class AlgorythmBuilder
         return this;
     }
 
-    public Algorythm Build(MyColor[][][] data, ComputeMode computeMode)
+    public Algorythm Build(MyColor[][][] data, MyVector2Float[] pivots, ComputeMode computeMode)
     {
         var sizingCofigurators = new List<ISizingsConfigurator>();
         for (int i = 0; i < _sizingCofiguratorTypes.Count; i++)
@@ -64,6 +65,6 @@ public class AlgorythmBuilder
         if (_areaEnumeratorType == null)
             _areaEnumeratorType = typeof(DefaultAreaEnumerator);
 
-        return new Algorythm(data, _areaEnumeratorType, sizingCofigurators, scoreCounters, _areasFreshmentSpan, _areasVolatilityRange, computeMode);
+        return new Algorythm(data, pivots, _areaEnumeratorType, sizingCofigurators, scoreCounters, _areasFreshmentSpan, _areasVolatilityRange, computeMode);
     }
 }

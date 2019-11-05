@@ -25,6 +25,7 @@ public class Algorythm
     /// </summary>
     private readonly int _areasVolatilityRange;
 
+    private readonly MyVector2Float[] _pivots;
     private readonly MyColor[][][] _sprites;
     private readonly IList<ISizingsConfigurator> _sizingsConfigurators;
     private readonly IList<IScoreCounter> _scoreCounters;
@@ -41,7 +42,7 @@ public class Algorythm
 
     private CancellationToken _ct;
 
-    public Algorythm(MyColor[][][] sprites, Type areaEnumeratorType, IList<ISizingsConfigurator> sizingConfigurators, IList<IScoreCounter> scoreCounters, int areasFreshmentSpan, int areasVolatilityRange, ComputeMode computeMode)
+    public Algorythm(MyColor[][][] sprites, MyVector2Float[] pivots, Type areaEnumeratorType, IList<ISizingsConfigurator> sizingConfigurators, IList<IScoreCounter> scoreCounters, int areasFreshmentSpan, int areasVolatilityRange, ComputeMode computeMode)
     {
         OperationProgressReport = new ProgressReport();
         OverallProgressReport = new ProgressReport();
@@ -49,6 +50,7 @@ public class Algorythm
         _areasFreshmentSpan = areasFreshmentSpan;
         _areasVolatilityRange = areasVolatilityRange;
 
+        _pivots = pivots;
         _sprites = sprites;
         _areaEnumeratorType = areaEnumeratorType;
         _sizingsConfigurators = sizingConfigurators;
@@ -194,8 +196,6 @@ public class Algorythm
 
         stopwatch.Start($"The Hole Initialization");
 #if CPU
-        Debug.Log($"GPU Часть закончена, делаем проверку cpu...");
-
         var bestCpuCalculatedAreaList = await getBestCpuCalculatedArea();
         var bestScoreItem = bestCpuCalculatedAreaList.OrderByDescending(o => o.score * o.count).First();
         var bestCpuScore = bestScoreItem.score * bestScoreItem.count;

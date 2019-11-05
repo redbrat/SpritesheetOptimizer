@@ -16,7 +16,7 @@ public class Optimizer : EditorWindow
     private static int _areasVolatilityRange = 100;
     private static PickySizingConfigurator.PickynessLevel _pickinessLevel;
     private static ComputeMode _computeMode;
-    private static string _resultFileName = "Assets/spriteChunks.asset";
+    private static string _resultFileName = "Assets/scavenger.asset";
 
     [MenuItem("Optimizer/Optimize")]
     private static void Main()
@@ -46,17 +46,18 @@ public class Optimizer : EditorWindow
         {
             var colorResults = getColors(_sprite);
             var algorithmBulder = new AlgorythmBuilder();
+            var pivots = colorResults.sprites.Select(s => new MyVector2Float(s.pivot.x, s.pivot.y)).ToArray();
             var algorythm = algorithmBulder
                 .AddSizingsConfigurator<PickySizingConfigurator>(_pickinessLevel)
                 .AddScoreCounter<DefaultScoreCounter>()
                 .SetAreaEnumerator<DefaultAreaEnumerator>()
                 .SetAreasFreshmentSpan(_areaFreshmentSpan)
                 .SetAreasVolatilityRange(_areasVolatilityRange)
-                .Build(colorResults.colors, _computeMode);
+                .Build(colorResults.colors, pivots, _computeMode);
             _operationProgressReport = algorythm.OperationProgressReport;
             _overallProgressReport = algorythm.OverallProgressReport;
             _cts = new CancellationTokenSource();
-            launch(algorythm, colorResults.sprites, colorResults.colors);
+            launch(algorythm, colorResults.sprites, colorResults.colors, pivots);
         }
         if (_cts != null)
         {
@@ -74,11 +75,11 @@ public class Optimizer : EditorWindow
         Repaint();
     }
 
-    private async void launch(Algorythm algorythm, Sprite[] sprites, MyColor[][][] colors)
+    private async void launch(Algorythm algorythm, Sprite[] sprites, MyColor[][][] colors, MyVector2Float[] pivots)
     {
         await algorythm.Initialize(_resolution, _cts.Token);
         var correlations = await algorythm.Run();
-        var areasPerSprite = getAreasPerSprite(correlations);
+        var areasPerSprite = getAreasPerSprite(correlations, colors, pivots, sprites.Select(s => s.pixelsPerUnit).ToArray());
 
         Debug.Log($"correlations.Count = {correlations.Length}");
         Debug.Log($"Максимальное кол-во областей в одном спрайте: {areasPerSprite.OrderByDescending(aps => aps.Value.Count).First().Value.Count}");
@@ -180,6 +181,15 @@ public class Optimizer : EditorWindow
                     ti.filterMode = FilterMode.Point;
                     ti.alphaIsTransparency = true;
                     ti.mipmapEnabled = false;
+                    ti.spriteImportMode = SpriteImportMode.Single;
+                    ti.spritePivot = Vector2.down + Vector2.right;
+                    ti.isReadable = true;
+
+                    var texSettings = new TextureImporterSettings();
+                    ti.ReadTextureSettings(texSettings);
+                    texSettings.spriteAlignment = (int)SpriteAlignment.BottomLeft;
+                    ti.SetTextureSettings(texSettings);
+
                     AssetDatabase.ImportAsset(texturePath);
                     var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(texturePath);
 
@@ -208,7 +218,7 @@ public class Optimizer : EditorWindow
     //    throw new NotImplementedException();
     //}
 
-    private Dictionary<int, List<SpriteChunk>> getAreasPerSprite(Algorythm.Correlation[] correlations)
+    private Dictionary<int, List<SpriteChunk>> getAreasPerSprite(Algorythm.Correlation[] correlations, MyColor[][][] colors, MyVector2Float[] pivots, float[] pixelPerUnits)
     {
         var result = new Dictionary<int, List<SpriteChunk>>();
 
@@ -217,10 +227,17 @@ public class Optimizer : EditorWindow
             for (int j = 0; j < correlations[i].Coordinates.Length; j++)
             {
                 var info = correlations[i].Coordinates[j];
+                var pivot = pivots[info.SpriteIndex];
+                var width = colors[info.SpriteIndex].Length;
+                var height = colors[info.SpriteIndex][0].Length;
+                var ppu = pixelPerUnits[info.SpriteIndex];
+                var offsetX = Mathf.FloorToInt(pivot.X * width / ppu);
+                var offsetY = Mathf.FloorToInt(pivot.Y * height / ppu);
+                var pivotedInfo = new MyAreaCoordinates(info.SpriteIndex, info.X - offsetX, info.Y - offsetY, info.Width, info.Height);
                 if (!result.ContainsKey(info.SpriteIndex))
                     result.Add(info.SpriteIndex, new List<SpriteChunk>());
 
-                result[info.SpriteIndex].Add(new SpriteChunk(correlations[i].Colors, info));
+                result[info.SpriteIndex].Add(new SpriteChunk(correlations[i].Colors, pivotedInfo));
             }
         }
 

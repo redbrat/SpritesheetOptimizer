@@ -36,6 +36,8 @@ public static class AnimatorControllerDoer
         }
 
         var prefabPath = Path.Combine(folderPath, $"{optName}.prefab");
+        var animator = optGo.AddComponent<Animator>();
+        animator.runtimeAnimatorController = optCtrlr;
         PrefabUtility.SaveAsPrefabAsset(optGo, prefabPath);
         UnityEngine.Object.DestroyImmediate(optGo);
     }
