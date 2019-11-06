@@ -80,20 +80,22 @@ public class Optimizer : EditorWindow
         await algorythm.Initialize(_resolution, _cts.Token);
         var correlationsAndImages = await algorythm.Run();
         var correlations = correlationsAndImages.correlations;
-        var images = correlationsAndImages.testImages;
-        var filesPathBegin = @"C:\Users\celti\Documents\TestImages";
-        for (int i = 0; i < images.Length; i++)
-        {
-            var tex = new Texture2D(images[i].Width, images[i].Height, TextureFormat.RGBA32, false, false);
-            tex.filterMode = FilterMode.Point;
-            tex.SetPixels(images[i].Colors);
-            tex.Apply();
-            var fullPath = Path.Combine(filesPathBegin, images[i].filePath);
-            Directory.CreateDirectory(Directory.GetParent(fullPath).ToString());
-            File.WriteAllBytes(fullPath, tex.EncodeToPNG());
-            DestroyImmediate(tex);
-        }
-        Resources.UnloadUnusedAssets();
+
+        //var images = correlationsAndImages.testImages;
+        //var filesPathBegin = @"C:\Users\celti\Documents\TestImages";
+        //for (int i = 0; i < images.Length; i++)
+        //{
+        //    var tex = new Texture2D(images[i].Width, images[i].Height, TextureFormat.RGBA32, false, false);
+        //    tex.filterMode = FilterMode.Point;
+        //    tex.SetPixels(images[i].Colors);
+        //    tex.Apply();
+        //    var fullPath = Path.Combine(filesPathBegin, images[i].filePath);
+        //    Directory.CreateDirectory(Directory.GetParent(fullPath).ToString());
+        //    File.WriteAllBytes(fullPath, tex.EncodeToPNG());
+        //    DestroyImmediate(tex);
+        //}
+        //Resources.UnloadUnusedAssets();
+
         var areasPerSprite = getAreasPerSprite(correlations, colors, pivots, sprites.Select(s => s.pixelsPerUnit).ToArray());
 
         Debug.Log($"correlations.Count = {correlations.Length}");
@@ -199,6 +201,8 @@ public class Optimizer : EditorWindow
                     ti.spriteImportMode = SpriteImportMode.Single;
                     ti.spritePivot = Vector2.down + Vector2.right;
                     ti.isReadable = true;
+                    ti.crunchedCompression = false;
+                    ti.textureCompression = TextureImporterCompression.Uncompressed;
 
                     var texSettings = new TextureImporterSettings();
                     ti.ReadTextureSettings(texSettings);
@@ -246,8 +250,9 @@ public class Optimizer : EditorWindow
                 var width = colors[info.SpriteIndex].Length;
                 var height = colors[info.SpriteIndex][0].Length;
                 var ppu = pixelPerUnits[info.SpriteIndex];
-                var offsetX = Mathf.FloorToInt(pivot.X * width / ppu);
-                var offsetY = Mathf.FloorToInt(pivot.Y * height / ppu);
+                var offsetX = Mathf.FloorToInt(pivot.X/* * width*//* / ppu*/);
+                var offsetY = Mathf.FloorToInt(pivot.Y/* * height*//* / ppu*/);
+                //Debug.LogError($"width = {width}. offsetX = {offsetX}. height = {height}. offsetY = {offsetY}. info.X = {info.X}, info.Y = {info.Y}");
                 var pivotedInfo = new MyAreaCoordinates(info.SpriteIndex, info.X - offsetX, info.Y - offsetY, info.Width, info.Height);
                 if (!result.ContainsKey(info.SpriteIndex))
                     result.Add(info.SpriteIndex, new List<SpriteChunk>());
