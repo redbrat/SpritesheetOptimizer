@@ -18,6 +18,23 @@ public static class AnimatorControllerDoer
         var path = Path.Combine(folderPath, $"{optName}.controller");
         Debug.Log($"Do {path}");
         var optCtrlr = AnimatorController.CreateAnimatorControllerAtPath(path);
+
+        var length = originalCtrlr.parameters.Length;
+        var optParams = new AnimatorControllerParameter[length];
+        for (int i = 0; i < originalCtrlr.parameters.Length; i++)
+        {
+            var oriParameter = originalCtrlr.parameters[i];
+            var optParameter = new AnimatorControllerParameter();
+            optParameter.defaultBool = oriParameter.defaultBool;
+            optParameter.defaultFloat = oriParameter.defaultFloat;
+            optParameter.defaultInt = oriParameter.defaultInt;
+            optParameter.name = oriParameter.name;
+            optParameter.type = oriParameter.type;
+            optParams[i] = optParameter;
+        }
+        optCtrlr.parameters = optParams;
+
+        var name = optCtrlr.layers[0].name;
         optCtrlr.RemoveLayer(0);
 
         var optGo = new GameObject(optName);
@@ -31,6 +48,8 @@ public static class AnimatorControllerDoer
         for (int i = 0; i < originalCtrlr.layers.Length; i++)
         {
             var optLayer = getOptimizedLayer(originalCtrlr.layers[i], optGo, originalToOptObjectReferences, animationClipsFolder);
+            if (i == 0)
+                optLayer.name = name;
             optCtrlr.AddLayer(optLayer);
         }
 
