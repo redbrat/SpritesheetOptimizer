@@ -190,8 +190,9 @@ public class Algorythm
         }
     }
 
-    public async Task<Correlation[]> Run()
+    public async Task<(Correlation[] correlations, GraphicFileInfo[] testImages)> Run()
     {
+        var resultImages = new List<GraphicFileInfo>();
         var stopwatch = new MyStopwatch();
 
         stopwatch.Start($"The Hole Initialization");
@@ -315,7 +316,7 @@ public class Algorythm
         var bestOfEachArea = new Dictionary<MyVector2, (int spriteIndex, MyVector2 position, int count, int score, string test)>();
         var chunkCountArrayList = new List<int[]>();
 
-        var dataBuffer = new ComputeBuffer(dataSize, 4);
+        //var dataBuffer = new ComputeBuffer(dataSize, 4);
 
         var fullpasses = 0;
         stopwatch.Stop($"The Hole Initialization");
@@ -326,6 +327,7 @@ public class Algorythm
             //1. Считаем оценки каждой области...
 
             stopwatch.Start($"SetData");
+            var dataBuffer = new ComputeBuffer(dataSize, 4);
             dataBuffer.SetData(data);
             stopwatch.Stop($"SetData");
 
@@ -995,6 +997,9 @@ public class Algorythm
             var @lock = new object();
             //var @lock2 = new object();
             //for (int spriteIndex = 0; spriteIndex < _sprites.Length; spriteIndex++)
+
+            resultImages.AddRange(saveCurrentVersionOfData(fullpasses, data, registry));
+
             Parallel.For(0, _sprites.Length, (spriteIndex, loopState) =>
             {
                 var sprite = _sprites[spriteIndex];
@@ -1096,17 +1101,53 @@ public class Algorythm
             Debug.Log($"Проход {fullpasses + 1} завершен.");
             stopwatch.Stop($"Debug.Log's");
             stopwatch.Stop($"The Hole Non GPU Dispatch in the loop");
+
+            dataBuffer.Dispose();
+
             if (++fullpasses >= 300)
                 break;
         }
         stopwatch.Stop($"The Hole Main Loop");
 
         registryBuffer.Dispose();
-        dataBuffer.Dispose();
+        //dataBuffer.Dispose();
 
         Debug.Log(stopwatch.PrintResults());
 
-        return resultList.ToArray();
+        return (resultList.ToArray(), resultImages.ToArray());
+    }
+
+    private GraphicFileInfo[] saveCurrentVersionOfData(int pass, int[] data, registryStruct[] registry)
+    {
+        var result = new GraphicFileInfo[_sprites.Length];
+        var pathBegin = $"Pass_{pass}";
+        for (int i = 0; i < _sprites.Length; i++)
+        {
+            var fileInfo = new GraphicFileInfo();
+            var sprite = _sprites[i];
+            var spriteWidth = sprite.Length;
+            var spriteHeight = sprite[0].Length;
+
+            fileInfo.Width = spriteWidth;
+            fileInfo.Height = spriteHeight;
+
+            var spriteDataOffset = registry[i].SpritesDataOffset;
+
+            var colors = new Color[spriteWidth * spriteHeight];
+            for (int spriteX = 0; spriteX < spriteWidth; spriteX++)
+            {
+                for (int spriteY = 0; spriteY < spriteHeight; spriteY++)
+                {
+                    var pixel = data[spriteDataOffset + spriteX * spriteHeight + spriteY];
+                    var color = new Color(((pixel >> 24) & 255) / 255f, ((pixel >> 16) & 255) / 255f, ((pixel >> 8) & 255) / 255f, (pixel & 255) / 255f);
+                    colors[spriteY * spriteWidth + spriteX] = color;
+                }
+            }
+            fileInfo.Colors = colors;
+            fileInfo.filePath = Path.Combine(pathBegin, $"sprite_{i}.png");
+            result[i] = fileInfo;
+        }
+        return result;
     }
 
     private int[] blockCopy(int[] source)

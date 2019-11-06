@@ -5,7 +5,6 @@ using System.Linq;
 using UnityEditor;
 using UnityEditor.Animations;
 using UnityEngine;
-using static SpritesheetOptimizerWindow;
 
 public static class AnimatorControllerDoer
 {
@@ -325,7 +324,7 @@ public static class AnimatorControllerDoer
 
             binds.SpriteBinding = spriteBinding;
 
-            binds.SpriteKeyframes = new  List<ObjectReferenceKeyframe?>();
+            binds.SpriteKeyframes = new List<ObjectReferenceKeyframe?>();
             for (int j = 0; j < keyframes.Length; j++)
                 binds.SpriteKeyframes.Add(new ObjectReferenceKeyframe());
 
@@ -475,6 +474,17 @@ public static class AnimatorControllerDoer
                     key.time = keyframe.time;
                     key.value = default;
                     optBindingsTracks[j].SpriteKeyframes[i] = key;
+
+                    var keyX = new Keyframe();
+                    keyX.time = keyframe.time;
+                    keyX.value = 0f;
+
+                    var keyY = new Keyframe();
+                    keyY.time = keyframe.time;
+                    keyY.value = 0f;
+
+                    optBindingsTracks[j].TransformCurveKeyframesX[i] = keyX;
+                    optBindingsTracks[j].TransformCurveKeyframesY[i] = keyY;
                 }
             }
         }
@@ -483,6 +493,19 @@ public static class AnimatorControllerDoer
         {
             optBindingsTracks[i].TransformCurveX.keys = optBindingsTracks[i].TransformCurveKeyframesX.Select(v => v.Value).ToArray();
             optBindingsTracks[i].TransformCurveY.keys = optBindingsTracks[i].TransformCurveKeyframesY.Select(v => v.Value).ToArray();
+
+            if (i == 0
+                && optBindingsTracks.Count >= 93
+                && optBindingsTracks[92].TransformCurveX.keys.Length > 0
+                && optBindingsTracks[92].TransformCurveY.keys.Length > 0)
+            {
+                Debug.LogError($"Очередной 92й трек, 0й кадр: {optBindingsTracks[92].TransformCurveX.keys[i].value},{optBindingsTracks[92].TransformCurveY.keys[i].value}, {(optBindingsTracks[92].SpriteKeyframes[i].Value.value as Sprite).rect.width},{(optBindingsTracks[92].SpriteKeyframes[i].Value.value as Sprite).rect.height}");
+                if (optBindingsTracks[92].TransformCurveX.keys.Length > i
+                    && optBindingsTracks[92].TransformCurveX.keys[i].value == 0f)
+                {
+
+                }
+            }
         }
 
         if (isOptimized)

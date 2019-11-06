@@ -78,7 +78,22 @@ public class Optimizer : EditorWindow
     private async void launch(Algorythm algorythm, Sprite[] sprites, MyColor[][][] colors, MyVector2Float[] pivots)
     {
         await algorythm.Initialize(_resolution, _cts.Token);
-        var correlations = await algorythm.Run();
+        var correlationsAndImages = await algorythm.Run();
+        var correlations = correlationsAndImages.correlations;
+        var images = correlationsAndImages.testImages;
+        var filesPathBegin = @"C:\Users\celti\Documents\TestImages";
+        for (int i = 0; i < images.Length; i++)
+        {
+            var tex = new Texture2D(images[i].Width, images[i].Height, TextureFormat.RGBA32, false, false);
+            tex.filterMode = FilterMode.Point;
+            tex.SetPixels(images[i].Colors);
+            tex.Apply();
+            var fullPath = Path.Combine(filesPathBegin, images[i].filePath);
+            Directory.CreateDirectory(Directory.GetParent(fullPath).ToString());
+            File.WriteAllBytes(fullPath, tex.EncodeToPNG());
+            DestroyImmediate(tex);
+        }
+        Resources.UnloadUnusedAssets();
         var areasPerSprite = getAreasPerSprite(correlations, colors, pivots, sprites.Select(s => s.pixelsPerUnit).ToArray());
 
         Debug.Log($"correlations.Count = {correlations.Length}");
