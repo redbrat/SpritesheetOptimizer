@@ -63,7 +63,6 @@ public class Algorythm
 
     public async Task Initialize(Vector2Int maxAreaSize, CancellationToken ct)
     {
-        Debug.LogError($"Initialize 1");
         _ct = ct;
         _areaSizings = getAreaSizings(_sprites, maxAreaSize, ct);
 
@@ -72,17 +71,13 @@ public class Algorythm
             areaEnumeratorCtor = _areaEnumeratorType.GetConstructor(new Type[] { typeof(MyColor[][][]), typeof(IEnumerable<MyVector2>) });
         else
             _areaEnumerator = (IAreaEnumerator)areaEnumeratorCtor.Invoke(new object[] { _sprites });
-        Debug.LogError($"Initialize 2");
         if (_areaEnumerator == null && areaEnumeratorCtor == null)
             throw new ArgumentException($"Got AreaEnumerator with unknown set of ctor parameters.");
         else if (_areaEnumerator == null)
             _areaEnumerator = (IAreaEnumerator)areaEnumeratorCtor.Invoke(new object[] { _sprites, _areaSizings });
-        Debug.LogError($"Initialize 3");
         UnprocessedPixels = countUprocessedPixels(MyVector2.One, _areaEnumerator);
-        Debug.LogError($"Initialize 4");
         //_mapOfEmptiness = new MapOfEmptiness();
         //await _mapOfEmptiness.Initialize(_areaSizings, _sprites, _areaEnumerator);
-        Debug.LogError($"Initialize 5");
 
         switch (_computeMode)
         {
@@ -93,7 +88,6 @@ public class Algorythm
                 _areaFetcher = new GpuAreaFetcher();
                 break;
         }
-        Debug.LogError($"Initialize 6");
     }
 
     #region Initializing

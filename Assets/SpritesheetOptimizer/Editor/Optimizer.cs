@@ -121,8 +121,8 @@ public class Optimizer : EditorWindow
             }
         }
 
-        var afterCounts = new int[colors.Length]; 
-        for (int i = 0; i < colors.Length; i++) 
+        var afterCounts = new int[colors.Length];
+        for (int i = 0; i < colors.Length; i++)
         {
             var spriteChunks = areasPerSprite[i];
             for (int j = 0; j < spriteChunks.Count; j++)
@@ -147,12 +147,492 @@ public class Optimizer : EditorWindow
         _operationProgressReport = null;
         _cts = null;
 
-        saveSpritesInfo(areasPerSprite, sprites);
+        //saveSpritesInfo(areasPerSprite, sprites);
+        saveCompressedInfo(saveSpritesInfo(areasPerSprite, sprites));
     }
 
-    private void saveSpritesInfo(Dictionary<int, List<SpriteChunk>> areasPerSprite, Sprite[] sprites)
+    private void saveCompressedInfo(UnityOptimizedSpritesStructure unityOptimizedSpritesStructure)
     {
-        var newSpritesInfo = ScriptableObject.CreateInstance<UnityOptimizedSpritesStructure>();
+        var packedTextures = new Texture2D(1, 1, TextureFormat.ARGB32, false, false);
+        packedTextures.filterMode = FilterMode.Point;
+        var allSprites = unityOptimizedSpritesStructure.Chunks.Aggregate(new List<Sprite>(), (list, wr) =>
+        {
+            list.AddRange(wr.Array.Select(a => a.ChunkSprite));
+            return list;
+        }, list => list.Distinct().ToArray());
+        var atlas = packedTextures.PackTextures(allSprites.Select(s => s.texture).ToArray(), 0);
+        var atlasInt = atlas.Select(r => new RectInt(Mathf.FloorToInt(r.xMin), Mathf.FloorToInt(r.yMin), Mathf.FloorToInt(r.width), Mathf.FloorToInt(r.height))).ToArray();
+        var atlasMaxX = atlasInt.OrderByDescending(r => r.xMin).First().xMin;
+        var atlasMaxY = atlasInt.OrderByDescending(r => r.yMin).First().yMin;
+        var atlasMaxWidth = atlasInt.OrderByDescending(r => r.width).First().width;
+        var atlasMaxHeight = atlasInt.OrderByDescending(r => r.height).First().height;
+        var atlasXBits = getBitsCount(atlasMaxX);
+        var atlasYBits = getBitsCount(atlasMaxY);
+        var atlasWidthBits = getBitsCount(atlasMaxWidth);
+        var atlasHeightBits = getBitsCount(atlasMaxHeight);
+        /*
+         * Ок, такая фишка, что каждый спрайт в кадре будет брать спрайт соответствующий его порядковому номеру, поэтому не нужно будет хранить
+         * этот самый порядковый номер. Хотя да, и так и так мы это не храним. А что мы храним?
+         * 
+         * Нам нужны смещения спрайтов, координаты области и ее размеры. Таким образом, если мы, например, отображаем 9й спрайт, остоящий из 141
+         * чанка, то мы сначала ищем смещение, соответствующее 9му спрайту, а там мы уже идем по порядку, расставляя все чанки. На самом деле нам
+         * даже не нужно хранить смещение. Достаточно будет как-то понять, что спрайт закончился. О! Еще офигенная тема - не обязательно менять
+         * чанки местами. Если чанк №31 содержит спрайт №2 а на следующем кадре спрайт №2 содержит чанк №56, то зачем так делать? можно просто 
+         * оставить этот спрайт у чанка 31 на столько насколько потребуется и сэкономить ресурсы и памяти и процессора. Тогда надо будет хранить 
+         * инфу по чанкам. Т.е. у нас на все спрайты данного атласа максимум - 141 чанк, и идем дальше по чанкам.
+         */
+
+        var maximumChunks = unityOptimizedSpritesStructure.Chunks.OrderByDescending(c => c.Array.Length).First().Array.Length;
+        var keyframesCount = unityOptimizedSpritesStructure.Chunks.Length;
+        var allChunks = unityOptimizedSpritesStructure.Chunks.Aggregate(new List<SpriteChunk>(), (list, c) =>
+        {
+            list.AddRange(c.Array);
+            return list;
+        }, c => c.ToArray());
+        var maximumX = allChunks.OrderByDescending(c => c.Area.X).First().Area.X;
+        var maximumY = allChunks.OrderByDescending(c => c.Area.X).First().Area.X;
+        var maximumWidth = allChunks.OrderByDescending(c => c.Area.Width).First().Area.Width;
+        var maximumHeight = allChunks.OrderByDescending(c => c.Area.Height).First().Area.Height;
+
+        var atlasIndexBits = getBitsCount(atlas.Length);
+        var xBits = getBitsCount(maximumX);
+        var yBits = getBitsCount(maximumY);
+        //var widthBits = getBitsCount(maximumWidth);
+        //var heightBits = getBitsCount(maximumHeight);
+        //var keysrameBits = getBitsCount(keyframesCount);
+
+        var firstPassStruct = new SpriteChunk[maximumChunks][];
+        for (int i = 0; i < maximumChunks; i++)
+            firstPassStruct[i] = new SpriteChunk[keyframesCount];
+        for (int k = 0; k < keyframesCount; k++)
+        {
+            var currentChunks = unityOptimizedSpritesStructure.Chunks[k].Array.ToList();
+
+            //Гораздо дешевле хранить инфу о размере, чем о координатах, поэтому мы стараемся, чтобы чанки стояли на местах как можно дольше. О чем 
+            //это я? Мы все равно ссылаемся просто на номер чанка на атласе, так что размер... Хотя да, и размер и координаты могут меняться. Только
+            //в случае размера меняется только порядковый номер чанка в атласе. В общем, приоритет такой - неподвижность чанка -> неизменность чанка.
+            //Т.е. мы всегда стараемся сохранить неподвижность, а уже потом неизменность. Если удается сохранить и то и то - это бесплатный кифрейм.
+            //Хотя позиции тоже можно сжать. Если позиции повторяются, на них можно сослаться. Другое дело, что повторов позиций не должно быть полезно 
+            //много. С третьей стороны, повторов цифр должно быть гораздо больше, чем повторов координат.
+
+            if (k == 0)
+            {
+                //В первый кифрейм просто заполняем все как есть - мы ничего не можем улучшить
+
+                for (int c = 0; c < currentChunks.Count; c++)
+                    firstPassStruct[c][k] = currentChunks[c];
+
+                continue;
+            }
+
+            //Во всех кифреймах после первого пытаемся сэкономить место.
+
+            /*
+             * Ок, тут мы не можем идти по порядку, т.к. мы можем случайно забрать у кого-то следующего его идеальный вариант.
+             * Поэтому мы проходимся по вариантам. Сначала расставляем все идеальные, потом все хуже, хуже и так до конца. Таким образом
+             * у нас могут появиться "дырки" в массиве, так что мы не будем точно знать когда закончить.
+             */
+
+            /*
+             * В общем, сначала мы должны упорядочить возможные варианты "хорошести" вариантов и пройтись по всем, начиная с лучших, заканчивая
+             * худшими или пока не закончатся чанки.
+             */
+
+            var lastChunks = unityOptimizedSpritesStructure.Chunks[k - 1].Array.ToList();
+            var allScores = new List<int>();
+            //for (int i = 0; i < currentChunks.Count; i++)
+            //    for (int j = 0; j < lastChunks.Count; j++)
+            //        allScores.Add(getScoreOfTwoChunks(currentChunks[i], lastChunks[j], xBits, yBits, atlasIndexBits));
+            currentChunks.ForEach(current => lastChunks.ForEach(last => allScores.Add(getScoreOfTwoChunks(current, last, xBits, yBits, atlasIndexBits))));
+            var groups = allScores.GroupBy(score => score).Select(gr => gr.Key).OrderBy(score => score).ToList();
+            while (currentChunks.Count > 0)
+            {
+                /*
+                 * Т.к. мы сопоставляем все прошлые со всеми нынешнеми и у нас нету default'ов, мы можем остаться без last'ов для всех наших current'ов.
+                 * Поэтому остатки означают, что для них не хватило места - запихиваем их куда попало.
+                 */
+                if (groups.Count == 0)
+                    break;
+                var currentGroup = groups[0];
+                groups.RemoveAt(0);
+
+                var goodOnes = new List<(SpriteChunk current, SpriteChunk last)>();
+                for (int i = 0; i < currentChunks.Count; i++)
+                {
+                    for (int j = 0; j < lastChunks.Count; j++)
+                    {
+                        //Тут хочется ввернуть проверку, чтобы как-то ограничить кол-во lastChunks только теми, которые возможно продолжить, но тут не все так просто - мы взяли lastChunks не из firstPassStruct, так что индексы не совпадают, а обход этого выглядел бы довольно громоздко, да и черт знает пока как быть с default, так что пока буду keep it simple.
+                        if (getScoreOfTwoChunks(currentChunks[i], lastChunks[j], xBits, yBits, atlasIndexBits) <= currentGroup)
+                            goodOnes.Add((currentChunks[i], lastChunks[j]));
+                    }
+                }
+
+                for (int i = 0; i < goodOnes.Count; i++)
+                {
+                    /*
+                     * На самом деле current и last не могут быть default, т.к. мы их взяли из unityOptimizedSpritesStructure, а там нет пустых вхождений.
+                     * Пустые вхождения мы получаем, только когда имеем дело с firstPassStruct, т.к. там одинаковое число чанков для каждого кифрейма, равное
+                     * максимальному.
+                     */
+                    var (current, last) = goodOnes[i];
+
+                    //Чтобы проверить, что мы рассуждаем правильно, сотрем пока все варианты где current и last равны default
+                    //if (current == default) //Мы ничего не делаем для пустых вхождений
+                    //    continue;
+
+                    if (!currentChunks.Contains(current)) //Если currentChunks не содержит его, значит мы этот чанк уже обработали...
+                        continue;
+
+                    //if (last == default)
+                    //{
+                    //    //Если прошлого чанка у нас нет, значит все лучшие решения уже применены и нам можно безопасно взять первый свободный индекс
+                    //    var lastChunkIndex = 0;
+                    //    while (firstPassStruct[lastChunkIndex][k] != default)
+                    //        lastChunkIndex++;
+
+                    //    firstPassStruct[lastChunkIndex][k] = current; //Как-то так.
+                    //    currentChunks.Remove(current);
+                    //}
+                    //else
+                    {
+                        var lastChunkIndex = 0;
+                        for (int j = 0; j < firstPassStruct.Length; j++)
+                        {
+                            if (firstPassStruct[j][k - 1] == last)
+                            {
+                                lastChunkIndex = j;
+                                break;
+                            }
+                        }
+                        //var lastChunkIndex = lastChunks.IndexOf(last);
+                        if (firstPassStruct[lastChunkIndex][k] != default) //Если чанк прошлого кадра заполнен - мы ничего уже не сможем сделать, т.к. в случае успеха мы должны были бы заполнить этот чанк этого кадра. 
+                                                                           //А такое вполне может быть, т.к. мы не фильтруем пока прошлые чанки, а сопоставляем все currentChunks (число которых уменьшается) со всеми lastChunks (которые остаются в том же кол-ве).
+                            continue;
+
+                        firstPassStruct[lastChunkIndex][k] = current; //Как-то так. Вроде бы...
+                        currentChunks.Remove(current);
+                    }
+                }
+            }
+
+            while (currentChunks.Count > 0)
+            {
+                for (int i = 0; i < maximumChunks; i++)
+                {
+                    if (firstPassStruct[i][k] == default)
+                    {
+                        firstPassStruct[i][k] = currentChunks[0];
+                        currentChunks.RemoveAt(0);
+                        break;
+                    }
+                }
+            }
+
+            //Далее идут legacy-варианты, где я пытался применить не-общее решение:
+
+            ////Сначала пытаемся забрать самые лучшие варианты.
+            //for (int c = 0; c < maximumChunks; c++)
+            //{
+            //    if (currentChunks.Count == 0)
+            //        break;
+
+            //    var formerChunk = firstPassStruct[c][k - 1];
+            //    if (formerChunk == default) //Без прошлого чанка самый лучший вариант не получится
+            //        continue;
+
+            //    //Пытаемся сохранить обе координаты...
+            //    var theCoolestChunks = getChunksWithSameCoordinates(currentChunks, formerChunk);
+            //    if (!theCoolestChunks.Any())
+            //        continue;
+
+            //    theCoolestChunks = getChunksWithSameSprite(theCoolestChunks, formerChunk);
+            //    if (!theCoolestChunks.Any())
+            //        continue;
+
+            //    firstPassStruct[c][k] = theCoolestChunks.First();
+            //    currentChunks.Remove(firstPassStruct[c][k]);
+            //}
+
+            //for (int c = 0; c < maximumChunks; c++)
+            //{
+            //    if (currentChunks.Count == 0)
+            //        break;
+
+            //    if (firstPassStruct[c][k] != default)
+            //        continue; //Этот позицию мы уже заполнили до этого чем-то лучшим
+
+            //    var formerChunk = firstPassStruct[c][k - 1];
+            //    if (formerChunk == default) //Без прошлого чанка второй лучший вариант не получится
+            //        continue;
+            //}
+
+            //for (int c = 0; c < maximumChunks; c++)
+            //{
+            //    //Если все чанки данного кифрейма уже распределены - выходим из цикла
+            //    if (currentChunks.Count == 0)
+            //        break;
+
+            //    var formerChunk = firstPassStruct[c][k - 1];
+
+            //    //Пытаемся сохранить обе координаты...
+            //    var theCoolestChunks = getChunksWithSameCoordinates(currentChunks, formerChunk);
+
+            //    //Если обе координаты ни у кого не совпадают - пытаемся сохранить спрайт
+            //    if (!theCoolestChunks.Any())
+            //        theCoolestChunks = getChunksWithSameSprite(currentChunks, formerChunk);
+            //    else
+            //    {
+            //        //Если нашли - пытаемся еще и чтобы был тот же спрайт
+            //        var theMoreCoolChunks = getChunksWithSameSprite(theCoolestChunks, formerChunk);
+            //        if (theMoreCoolChunks.Any())
+            //            theCoolestChunks = theMoreCoolChunks; //Это победа, дальше не ищем
+            //        firstPassStruct[c][k] = theCoolestChunks.First(); //Даже если спрайт не совпадает - лучше мы уже не найдем.
+            //        continue;
+            //    }
+
+            //    //Если ни у кого спрайт не такой же - пытаемся сохранить хотя бы одну из координат
+            //    if (!theCoolestChunks.Any())
+            //        theCoolestChunks = getChunksWithAtLeastOneSameCoordinate(currentChunks, formerChunk);
+            //    else
+            //    {
+            //        //Если нашли кого-то с таким же спрайтом - смотрим, может у кого-то еще и хотя бы 1 координата совпадает
+            //        var theMoreCoolChunks = getChunksWithAtLeastOneSameCoordinate(theCoolestChunks, formerChunk);
+            //        if (theMoreCoolChunks.Any())
+            //            theCoolestChunks = theMoreCoolChunks; //Это почти что полностью победа, дальше не ищем
+            //        firstPassStruct[c][k] = theCoolestChunks.First(); //Даже если ни одна координата ни у кого не совпадает - лучше мы уже не найдем.
+            //        continue;
+            //    }
+
+            //    //Ну и если ни у кого даже этого нет - берем любой чанк
+            //    if (!theCoolestChunks.Any())
+            //        theCoolestChunks = currentChunks;
+
+            //    firstPassStruct[c][k] = theCoolestChunks.First();
+            //}
+        }
+
+        //Чанки мы упорядочили - осталось только записать
+        var secondPassChunks = new List<byte>[maximumChunks];
+        for (int i = 0; i < maximumChunks; i++)
+            secondPassChunks[i] = new List<byte>();
+
+        for (int c = 0; c < maximumChunks; c++)
+        {
+            var list = secondPassChunks[c];
+            var keyframes = firstPassStruct[c];
+            var formerChunk = default(SpriteChunk);
+            for (int k = 0; k < keyframes.Length; k++)
+            {
+                var chunk = keyframes[k];
+
+                writeChunkBytes(allSprites, chunk, formerChunk, list, atlasIndexBits, maximumX, maximumY);
+
+                formerChunk = chunk;
+            }
+        }
+
+        var atlasBits = new List<byte>();
+
+        for (int r = 0; r < atlasInt.Length; r++)
+        {
+            var rect = atlasInt[r];
+            atlasBits.AddRange(toBits(rect.xMin, atlasMaxX));
+            atlasBits.AddRange(toBits(rect.yMin, atlasMaxY));
+            atlasBits.AddRange(toBits(rect.width, atlasMaxWidth));
+            atlasBits.AddRange(toBits(rect.height, atlasMaxHeight));
+        }
+
+        var allMaxBits = new int[]
+            {
+                atlasMaxX,
+                atlasMaxY,
+                atlasMaxWidth,
+                atlasMaxHeight,
+                atlasIndexBits,
+                xBits,
+                yBits
+            };
+        var maxMaxBits = allMaxBits.OrderByDescending(v => v).First();
+        var maxMaxBitsBits = getBitsCount(maxMaxBits);
+
+        var header = new List<byte>();
+        header.AddRange(toBits(maxMaxBitsBits, 16));//Для этого значения резервируем 2 байта, т.к. вряд ли какая-то величина будет когда-то весить больше
+
+        for (int i = 0; i < allMaxBits.Length; i++)
+            header.AddRange(toBits(allMaxBits[i], maxMaxBits));
+
+        var everyBitAsBytes = new List<byte>();
+        everyBitAsBytes.AddRange(header);
+        everyBitAsBytes.AddRange(atlasBits);
+        for (int i = 0; i < secondPassChunks.Length; i++)
+            everyBitAsBytes.AddRange(secondPassChunks[i]);
+
+        var resultBytes = new byte[Mathf.CeilToInt(everyBitAsBytes.Count / 8f)];
+        for (int i = 0; i < resultBytes.Length; i++)
+        {
+            var currentByteAsInt = 0;
+            for (int b = 0; b < 8; b++)
+            {
+                var bitIndex = i * 8 + b;
+                if (bitIndex >= everyBitAsBytes.Count)
+                    break;
+
+                var currentBitByte = everyBitAsBytes[bitIndex];
+                currentByteAsInt |= currentBitByte << b;
+            }
+            resultBytes[i] = (byte)currentByteAsInt;
+        }
+
+        var fullPath = $"{Application.dataPath.Substring(0, Application.dataPath.Length - "Assets".Length)}{_resultFileName}";
+        var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(fullPath);
+        var fullPathWithoutExtension = Path.Combine(Directory.GetParent(fullPath).ToString(), fileNameWithoutExtension);
+        var atlasFullPath = $"{fullPathWithoutExtension}.png";
+        var infoFullPath = $"{fullPathWithoutExtension}.bytes";
+
+        File.WriteAllBytes(atlasFullPath, packedTextures.EncodeToPNG());
+        File.WriteAllBytes(infoFullPath, resultBytes);
+    }
+
+    private int getScoreOfTwoChunks(SpriteChunk currentChunk, SpriteChunk lastChunk, int xBits, int yBits, int atlasIndexBits)
+    {
+        //if (currentChunk == default && lastChunk == default)
+        //    return int.MaxValue;
+        if (currentChunk == default || lastChunk == default)
+            return xBits + yBits + atlasIndexBits;
+
+        var lastX = lastChunk.Area.X;
+        var lastY = lastChunk.Area.Y;
+        var lastSprite = lastChunk.ChunkSprite;
+        var currentX = currentChunk.Area.X;
+        var currentY = currentChunk.Area.Y;
+        var currentSprite = currentChunk.ChunkSprite;
+
+        var score = 0;
+        if (lastX != currentX)
+            score += xBits;
+        if (lastY != currentY)
+            score += yBits;
+        if (lastSprite != currentSprite)
+            score += atlasIndexBits;
+
+        return score;
+    }
+
+    private void writeChunkBytes(Sprite[] sprites, SpriteChunk chunk, SpriteChunk formerChunk, List<byte> list, int atlasIndexBits, int xBits, int yBits)
+    {
+        if (chunk == default)
+        {
+            list.Add(0);
+            return;
+        }
+        list.Add(1);
+
+        var spriteFull = (byte)0;
+        if (formerChunk == default || formerChunk.ChunkSprite != chunk.ChunkSprite)
+            spriteFull = 1;
+        var xFull = (byte)0;
+        if (formerChunk == default || formerChunk.Area.X != chunk.Area.X)
+            xFull = 1;
+        var yFull = (byte)0;
+        if (formerChunk == default || formerChunk.Area.Y != chunk.Area.Y)
+            yFull = 1;
+
+        list.Add(spriteFull);
+        list.Add(xFull);
+        list.Add(yFull);
+
+        if (spriteFull > 0)
+            list.AddRange(toBits(Array.IndexOf(sprites, chunk.ChunkSprite), atlasIndexBits));
+        if (xFull > 0)
+            list.AddRange(toBits(chunk.Area.X, xBits));
+        if (yFull > 0)
+            list.AddRange(toBits(chunk.Area.Y, yBits));
+    }
+
+    private IEnumerable<byte> toBits(int v, int bitsLen)
+    {
+        var result = new byte[bitsLen];
+
+        for (int i = 0; i < bitsLen; i++)
+            result[i] = (byte)(v >> i & 1);
+
+        return result;
+    }
+
+    private IEnumerable<SpriteChunk> getChunksWithSameCoordinates(IEnumerable<SpriteChunk> chunks, SpriteChunk chunk) => chunks.Where(c => c.Area.X == chunk.Area.X && c.Area.Y == chunk.Area.Y);
+    private IEnumerable<SpriteChunk> getChunksWithSameSprite(IEnumerable<SpriteChunk> chunks, SpriteChunk chunk) => chunks.Where(c => c.ChunkSprite == chunk.ChunkSprite);
+    private IEnumerable<SpriteChunk> getChunksWithAtLeastOneSameCoordinate(IEnumerable<SpriteChunk> chunks, SpriteChunk chunk) => chunks.Where(c => c.Area.X == chunk.Area.X || c.Area.Y == chunk.Area.Y);
+
+    private int getBitsCount(int number)
+    {
+        if (number < 2)
+            return 1;
+        if (number < 4)
+            return 2;
+        if (number < 8)
+            return 3;
+        if (number < 16)
+            return 4;
+        if (number < 32)
+            return 5;
+        if (number < 64)
+            return 6;
+        if (number < 128)
+            return 7;
+        if (number < 256)
+            return 8;
+        if (number < 512)
+            return 9;
+        if (number < 1024)
+            return 10;
+        if (number < 2048)
+            return 11;
+        if (number < 4096)
+            return 12;
+        if (number < 8192)
+            return 13;
+        if (number < 16_384)
+            return 14;
+        if (number < 32_768)
+            return 15;
+        if (number < 65536)
+            return 16;
+        if (number < 131072)
+            return 17;
+        if (number < 262144)
+            return 18;
+        if (number < 524288)
+            return 19;
+        if (number < 1048576)
+            return 20;
+        if (number < 2097152)
+            return 21;
+        if (number < 4194304)
+            return 22;
+        if (number < 8388608)
+            return 23;
+        if (number < 16777216)
+            return 24;
+        if (number < 33554432)
+            return 25;
+        if (number < 67108864)
+            return 26;
+        if (number < 134217728)
+            return 27;
+        if (number < 268435456)
+            return 28;
+        if (number < 536870912)
+            return 29;
+        if (number < 1073741824)
+            return 30;
+        //if (number < 2_147_483_648) //int range exceeded
+        return 31;
+        //return 32;
+    }
+
+    private UnityOptimizedSpritesStructure saveSpritesInfo(Dictionary<int, List<SpriteChunk>> areasPerSprite, Sprite[] sprites)
+    {
+        var newSpritesInfo = CreateInstance<UnityOptimizedSpritesStructure>();
         AssetDatabase.CreateAsset(newSpritesInfo, _resultFileName);
         AssetDatabase.CreateFolder(Path.GetDirectoryName(_resultFileName), Path.GetFileNameWithoutExtension(_resultFileName));
         var spritesDirectory = Path.Combine(Path.GetDirectoryName(_resultFileName), Path.GetFileNameWithoutExtension(_resultFileName));
@@ -229,6 +709,7 @@ public class Optimizer : EditorWindow
         AssetDatabase.SaveAssets();
 
         //packAndCreateSpritesForEachReference(references.Values.ToArray());
+        return newSpritesInfo;
     }
 
     //private void packAndCreateSpritesForEachReference(ColorsReference[] colorsReferences)
