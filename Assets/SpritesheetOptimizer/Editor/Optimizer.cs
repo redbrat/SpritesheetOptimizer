@@ -440,7 +440,7 @@ public class Optimizer : EditorWindow
             {
                 var chunk = keyframes[k];
 
-                writeChunkBytes(allSprites, chunk, formerChunk, list, atlasIndexBits, maximumX, maximumY);
+                writeChunkBytes(allSprites, chunk, formerChunk, list, atlasIndexBits, xBits, yBits);
 
                 formerChunk = chunk;
             }
@@ -451,26 +451,34 @@ public class Optimizer : EditorWindow
         for (int r = 0; r < atlasInt.Length; r++)
         {
             var rect = atlasInt[r];
-            atlasBits.AddRange(toBits(rect.xMin, atlasMaxX));
-            atlasBits.AddRange(toBits(rect.yMin, atlasMaxY));
-            atlasBits.AddRange(toBits(rect.width, atlasMaxWidth));
-            atlasBits.AddRange(toBits(rect.height, atlasMaxHeight));
-            _rectXBitsCount += atlasMaxX;
-            _rectYBitsCount += atlasMaxY;
-            _rectWidthBitsCount += atlasMaxWidth;
-            _rectHeightBitsCount += atlasMaxHeight;
+            atlasBits.AddRange(toBits(rect.xMin, atlasXBits));
+            atlasBits.AddRange(toBits(rect.yMin, atlasYBits));
+            atlasBits.AddRange(toBits(rect.width, atlasWidthBits));
+            atlasBits.AddRange(toBits(rect.height, atlasHeightBits));
+            _rectXBitsCount += atlasXBits;
+            _rectYBitsCount += atlasYBits;
+            _rectWidthBitsCount += atlasWidthBits;
+            _rectHeightBitsCount += atlasHeightBits;
         }
 
         var allMaxBits = new int[]
             {
-                atlasMaxX,
-                atlasMaxY,
-                atlasMaxWidth,
-                atlasMaxHeight,
+                atlasXBits,
+                atlasYBits,
+                atlasWidthBits,
+                atlasHeightBits,
                 atlasIndexBits,
                 xBits,
                 yBits
             };
+
+        Debug.Log($"atlasXBits = {atlasXBits}");
+        Debug.Log($"atlasYBits = {atlasYBits}");
+        Debug.Log($"atlasWidthBits = {atlasWidthBits}");
+        Debug.Log($"atlasHeightBits = {atlasHeightBits}");
+        Debug.Log($"atlasIndexBits = {atlasIndexBits}");
+        Debug.Log($"xBits = {xBits}");
+        Debug.Log($"yBits = {yBits}");
         var maxMaxBits = allMaxBits.OrderByDescending(v => v).First();
         var maxMaxBitsBits = getBitsCount(maxMaxBits);
 
@@ -480,8 +488,8 @@ public class Optimizer : EditorWindow
 
         for (int i = 0; i < allMaxBits.Length; i++)
         {
-            header.AddRange(toBits(allMaxBits[i], maxMaxBits));
-            _headersBitsCount += maxMaxBits;
+            header.AddRange(toBits(allMaxBits[i], maxMaxBitsBits));
+            _headersBitsCount += maxMaxBitsBits;
         }
 
         var everyBitAsBytes = new List<byte>();
