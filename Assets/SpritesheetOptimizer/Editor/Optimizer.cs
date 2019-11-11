@@ -190,13 +190,15 @@ public class Optimizer : EditorWindow
             return list;
         }, c => c.ToArray());
         var maximumX = allChunks.OrderByDescending(c => c.Area.X).First().Area.X;
-        var maximumY = allChunks.OrderByDescending(c => c.Area.X).First().Area.X;
+        var maximumY = allChunks.OrderByDescending(c => c.Area.Y).First().Area.Y;
+        var minimumX = allChunks.OrderBy(c => c.Area.X).First().Area.X;
+        var minimumY = allChunks.OrderBy(c => c.Area.Y).First().Area.Y;
         var maximumWidth = allChunks.OrderByDescending(c => c.Area.Width).First().Area.Width;
         var maximumHeight = allChunks.OrderByDescending(c => c.Area.Height).First().Area.Height;
 
         var atlasIndexBits = getBitsCount(atlas.Length);
-        var xBits = getBitsCount(maximumX);
-        var yBits = getBitsCount(maximumY);
+        var xBits = getBitsCount(maximumX - minimumX);
+        var yBits = getBitsCount(maximumY - minimumY);
         //var widthBits = getBitsCount(maximumWidth);
         //var heightBits = getBitsCount(maximumHeight);
         //var keysrameBits = getBitsCount(keyframesCount);
@@ -425,6 +427,8 @@ public class Optimizer : EditorWindow
         _rectHeightBitsCount = 0;
         _allTheFlagsBitsCount = 0;
         _headersBitsCount = 0;
+        _defaultCount = 0;
+        _nonDefaultCount = 0;
 
         //Чанки мы упорядочили - осталось только записать
         var secondPassChunks = new List<byte>[maximumChunks];
@@ -520,9 +524,12 @@ public class Optimizer : EditorWindow
         var atlasFullPath = $"{fullPathWithoutExtension}.png";
         var infoFullPath = $"{fullPathWithoutExtension}.bytes";
 
-        File.WriteAllBytes(atlasFullPath, packedTextures.EncodeToPNG());
+        var pngBytes = packedTextures.EncodeToPNG();
+        File.WriteAllBytes(atlasFullPath, pngBytes);
         File.WriteAllBytes(infoFullPath, resultBytes);
 
+        Debug.Log($"_defaultCount = {_defaultCount}");
+        Debug.Log($"_nonDefaultCount = {_nonDefaultCount}");
         Debug.Log($"_headersBitsCount = {_headersBitsCount}");
         Debug.Log($"_allTheFlagsBitsCount = {_allTheFlagsBitsCount}");
         Debug.Log($"_xBitsCount = {_xBitsCount}");
@@ -534,6 +541,9 @@ public class Optimizer : EditorWindow
         Debug.Log($"_rectHeightBitsCount = {_rectHeightBitsCount}");
         foreach (var kvp in _groupsCount)
             Debug.Log($"group {kvp.Key}: {kvp.Value}");
+
+        Debug.Log($"total length png = {pngBytes.Length}");
+        Debug.Log($"total lenfth info = {resultBytes.Length}");
     }
 
     private int _headersBitsCount;
@@ -545,6 +555,8 @@ public class Optimizer : EditorWindow
     private int _rectYBitsCount;
     private int _rectWidthBitsCount;
     private int _rectHeightBitsCount;
+    private int _defaultCount;
+    private int _nonDefaultCount;
 
     private Dictionary<int, int> _groupsCount = new Dictionary<int, int>();
 
@@ -570,9 +582,9 @@ public class Optimizer : EditorWindow
         if (lastSprite != currentSprite)
             score += atlasIndexBits;
 
-        if (!_groupsCount.ContainsKey(score))
-            _groupsCount.Add(score, 0);
-        _groupsCount[score]++;
+        //if (!_groupsCount.ContainsKey(score))
+        //    _groupsCount.Add(score, 0);
+        //_groupsCount[score]++;
 
         return score;
     }
@@ -583,8 +595,10 @@ public class Optimizer : EditorWindow
         {
             list.Add(0);
             _allTheFlagsBitsCount++;
+            _defaultCount++;
             return;
         }
+        _nonDefaultCount++;
         list.Add(1);
         _allTheFlagsBitsCount++;
 
@@ -605,21 +619,28 @@ public class Optimizer : EditorWindow
         list.Add(xFull);
         list.Add(yFull);
 
+        var score = 0;
         if (spriteFull > 0)
         {
             list.AddRange(toBits(Array.IndexOf(sprites, chunk.ChunkSprite), atlasIndexBits));
             _atlasIndexBitsCount += atlasIndexBits;
+            score += atlasIndexBits;
         }
         if (xFull > 0)
         {
-            list.AddRange(toBits(chunk.Area.X, xBits));
+            list.AddRange(toBitsWithSign(chunk.Area.X, xBits));
             _xBitsCount += xBits;
+            score += xBits;
         }
         if (yFull > 0)
         {
-            list.AddRange(toBits(chunk.Area.Y, yBits));
+            list.AddRange(toBitsWithSign(chunk.Area.Y, yBits));
             _yBitsCount += yBits;
+            score += yBits;
         }
+        if (!_groupsCount.ContainsKey(score))
+            _groupsCount.Add(score, 0);
+        _groupsCount[score]++;
     }
 
     private IEnumerable<byte> toBits(int v, int bitsLen)
@@ -628,6 +649,20 @@ public class Optimizer : EditorWindow
 
         for (int i = 0; i < bitsLen; i++)
             result[i] = (byte)(v >> i & 1);
+
+        return result;
+    }
+
+    private IEnumerable<byte> toBitsWithSign(int v, int bitsLen)
+    {
+        var result = new byte[bitsLen];
+        var absV = Mathf.Abs(v);
+        var sign = v > 0 ? 1 : 0;
+
+        result[0] = (byte)sign;
+
+        for (int i = 1; i < bitsLen; i++)
+            result[i] = (byte)(absV >> (i - 1) & 1);
 
         return result;
     }
