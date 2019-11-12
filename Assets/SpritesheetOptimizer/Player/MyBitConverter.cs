@@ -11,5 +11,5 @@
         return result;
     }
 
-    internal static int ToInt(byte[] bytes, int bitsOffset) => bytes[bitsOffset / 8] >> (bitsOffset % 8);
+    internal static int ToInt(byte[] bytes, int bitsOffset) => bytes[bitsOffset / 8] >> (bitsOffset % 8) & 1;
 }

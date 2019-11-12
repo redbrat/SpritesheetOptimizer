@@ -454,7 +454,7 @@ public class Optimizer : EditorWindow
 
         var atlasBits = new List<byte>();
 
-        atlasBits.AddRange(toBits(atlasInt.Length, 16));
+        atlasBits.AddRange(toBits(atlasInt.Length, lengthsLength));
         for (int r = 0; r < atlasInt.Length; r++)
         {
             var rect = atlasInt[r];
@@ -507,8 +507,8 @@ public class Optimizer : EditorWindow
         var everyBitAsBytes = new List<byte>();
         everyBitAsBytes.AddRange(header);
         everyBitAsBytes.AddRange(atlasBits);
-        everyBitAsBytes.AddRange(toBits(secondPassChunks.Length, 16));
-        everyBitAsBytes.AddRange(toBits(firstPassStruct[0].Length, lengthsLength));
+        everyBitAsBytes.AddRange(toBits(secondPassChunks.Length, lengthsLength));
+        everyBitAsBytes.AddRange(toBits(firstPassStruct[0].Length, maxMaxBitsBits));
         for (int i = 0; i < secondPassChunks.Length; i++)
             everyBitAsBytes.AddRange(secondPassChunks[i]);
 
@@ -554,6 +554,8 @@ public class Optimizer : EditorWindow
 
         Debug.Log($"total length png = {pngBytes.Length}");
         Debug.Log($"total lenfth info = {resultBytes.Length}");
+
+        var blobPlayer = new BlobPlayer(resultBytes);
     }
 
     private int _headersBitsCount;
