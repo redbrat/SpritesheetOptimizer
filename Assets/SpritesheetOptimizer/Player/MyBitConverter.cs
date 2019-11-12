@@ -1,4 +1,4 @@
-﻿public static class MyBitConverter
+﻿internal static class MyBitConverter
 {
     internal static int ToInt(byte[] bytes, int bitsLength, int bitsOffset)
     {

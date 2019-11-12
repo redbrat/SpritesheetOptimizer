@@ -22,8 +22,8 @@ public sealed class BlobPlayer
         var yLength = MyBitConverter.ToInt(blob, lengthsLength, offset += lengthsLength);
 
         //Парсим атлас
-        var atlasLength = MyBitConverter.ToInt(blob, lengthsLength, offset += lengthsLength);
-        offset += lengthsLength;
+        var atlasLength = MyBitConverter.ToInt(blob, 16, offset += lengthsLength);
+        offset += 16;
         _atlas = new (int x, int y, int width, int height)[atlasLength];
         for (int i = 0; i < atlasLength; i++)
         {
@@ -43,8 +43,8 @@ public sealed class BlobPlayer
         }
 
         //Парсим чанки
-        var chunksCount = MyBitConverter.ToInt(blob, lengthsLength, offset);
-        var framesCount = MyBitConverter.ToInt(blob, lengthsLength, offset += lengthsLength);
+        var chunksCount = MyBitConverter.ToInt(blob, 16, offset);
+        var framesCount = MyBitConverter.ToInt(blob, lengthsLength, offset += 16);
         offset += lengthsLength;
 
         _chunksByFrame = new Chunk[framesCount][];

@@ -454,7 +454,7 @@ public class Optimizer : EditorWindow
 
         var atlasBits = new List<byte>();
 
-        atlasBits.AddRange(toBits(atlasInt.Length, lengthsLength));
+        atlasBits.AddRange(toBits(atlasInt.Length, 16));
         for (int r = 0; r < atlasInt.Length; r++)
         {
             var rect = atlasInt[r];
@@ -478,6 +478,11 @@ public class Optimizer : EditorWindow
                 xBits,
                 yBits
             };
+        var allRelativelyShortSingleValues = new List<int>();
+        allRelativelyShortSingleValues.AddRange(allMaxBits);
+        //allSingleValues.Add(atlasInt.Length); //Их сюда не включаем, т.к. они должна быть значительно больше,
+        //allSingleValues.Add(secondPassChunks.Length); //так что, думаю, уместнее использовать просто 16.
+        allRelativelyShortSingleValues.Add(firstPassStruct[0].Length);
 
         Debug.Log($"atlasXBits = {atlasXBits}");
         Debug.Log($"atlasYBits = {atlasYBits}");
@@ -486,7 +491,7 @@ public class Optimizer : EditorWindow
         Debug.Log($"atlasIndexBits = {atlasIndexBits}");
         Debug.Log($"xBits = {xBits}");
         Debug.Log($"yBits = {yBits}");
-        var maxMaxBits = allMaxBits.OrderByDescending(v => v).First();
+        var maxMaxBits = allRelativelyShortSingleValues.OrderByDescending(v => v).First();
         var maxMaxBitsBits = getBitsCount(maxMaxBits);
 
         var header = new List<byte>();
@@ -502,7 +507,7 @@ public class Optimizer : EditorWindow
         var everyBitAsBytes = new List<byte>();
         everyBitAsBytes.AddRange(header);
         everyBitAsBytes.AddRange(atlasBits);
-        everyBitAsBytes.AddRange(toBits(secondPassChunks.Length, lengthsLength));
+        everyBitAsBytes.AddRange(toBits(secondPassChunks.Length, 16));
         everyBitAsBytes.AddRange(toBits(firstPassStruct[0].Length, lengthsLength));
         for (int i = 0; i < secondPassChunks.Length; i++)
             everyBitAsBytes.AddRange(secondPassChunks[i]);
