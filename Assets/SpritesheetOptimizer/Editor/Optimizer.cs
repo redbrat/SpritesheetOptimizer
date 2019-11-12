@@ -450,8 +450,11 @@ public class Optimizer : EditorWindow
             }
         }
 
+        var lengthsLength = 16;
+
         var atlasBits = new List<byte>();
 
+        atlasBits.AddRange(toBits(atlasInt.Length, lengthsLength));
         for (int r = 0; r < atlasInt.Length; r++)
         {
             var rect = atlasInt[r];
@@ -487,8 +490,8 @@ public class Optimizer : EditorWindow
         var maxMaxBitsBits = getBitsCount(maxMaxBits);
 
         var header = new List<byte>();
-        header.AddRange(toBits(maxMaxBitsBits, 16));//Для этого значения резервируем 2 байта, т.к. вряд ли какая-то величина будет когда-то весить больше
-        _headersBitsCount += 16;
+        header.AddRange(toBits(maxMaxBitsBits, lengthsLength));//Для этого значения резервируем 2 байта, т.к. вряд ли какая-то величина будет когда-то весить больше
+        _headersBitsCount += lengthsLength;
 
         for (int i = 0; i < allMaxBits.Length; i++)
         {
@@ -499,6 +502,8 @@ public class Optimizer : EditorWindow
         var everyBitAsBytes = new List<byte>();
         everyBitAsBytes.AddRange(header);
         everyBitAsBytes.AddRange(atlasBits);
+        everyBitAsBytes.AddRange(toBits(secondPassChunks.Length, lengthsLength));
+        everyBitAsBytes.AddRange(toBits(firstPassStruct[0].Length, lengthsLength));
         for (int i = 0; i < secondPassChunks.Length; i++)
             everyBitAsBytes.AddRange(secondPassChunks[i]);
 
