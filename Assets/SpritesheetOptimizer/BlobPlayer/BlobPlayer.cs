@@ -2,10 +2,16 @@
 
 public sealed class BlobPlayer
 {
+    public int AtlasLength => _atlas.Length;
+
+    public readonly int ChunksCount;
+    public readonly int FramesCount;
+
     private readonly (int x, int y, int width, int height)[] _atlas;
     private readonly Chunk[][] _chunksByFrame;
 
     public Chunk[] GetFrame(int index) => _chunksByFrame[index];
+    public (int x, int y, int width, int height) GetAtlasEntry(int index) => _atlas[index];
 
     public BlobPlayer(byte[] blob)
     {
@@ -20,6 +26,8 @@ public sealed class BlobPlayer
         var atlasIndexLength = MyBitConverter.ToInt(blob, lengthsLength, offset += lengthsLength);
         var xLength = MyBitConverter.ToInt(blob, lengthsLength, offset += lengthsLength);
         var yLength = MyBitConverter.ToInt(blob, lengthsLength, offset += lengthsLength);
+        var offsetXLength = MyBitConverter.ToInt(blob, lengthsLength, offset += lengthsLength);
+        var offsetYLength = MyBitConverter.ToInt(blob, lengthsLength, offset += lengthsLength);
 
         //Парсим атлас
         var atlasLength = MyBitConverter.ToInt(blob, 16, offset += lengthsLength);
@@ -42,23 +50,33 @@ public sealed class BlobPlayer
             _atlas[i] = (x, y, width, height);
         }
 
-        //Парсим чанки
-        var chunksCount = MyBitConverter.ToInt(blob, 16, offset);
-        var framesCount = MyBitConverter.ToInt(blob, lengthsLength, offset += 16);
+        ChunksCount = MyBitConverter.ToInt(blob, 16, offset);
+        FramesCount = MyBitConverter.ToInt(blob, lengthsLength, offset += 16);
         offset += lengthsLength;
 
-        _chunksByFrame = new Chunk[framesCount][];
-        for (int f = 0; f < framesCount; f++)
-            _chunksByFrame[f] = new Chunk[chunksCount];
+        //Парсим оффсеты
+        var offsetsX = new int[FramesCount];
+        var offsetsY = new int[FramesCount];
+        for (int i = 0; i < FramesCount; i++)
+        {
+            offsetsX[i] = MyBitConverter.ToInt(blob, offsetXLength, offset);
+            offsetsY[i] = MyBitConverter.ToInt(blob, offsetYLength, offset += offsetXLength);
+            offset += offsetYLength;
+        }
+
+        //Парсим чанки
+        _chunksByFrame = new Chunk[FramesCount][];
+        for (int f = 0; f < FramesCount; f++)
+            _chunksByFrame[f] = new Chunk[ChunksCount];
 
         var getAtlasCoordinatesFunc = (Func<int, (int x, int y, int width, int height)>)(index => _atlas[index]);
 
-        for (int c = 0; c < chunksCount; c++)
+        for (int c = 0; c < ChunksCount; c++)
         {
             var atlasIndex = default(int);
             var x = default(int);
             var y = default(int);
-            for (int f = 0; f < framesCount; f++)
+            for (int f = 0; f < FramesCount; f++)
             {
                 if (MyBitConverter.ToInt(blob, offset++) == 0)
                     continue;
@@ -73,12 +91,12 @@ public sealed class BlobPlayer
                 }
                 if (newX == 1)
                 {
-                    x = MyBitConverter.ToInt(blob, xLength, offset);
+                    x = MyBitConverter.ToInt(blob, xLength, offset)/* - offsetsX[f]*/;
                     offset += xLength;
                 }
                 if (newY == 1)
                 {
-                    y = MyBitConverter.ToInt(blob, yLength, offset);
+                    y = MyBitConverter.ToInt(blob, yLength, offset)/* - offsetsY[f]*/;
                     offset += yLength;
                 }
                 _chunksByFrame[f][c] = new Chunk(getAtlasCoordinatesFunc, atlasIndex, x, y);

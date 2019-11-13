@@ -148,7 +148,7 @@ public class Optimizer : EditorWindow
         _cts = null;
 
         //saveSpritesInfo(areasPerSprite, sprites);
-        saveCompressedInfo(saveSpritesInfo(areasPerSprite, sprites));
+        saveCompressedInfo(saveSpritesInfo(areasPerSprite, sprites, pivots, colors.Select(c => new MyVector2Float(c.Length, c[0].Length)).ToArray()));
     }
 
     private void saveCompressedInfo(UnityOptimizedSpritesStructure unityOptimizedSpritesStructure)
@@ -450,6 +450,19 @@ public class Optimizer : EditorWindow
             }
         }
 
+        //Записываем смещения
+        var maxOffsetX = Mathf.FloorToInt(unityOptimizedSpritesStructure.Pivots.OrderBy(p => p.X).First().X);
+        var maxOffsetY = Mathf.FloorToInt(unityOptimizedSpritesStructure.Pivots.OrderBy(p => p.Y).First().Y);
+        var offsetXBits = getBitsCount(maxOffsetX);
+        var offsetYBits = getBitsCount(maxOffsetY);
+        var offsetBits = new List<byte>();
+        for (int i = 0; i < unityOptimizedSpritesStructure.Pivots.Length; i++)
+        {
+            var pivot = unityOptimizedSpritesStructure.Pivots[i];
+            offsetBits.AddRange(toBits(Mathf.FloorToInt(pivot.X), offsetXBits));
+            offsetBits.AddRange(toBits(Mathf.FloorToInt(pivot.Y), offsetYBits));
+        }
+
         var lengthsLength = 16;
 
         var atlasBits = new List<byte>();
@@ -476,7 +489,9 @@ public class Optimizer : EditorWindow
                 atlasHeightBits,
                 atlasIndexBits,
                 xBits,
-                yBits
+                yBits,
+                offsetXBits,
+                offsetYBits
             };
         var allRelativelyShortSingleValues = new List<int>();
         allRelativelyShortSingleValues.AddRange(allMaxBits);
@@ -509,6 +524,7 @@ public class Optimizer : EditorWindow
         everyBitAsBytes.AddRange(atlasBits);
         everyBitAsBytes.AddRange(toBits(secondPassChunks.Length, lengthsLength));
         everyBitAsBytes.AddRange(toBits(firstPassStruct[0].Length, maxMaxBitsBits));
+        everyBitAsBytes.AddRange(offsetBits);
         for (int i = 0; i < secondPassChunks.Length; i++)
             everyBitAsBytes.AddRange(secondPassChunks[i]);
 
@@ -640,13 +656,13 @@ public class Optimizer : EditorWindow
         }
         if (xFull > 0)
         {
-            list.AddRange(toBitsWithSign(chunk.Area.X, xBits));
+            list.AddRange(toBits(chunk.Area.X, xBits));
             _xBitsCount += xBits;
             score += xBits;
         }
         if (yFull > 0)
         {
-            list.AddRange(toBitsWithSign(chunk.Area.Y, yBits));
+            list.AddRange(toBits(chunk.Area.Y, yBits));
             _yBitsCount += yBits;
             score += yBits;
         }
@@ -750,7 +766,7 @@ public class Optimizer : EditorWindow
         //return 32;
     }
 
-    private UnityOptimizedSpritesStructure saveSpritesInfo(Dictionary<int, List<SpriteChunk>> areasPerSprite, Sprite[] sprites)
+    private UnityOptimizedSpritesStructure saveSpritesInfo(Dictionary<int, List<SpriteChunk>> areasPerSprite, Sprite[] sprites, MyVector2Float[] pivots, MyVector2Float[] spriteSizes)
     {
         var newSpritesInfo = CreateInstance<UnityOptimizedSpritesStructure>();
         AssetDatabase.CreateAsset(newSpritesInfo, _resultFileName);
@@ -758,6 +774,8 @@ public class Optimizer : EditorWindow
         var spritesDirectory = Path.Combine(Path.GetDirectoryName(_resultFileName), Path.GetFileNameWithoutExtension(_resultFileName));
 
         newSpritesInfo.Sprites = sprites;
+        newSpritesInfo.Pivots = pivots;
+        newSpritesInfo.Sizes = spriteSizes;
 
         var references = new Dictionary<MySerializableColor[][], (ColorsReference reference, Sprite sprite)>();
 
@@ -847,14 +865,14 @@ public class Optimizer : EditorWindow
             for (int j = 0; j < correlations[i].Coordinates.Length; j++)
             {
                 var info = correlations[i].Coordinates[j];
-                var pivot = pivots[info.SpriteIndex];
-                var width = colors[info.SpriteIndex].Length;
-                var height = colors[info.SpriteIndex][0].Length;
-                var ppu = pixelPerUnits[info.SpriteIndex];
-                var offsetX = Mathf.FloorToInt(pivot.X/* * width*//* / ppu*/);
-                var offsetY = Mathf.FloorToInt(pivot.Y/* * height*//* / ppu*/);
+                //var pivot = pivots[info.SpriteIndex];
+                //var width = colors[info.SpriteIndex].Length;
+                //var height = colors[info.SpriteIndex][0].Length;
+                //var ppu = pixelPerUnits[info.SpriteIndex];
+                //var offsetX = Mathf.FloorToInt(pivot.X/* * width*//* / ppu*/);
+                //var offsetY = Mathf.FloorToInt(pivot.Y/* * height*//* / ppu*/);
                 //Debug.LogError($"width = {width}. offsetX = {offsetX}. height = {height}. offsetY = {offsetY}. info.X = {info.X}, info.Y = {info.Y}");
-                var pivotedInfo = new MyAreaCoordinates(info.SpriteIndex, info.X - offsetX, info.Y - offsetY, info.Width, info.Height);
+                var pivotedInfo = new MyAreaCoordinates(info.SpriteIndex, info.X/* - offsetX*/, info.Y/* - offsetY*/, info.Width, info.Height);
                 if (!result.ContainsKey(info.SpriteIndex))
                     result.Add(info.SpriteIndex, new List<SpriteChunk>());
 
