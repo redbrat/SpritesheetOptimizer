@@ -1,0 +1,4 @@
+{
+  "python.pythonPath": "C:\\Users\\celti\\Anaconda3\\python.exe",
+  "python.linting.pylintArgs": ["--load-plugin", "pylint_protobuf"] //https://stackoverflow.com/questions/53920311/vs-code-pylint-error-e0602-undefined-variable-with-protobuf-compiled-python-st
+}

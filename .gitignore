@@ -5,3 +5,6 @@
 # Recursively allow files under subtree
 !/Assets/SpritesheetOptimizer/**
 !.gitignore
+!/Py/**
+*.npy
+/Py/*.txt
