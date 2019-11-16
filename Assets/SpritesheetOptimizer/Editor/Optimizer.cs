@@ -1,4 +1,5 @@
-﻿using System;
+﻿using NUnit.Framework;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -17,6 +18,8 @@ public class Optimizer : EditorWindow
     private static PickySizingConfigurator.PickynessLevel _pickinessLevel;
     private static ComputeMode _computeMode;
     private static string _resultFileName = "Assets/scavenger.asset";
+
+    private static string _numpyFileName = "Py/1.npy";
 
     [MenuItem("Optimizer/Optimize")]
     private static void Main()
@@ -42,22 +45,33 @@ public class Optimizer : EditorWindow
         _computeMode = ComputeMode.Gpu;
         _computeMode = (ComputeMode)EditorGUILayout.EnumPopup($"Compute on", _computeMode);
 
-        if (_sprite != null && _cts == null && GUILayout.Button("Try"))
+        if (_sprite != null && _cts == null)
         {
-            var colorResults = getColors(_sprite);
-            var algorithmBulder = new AlgorythmBuilder();
-            var pivots = colorResults.sprites.Select(s => new MyVector2Float(s.pivot.x, s.pivot.y)).ToArray();
-            var algorythm = algorithmBulder
-                .AddSizingsConfigurator<PickySizingConfigurator>(_pickinessLevel)
-                .AddScoreCounter<DefaultScoreCounter>()
-                .SetAreaEnumerator<DefaultAreaEnumerator>()
-                .SetAreasFreshmentSpan(_areaFreshmentSpan)
-                .SetAreasVolatilityRange(_areasVolatilityRange)
-                .Build(colorResults.colors, pivots, _computeMode);
-            _operationProgressReport = algorythm.OperationProgressReport;
-            _overallProgressReport = algorythm.OverallProgressReport;
-            _cts = new CancellationTokenSource();
-            launch(algorythm, colorResults.sprites, colorResults.colors, pivots);
+            if (GUILayout.Button("Try"))
+            {
+                var colorResults = getColors(_sprite);
+                var algorithmBulder = new AlgorythmBuilder();
+                var pivots = colorResults.sprites.Select(s => new MyVector2Float(s.pivot.x, s.pivot.y)).ToArray();
+                var algorythm = algorithmBulder
+                    .AddSizingsConfigurator<PickySizingConfigurator>(_pickinessLevel)
+                    .AddScoreCounter<DefaultScoreCounter>()
+                    .SetAreaEnumerator<DefaultAreaEnumerator>()
+                    .SetAreasFreshmentSpan(_areaFreshmentSpan)
+                    .SetAreasVolatilityRange(_areasVolatilityRange)
+                    .Build(colorResults.colors, pivots, _computeMode);
+                _operationProgressReport = algorythm.OperationProgressReport;
+                _overallProgressReport = algorythm.OverallProgressReport;
+                _cts = new CancellationTokenSource();
+                launch(algorythm, colorResults.sprites, colorResults.colors, pivots);
+            }
+            if (GUILayout.Button("TryParse"))
+            {
+                var fullPath = $"{Application.dataPath.Substring(0, Application.dataPath.Length - "Assets".Length)}{_numpyFileName}";
+                var bytes = File.ReadAllBytes(fullPath);
+                var arr = NumpySerializer.Deserialize(bytes);
+                var bytesAgain = NumpySerializer.Serialize(arr);
+                Assert.AreEqual(bytes, bytesAgain, "Serialization fail");
+            }
         }
         if (_cts != null)
         {
