@@ -64,14 +64,43 @@ public class Optimizer : EditorWindow
                 _cts = new CancellationTokenSource();
                 launch(algorythm, colorResults.sprites, colorResults.colors, pivots);
             }
+            GUILayout.BeginHorizontal();
             if (GUILayout.Button("TryParse"))
             {
                 var fullPath = $"{Application.dataPath.Substring(0, Application.dataPath.Length - "Assets".Length)}{_numpyFileName}";
                 var bytes = File.ReadAllBytes(fullPath);
                 var arr = NumpySerializer.Deserialize(bytes);
                 var bytesAgain = NumpySerializer.Serialize(arr);
-                Assert.AreEqual(bytes, bytesAgain, "Serialization fail");
+                Assert.AreEqual(bytes, bytesAgain, "Serialization fail 1");
             }
+            if (GUILayout.Button("SendToPython"))
+            {
+                var byteResults = getBytes(_sprite);
+                var fullPath = $"{Application.dataPath.Substring(0, Application.dataPath.Length - "Assets".Length)}{_numpyFileName}";
+                var fullPathToDirectory = Directory.GetParent(fullPath).ToString();
+
+                for (int i = 0; i < byteResults.bytes.Length; i++)
+                {
+                    fullPath = Path.Combine(fullPathToDirectory, $"{i}.npy");
+                    var currentBytes = byteResults.bytes[i];
+                    var mdArray = new byte[currentBytes.Length, currentBytes[0].Length, 4];
+                    for (int x = 0; x < currentBytes.Length; x++)
+                    {
+                        for (int y = 0; y < currentBytes[x].Length; y++)
+                        {
+                            for (int b = 0; b < 4; b++)
+                            {
+                                mdArray[x, y, b] = currentBytes[x][y][b];
+                            }
+                        }
+                    }
+                    var bytes = NumpySerializer.Serialize(mdArray);
+                    File.WriteAllBytes(fullPath, bytes);
+                    var arr = NumpySerializer.Deserialize(bytes);
+                    Assert.AreEqual(arr, mdArray, "Serialization fail 2");
+                }
+            }
+            GUILayout.EndHorizontal();
         }
         if (_cts != null)
         {
@@ -897,7 +926,7 @@ public class Optimizer : EditorWindow
         return result;
     }
 
-    private (MyColor[][][] colors, Sprite[] sprites) getColors(Sprite sprite)
+    private (byte[][][][] bytes, Sprite[] sprites) getBytes(Sprite sprite)
     {
         var texture = sprite.texture;
         var path = AssetDatabase.GetAssetPath(sprite);
@@ -914,36 +943,35 @@ public class Optimizer : EditorWindow
         ti.SaveAndReimport();
 
         var spritesCount = ti.spritesheet.Length;
-        var colors = default(MyColor[][][]);
+        var bytes = default(byte[][][][]);
         var sprites = default(Sprite[]);
         var sb = new StringBuilder();
         if (spritesCount == 0) //If there're no items in spritesheet - it means there is a single sprite in asset.
         {
-            colors = new MyColor[1][][];
+            bytes = new byte[1][][][];
             sprites = new Sprite[1];
             sprites[0] = sprite;
 
             var tex = sprite.texture;
-            var currentColors = new MyColor[tex.width][];
+            var currentBytes = new byte[tex.width][][];
             for (int x = 0; x < tex.width; x++)
             {
-                currentColors[x] = new MyColor[tex.height];
+                currentBytes[x] = new byte[tex.height][];
                 for (int y = 0; y < tex.height; y++)
                 {
                     var color = texture.GetPixel(x, y);
-                    currentColors[x][y] = new MyColor(
-                        Convert.ToByte(Mathf.Clamp(color.r * byte.MaxValue, 0, byte.MaxValue)),
-                        Convert.ToByte(Mathf.Clamp(color.g * byte.MaxValue, 0, byte.MaxValue)),
-                        Convert.ToByte(Mathf.Clamp(color.b * byte.MaxValue, 0, byte.MaxValue)),
-                        Convert.ToByte(Mathf.Clamp(color.a * byte.MaxValue, 0, byte.MaxValue))
-                    );
+                    currentBytes[x][y] = new byte[4];
+                    currentBytes[x][y][0] = Convert.ToByte(Mathf.Clamp(color.r * byte.MaxValue, 0, byte.MaxValue));
+                    currentBytes[x][y][1] = Convert.ToByte(Mathf.Clamp(color.g * byte.MaxValue, 0, byte.MaxValue));
+                    currentBytes[x][y][2] = Convert.ToByte(Mathf.Clamp(color.b * byte.MaxValue, 0, byte.MaxValue));
+                    currentBytes[x][y][3] = Convert.ToByte(Mathf.Clamp(color.a * byte.MaxValue, 0, byte.MaxValue));
                 }
             }
-            colors[0] = currentColors;
+            bytes[0] = currentBytes;
         }
         else
         {
-            colors = new MyColor[spritesCount][][];
+            bytes = new byte[spritesCount][][][];
             sprites = new Sprite[spritesCount];
 
             for (int i = 0; i < spritesCount; i++)
@@ -955,7 +983,7 @@ public class Optimizer : EditorWindow
                 var yOrigin = Mathf.CeilToInt(currentSprite.rect.y);
                 var width = Mathf.CeilToInt(currentSprite.rect.width);
                 var height = Mathf.CeilToInt(currentSprite.rect.height);
-                var currentColors = new MyColor[width][];
+                var currentBytes = new byte[width][][];
 
                 var printing = false;
 
@@ -967,7 +995,7 @@ public class Optimizer : EditorWindow
 
                 for (int x = 0; x < width; x++)
                 {
-                    currentColors[x] = new MyColor[height];
+                    currentBytes[x] = new byte[height][];
                     for (int y = 0; y < height; y++)
                     {
                         var color = texture.GetPixel(xOrigin + x, yOrigin + y);
@@ -975,9 +1003,10 @@ public class Optimizer : EditorWindow
                         var g = (byte)Mathf.Clamp(color.g * byte.MaxValue, 0, byte.MaxValue);
                         var b = (byte)Mathf.Clamp(color.b * byte.MaxValue, 0, byte.MaxValue);
                         var a = (byte)Mathf.Clamp(color.a * byte.MaxValue, 0, byte.MaxValue);
+
                         if (printing)
                             sb.AppendLine($"({x},{y}) = {r},{g},{b},{a}");
-                        currentColors[x][y] = new MyColor(r, g, b, a);
+                        currentBytes[x][y] = new byte[4] { r, g, b, a };
                     }
                 }
                 if (printing)
@@ -985,10 +1014,122 @@ public class Optimizer : EditorWindow
                     File.WriteAllText($"C:\\ABC\\opt-{i}.txt", sb.ToString());
                     sb.Clear();
                 }
-                colors[i] = currentColors;
+                bytes[i] = currentBytes;
             }
         }
 
+        return (bytes, sprites);
+    }
+
+    private (MyColor[][][] colors, Sprite[] sprites) getColors(Sprite sprite)
+    {
+        var (bytes, sprites) = getBytes(sprite);
+        var colors = new MyColor[bytes.Length][][];
+        for (int i = 0; i < colors.Length; i++)
+        {
+            colors[i] = new MyColor[bytes[i].Length][];
+            for (int x = 0; x < colors[i].Length; x++)
+            {
+                colors[i][x] = new MyColor[bytes[i][x].Length];
+                for (int y = 0; y < colors[i][x].Length; y++)
+                {
+                    var currentBytes = bytes[i][x][y];
+                    colors[i][x][y] = new MyColor(currentBytes[0], currentBytes[1], currentBytes[2], currentBytes[3]);
+                }
+            }
+        }
         return (colors, sprites);
+
+        //var texture = sprite.texture;
+        //var path = AssetDatabase.GetAssetPath(sprite);
+        //var allAssetsAtPath = AssetDatabase.LoadAllAssetsAtPath(path);
+        //var allSptitesAtPath = allAssetsAtPath.OfType<Sprite>().ToArray();
+        //var ti = AssetImporter.GetAtPath(path) as TextureImporter;
+        //var fullPath = $"{Application.dataPath.Substring(0, Application.dataPath.Length - "Assets".Length)}{path}";
+        ////Debug.LogError($"path = {fullPath}");
+        //texture = new Texture2D(1, 1, TextureFormat.ARGB32, false);
+        //texture.filterMode = FilterMode.Point;
+        //texture.LoadImage(File.ReadAllBytes(fullPath));
+        ////return null;
+        //ti.isReadable = true;
+        //ti.SaveAndReimport();
+
+        //var spritesCount = ti.spritesheet.Length;
+        //var colors = default(MyColor[][][]);
+        //var sprites = default(Sprite[]);
+        //var sb = new StringBuilder();
+        //if (spritesCount == 0) //If there're no items in spritesheet - it means there is a single sprite in asset.
+        //{
+        //    colors = new MyColor[1][][];
+        //    sprites = new Sprite[1];
+        //    sprites[0] = sprite;
+
+        //    var tex = sprite.texture;
+        //    var currentColors = new MyColor[tex.width][];
+        //    for (int x = 0; x < tex.width; x++)
+        //    {
+        //        currentColors[x] = new MyColor[tex.height];
+        //        for (int y = 0; y < tex.height; y++)
+        //        {
+        //            var color = texture.GetPixel(x, y);
+        //            currentColors[x][y] = new MyColor(
+        //                Convert.ToByte(Mathf.Clamp(color.r * byte.MaxValue, 0, byte.MaxValue)),
+        //                Convert.ToByte(Mathf.Clamp(color.g * byte.MaxValue, 0, byte.MaxValue)),
+        //                Convert.ToByte(Mathf.Clamp(color.b * byte.MaxValue, 0, byte.MaxValue)),
+        //                Convert.ToByte(Mathf.Clamp(color.a * byte.MaxValue, 0, byte.MaxValue))
+        //            );
+        //        }
+        //    }
+        //    colors[0] = currentColors;
+        //}
+        //else
+        //{
+        //    colors = new MyColor[spritesCount][][];
+        //    sprites = new Sprite[spritesCount];
+
+        //    for (int i = 0; i < spritesCount; i++)
+        //    {
+        //        var currentSprite = ti.spritesheet[i];
+        //        sprites[i] = allSptitesAtPath.Where(s => s.name == currentSprite.name).First();
+
+        //        var xOrigin = Mathf.FloorToInt(currentSprite.rect.x);
+        //        var yOrigin = Mathf.CeilToInt(currentSprite.rect.y);
+        //        var width = Mathf.CeilToInt(currentSprite.rect.width);
+        //        var height = Mathf.CeilToInt(currentSprite.rect.height);
+        //        var currentColors = new MyColor[width][];
+
+        //        var printing = false;
+
+        //        if (i == 12 || i == 42)
+        //        {
+        //            sb.AppendLine($"Printing sprite #{i}");
+        //            printing = true;
+        //        }
+
+        //        for (int x = 0; x < width; x++)
+        //        {
+        //            currentColors[x] = new MyColor[height];
+        //            for (int y = 0; y < height; y++)
+        //            {
+        //                var color = texture.GetPixel(xOrigin + x, yOrigin + y);
+        //                var r = (byte)Mathf.Clamp(color.r * byte.MaxValue, 0, byte.MaxValue);
+        //                var g = (byte)Mathf.Clamp(color.g * byte.MaxValue, 0, byte.MaxValue);
+        //                var b = (byte)Mathf.Clamp(color.b * byte.MaxValue, 0, byte.MaxValue);
+        //                var a = (byte)Mathf.Clamp(color.a * byte.MaxValue, 0, byte.MaxValue);
+        //                if (printing)
+        //                    sb.AppendLine($"({x},{y}) = {r},{g},{b},{a}");
+        //                currentColors[x][y] = new MyColor(r, g, b, a);
+        //            }
+        //        }
+        //        if (printing)
+        //        {
+        //            File.WriteAllText($"C:\\ABC\\opt-{i}.txt", sb.ToString());
+        //            sb.Clear();
+        //        }
+        //        colors[i] = currentColors;
+        //    }
+        //}
+
+        //return (colors, sprites);
     }
 }

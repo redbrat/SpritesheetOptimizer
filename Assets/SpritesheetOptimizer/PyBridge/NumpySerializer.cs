@@ -41,6 +41,11 @@ public static class NumpySerializer
                 elementSize = 4;
                 convertFunc = (b, o) => BitConverter.ToInt32(b, o);
                 break;
+            case "u1":
+                elementType = typeof(byte);
+                elementSize = 1;
+                convertFunc = (b, o) => b[o];
+                break;
             default:
                 throw new ArgumentException($"Unknown descr type: {descr}");
         }
@@ -74,7 +79,8 @@ public static class NumpySerializer
                 else if (j == shapeParts.Length - 1)
                     currentIndexValue = i % shapeParts[j];
                 else
-                    currentIndexValue = (i / mulBefore) % mulAfter;
+                    //currentIndexValue = (i / mulBefore) % mulAfter;
+                    currentIndexValue = i % (mulAfter * shapeParts[j]) / mulAfter;
                 //currentIndexValue = (i / mulBefore) % mulAfter;
                 indices[j] = currentIndexValue;
             }
@@ -103,9 +109,14 @@ public static class NumpySerializer
                 descr = "<i4";
                 toBytesFunc = obj => BitConverter.GetBytes((int)obj);
                 break;
+            case "System.Byte":
+                descr = "u1";
+                toBytesFunc = obj => new byte[] { (byte)obj };
+                break;
             default:
                 throw new ArgumentException($"Unknown array type: {array.GetType().GetElementType().FullName}");
         }
+        
         var fortran_order = $"False";
         var shape = new StringBuilder();
         var shapeParts = new int[array.Rank];
@@ -145,7 +156,8 @@ public static class NumpySerializer
                 else if (j == shapeParts.Length - 1)
                     currentIndexValue = i % shapeParts[j];
                 else
-                    currentIndexValue = (i / mulBefore) % mulAfter;
+                    currentIndexValue = i % (mulAfter * shapeParts[j]) / mulAfter;
+                //currentIndexValue = (i / mulBefore) % mulAfter;
                 indices[j] = currentIndexValue;
             }
             resultList.AddRange(toBytesFunc(array.GetValue(indices)));
