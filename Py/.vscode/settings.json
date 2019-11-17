@@ -1,7 +1,7 @@
 {
   "python.pythonPath": "C:\\Users\\celti\\Anaconda3\\python.exe",
-  "python.linting.pylintEnabled": false,
+  "python.linting.pylintEnabled": true,
   "python.linting.enabled": true,
-  "python.linting.flake8Enabled": true,
+  "python.linting.flake8Enabled": false,
   "python.jediEnabled": false
 }

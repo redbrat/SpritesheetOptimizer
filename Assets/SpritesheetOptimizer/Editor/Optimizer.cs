@@ -131,6 +131,7 @@ public class Optimizer : EditorWindow
     private async void launch(Algorythm algorythm, Sprite[] sprites, MyColor[][][] colors, MyVector2Float[] pivots)
     {
         await algorythm.Initialize(_resolution, _cts.Token);
+        return;
         var correlationsAndImages = await algorythm.Run();
         var correlations = correlationsAndImages.correlations;
 
