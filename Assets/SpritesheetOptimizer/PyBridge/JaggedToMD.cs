@@ -13,7 +13,7 @@ public static class JaggedToMD
             return jagged; //массив не jagged изначально - возвращаем его
         if (checkJagginess)
             checkJagginessRecursively(jagged, shape, new int?[shape.Length - 1], 0); //Проверяем, чтобы все подмассивы были одинаковой размерности
-        return setValuesRecursively(0, shape, jagged, Array.CreateInstance(elementType, shape));
+        return setValuesRecursively(0, shape, new int[shape.Length], jagged, Array.CreateInstance(elementType, shape));
     }
 
     private static void checkJagginessRecursively(Array jagged, int[] shape, int?[] childLengths, int currentLevel)
@@ -32,7 +32,7 @@ public static class JaggedToMD
         }
     }
 
-    private static Array setValuesRecursively(int currentLevel, int[] shape, Array jagged, Array md)
+    private static Array setValuesRecursively(int currentLevel, int[] shape, int[] indices, Array jagged, Array md)
     {
         var currentLevelLength = shape[currentLevel];
         var elementType = jagged.GetType().GetElementType();
@@ -40,10 +40,11 @@ public static class JaggedToMD
 
         for (int i = 0; i < currentLevelLength; i++)
         {
+            indices[currentLevel] = i;
             if (isArray)
-                setValuesRecursively(currentLevel + 1, shape, (Array)jagged.GetValue(i), md);
+                setValuesRecursively(currentLevel + 1, shape, indices, (Array)jagged.GetValue(i), md);
             else
-                md.SetValue(jagged.GetValue(i), i);
+                md.SetValue(jagged.GetValue(i), indices);
         }
 
         return md;
@@ -60,6 +61,8 @@ public static class JaggedToMD
         {
             if (_arrayType.IsAssignableFrom(currentElementType))
             {
+                if (currentLevelArray.Length == 0)
+                    throw new ArgumentException($"Can't convert to md-array when some elements of jagged array are zero-lenght.");
                 intList.Add(currentLevelArray.Length);
                 currentLevelArray = (Array)currentLevelArray.GetValue(0);
                 currentElementType = currentLevelArray.GetType().GetElementType();

@@ -75,23 +75,21 @@ public class Optimizer : EditorWindow
             }
             if (GUILayout.Button("SendToPython"))
             {
-                var byteResults = getBytes(_sprite);
-                var sizings = new PickySizingConfigurator(_pickinessLevel).ConfigureSizings(default, default, default, default, default).Select(s => new int[] { s.X, s.Y }).ToArray();
+                var colorsResults = getColors(_sprite);
+                var sizings = default(IEnumerable<MyVector2>);
+                sizings = new PickySizingConfigurator(_pickinessLevel).ConfigureSizings(sizings, colorsResults.colors.Length, _resolution.x, _resolution.y, default);
+                var sizingsDeconstructed = sizings.Select(s => new int[] { s.X, s.Y }).ToArray();
                 var fullPath = $"{Application.dataPath.Substring(0, Application.dataPath.Length - "Assets".Length)}{_numpyFileName}";
                 var fullPathToDirectory = Directory.GetParent(fullPath).ToString();
 
-                for (int i = 0; i < byteResults.bytes.Length; i++)
+                for (int i = 0; i < colorsResults.bytes.Length; i++)
                 {
-                    var currentBytes = byteResults.bytes[i];
-                    var currentSprite = byteResults.sprites[i];
+                    var currentBytes = colorsResults.bytes[i];
+                    var currentSprite = colorsResults.sprites[i];
                     var path = AssetDatabase.GetAssetPath(currentSprite);
                     fullPath = Path.Combine(fullPathToDirectory, fullPath);
                     var fileName = $"{path}---{currentSprite.name}.npy";
-                    var mdArray = new byte[currentBytes.Length, currentBytes[0].Length, 4];
-                    for (int x = 0; x < currentBytes.Length; x++)
-                        for (int y = 0; y < currentBytes[x].Length; y++)
-                            for (int b = 0; b < 4; b++)
-                                mdArray[x, y, b] = currentBytes[x][y][b];
+                    var mdArray = currentBytes.ConvertToMultiDimentional();
                     var bytes = NumpySerializer.Serialize(mdArray);
                     File.WriteAllBytes(fullPath, bytes);
                     var arr = NumpySerializer.Deserialize(bytes);
@@ -99,10 +97,11 @@ public class Optimizer : EditorWindow
                 }
 
                 fullPath = Path.Combine(fullPathToDirectory, $"sizings.npy");
-                var sizingsBytes = NumpySerializer.Serialize(sizings);
+                var sizingsDeconstructedMD = sizingsDeconstructed.ConvertToMultiDimentional();
+                var sizingsBytes = NumpySerializer.Serialize(sizingsDeconstructedMD);
                 File.WriteAllBytes(fullPath, sizingsBytes);
                 var arr2 = NumpySerializer.Deserialize(sizingsBytes);
-                Assert.AreEqual(arr2, sizingsBytes, "Serialization fail 3");
+                Assert.AreEqual(arr2, sizingsDeconstructedMD, "Serialization fail 3");
             }
             GUILayout.EndHorizontal();
         }
@@ -1025,7 +1024,7 @@ public class Optimizer : EditorWindow
         return (bytes, sprites);
     }
 
-    private (MyColor[][][] colors, Sprite[] sprites) getColors(Sprite sprite)
+    private (MyColor[][][] colors, byte[][][][] bytes, Sprite[] sprites) getColors(Sprite sprite)
     {
         var (bytes, sprites) = getBytes(sprite);
         var colors = new MyColor[bytes.Length][][];
@@ -1042,7 +1041,7 @@ public class Optimizer : EditorWindow
                 }
             }
         }
-        return (colors, sprites);
+        return (colors, bytes, sprites);
 
         //var texture = sprite.texture;
         //var path = AssetDatabase.GetAssetPath(sprite);
