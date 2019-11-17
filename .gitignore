@@ -6,5 +6,5 @@
 !/Assets/SpritesheetOptimizer/**
 !.gitignore
 !/Py/**
-*.npy
-/Py/*.txt
+/Py/**/*.npy
+/Py/**/*.txt

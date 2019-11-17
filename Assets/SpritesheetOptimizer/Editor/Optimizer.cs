@@ -19,7 +19,7 @@ public class Optimizer : EditorWindow
     private static ComputeMode _computeMode;
     private static string _resultFileName = "Assets/scavenger.asset";
 
-    private static string _numpyFileName = "Py/1.npy";
+    private static string _numpyFileName = "Py/info/1.npy";
 
     [MenuItem("Optimizer/Optimize")]
     private static void Main()
