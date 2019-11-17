@@ -1,11 +1,11 @@
-from os.path import isfile, join, splitext
+from os.path import isfile, join, splitext, basename
 from os import listdir
 import numpy as np
 
 
 def isNpArrayFile(path):
-    _, file_extension = splitext(path)
-    return file_extension == ".npy"
+    name, extension = splitext(basename(path))
+    return extension == ".npy" & name != "sizings"
 
 
 allInfoFiles = [join("info",
@@ -14,3 +14,5 @@ allNpies = list(filter(isNpArrayFile, allInfoFiles))
 allNdArrays = [np.load(path) for path in allNpies]
 for arr in allNdArrays:
     print(arr.shape)
+
+sizings = np.load("info\\sizings.npy")
