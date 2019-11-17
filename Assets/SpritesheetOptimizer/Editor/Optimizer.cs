@@ -86,14 +86,21 @@ public class Optimizer : EditorWindow
                 {
                     var currentBytes = colorsResults.bytes[i];
                     var currentSprite = colorsResults.sprites[i];
-                    var path = AssetDatabase.GetAssetPath(currentSprite);
-                    fullPath = Path.Combine(fullPathToDirectory, fullPath);
-                    var fileName = $"{path}---{currentSprite.name}.npy";
+                    var pathToSprite = AssetDatabase.GetAssetPath(currentSprite);
+                    var npyFileName = $"{i}.npy";
+                    fullPath = Path.Combine(fullPathToDirectory, npyFileName);
                     var mdArray = currentBytes.ConvertToMultiDimentional();
                     var bytes = NumpySerializer.Serialize(mdArray);
                     File.WriteAllBytes(fullPath, bytes);
                     var arr = NumpySerializer.Deserialize(bytes);
                     Assert.AreEqual(arr, mdArray, "Serialization fail 2");
+
+                    var pathToSpriteInfo = new List<string>();
+                    pathToSpriteInfo.Add(pathToSprite);
+                    pathToSpriteInfo.Add(currentSprite.name);
+                    var spriteReferenceFileName = $"{i}.txt";
+                    fullPath = Path.Combine(fullPathToDirectory, spriteReferenceFileName);
+                    File.WriteAllLines(fullPath, pathToSpriteInfo);
                 }
 
                 fullPath = Path.Combine(fullPathToDirectory, $"sizings.npy");
