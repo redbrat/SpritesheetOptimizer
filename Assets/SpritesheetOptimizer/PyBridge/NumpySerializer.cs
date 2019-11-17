@@ -56,13 +56,6 @@ public static class NumpySerializer
         var length = shapeParts.Aggregate(1, (mul, i) => mul * i, mul => mul);
         for (int i = 0; i < length; i++)
         {
-            //var currentI = i;
-            //для [9, 3]
-            //index = x * 3 + y
-            // => x = index / 9; y = index % 3
-            //для [2, 3, 4]
-            //index = x * 3 * 4 + y * 4 + z
-            // => x = index / 2; y = index % (index / 2) / 3?; z = index % 4
             for (int j = 0; j < shapeParts.Length; j++)
             {
                 var mulBefore = 1;
@@ -79,21 +72,19 @@ public static class NumpySerializer
                 else if (j == shapeParts.Length - 1)
                     currentIndexValue = i % shapeParts[j];
                 else
-                    //currentIndexValue = (i / mulBefore) % mulAfter;
                     currentIndexValue = i % (mulAfter * shapeParts[j]) / mulAfter;
-                //currentIndexValue = (i / mulBefore) % mulAfter;
                 indices[j] = currentIndexValue;
             }
             result.SetValue(convertFunc(bytes, offset + elementSize * i), indices);
         }
-
-        //var casted = result as int[,,];
 
         return result;
     }
 
     public static byte[] Serialize(Array array)
     {
+        array = array.ConvertToMultiDimentional();
+
         var resultList = new List<byte>();
 
         resultList.Add(147);
@@ -157,7 +148,6 @@ public static class NumpySerializer
                     currentIndexValue = i % shapeParts[j];
                 else
                     currentIndexValue = i % (mulAfter * shapeParts[j]) / mulAfter;
-                //currentIndexValue = (i / mulBefore) % mulAfter;
                 indices[j] = currentIndexValue;
             }
             resultList.AddRange(toBytesFunc(array.GetValue(indices)));

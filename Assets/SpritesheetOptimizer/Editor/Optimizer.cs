@@ -76,29 +76,33 @@ public class Optimizer : EditorWindow
             if (GUILayout.Button("SendToPython"))
             {
                 var byteResults = getBytes(_sprite);
+                var sizings = new PickySizingConfigurator(_pickinessLevel).ConfigureSizings(default, default, default, default, default).Select(s => new int[] { s.X, s.Y }).ToArray();
                 var fullPath = $"{Application.dataPath.Substring(0, Application.dataPath.Length - "Assets".Length)}{_numpyFileName}";
                 var fullPathToDirectory = Directory.GetParent(fullPath).ToString();
 
                 for (int i = 0; i < byteResults.bytes.Length; i++)
                 {
-                    fullPath = Path.Combine(fullPathToDirectory, $"{i}.npy");
                     var currentBytes = byteResults.bytes[i];
+                    var currentSprite = byteResults.sprites[i];
+                    var path = AssetDatabase.GetAssetPath(currentSprite);
+                    fullPath = Path.Combine(fullPathToDirectory, fullPath);
+                    var fileName = $"{path}---{currentSprite.name}.npy";
                     var mdArray = new byte[currentBytes.Length, currentBytes[0].Length, 4];
                     for (int x = 0; x < currentBytes.Length; x++)
-                    {
                         for (int y = 0; y < currentBytes[x].Length; y++)
-                        {
                             for (int b = 0; b < 4; b++)
-                            {
                                 mdArray[x, y, b] = currentBytes[x][y][b];
-                            }
-                        }
-                    }
                     var bytes = NumpySerializer.Serialize(mdArray);
                     File.WriteAllBytes(fullPath, bytes);
                     var arr = NumpySerializer.Deserialize(bytes);
                     Assert.AreEqual(arr, mdArray, "Serialization fail 2");
                 }
+
+                fullPath = Path.Combine(fullPathToDirectory, $"sizings.npy");
+                var sizingsBytes = NumpySerializer.Serialize(sizings);
+                File.WriteAllBytes(fullPath, sizingsBytes);
+                var arr2 = NumpySerializer.Deserialize(sizingsBytes);
+                Assert.AreEqual(arr2, sizingsBytes, "Serialization fail 3");
             }
             GUILayout.EndHorizontal();
         }
