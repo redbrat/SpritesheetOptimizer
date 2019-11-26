@@ -18,13 +18,13 @@
     <ClCompile Include="bytes_loading.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="numpy_reader.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="file_reader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="FileGetter.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="numpy_reader.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="string_extensions.cpp">
@@ -32,7 +32,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="numpy_reader.h">
+    <ClInclude Include="Dirent.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="file_reader.h">
@@ -41,7 +41,7 @@
     <ClInclude Include="FileGetter.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Dirent.h">
+    <ClInclude Include="numpy_reader.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="string_extensions.h">

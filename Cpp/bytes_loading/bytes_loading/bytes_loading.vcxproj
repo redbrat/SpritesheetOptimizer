@@ -20,7 +20,7 @@
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
-    <ProjectGuid>{CD2AFA9B-227D-40AD-868D-AD5DCDAA781A}</ProjectGuid>
+    <ProjectGuid>{D5A4E2B4-9AB7-4EB9-A87C-A79B29A8035C}</ProjectGuid>
     <Keyword>Win32Proj</Keyword>
     <RootNamespace>bytesloading</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
