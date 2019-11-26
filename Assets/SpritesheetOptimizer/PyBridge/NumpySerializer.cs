@@ -125,7 +125,7 @@ public static class NumpySerializer
         headerSb.Append('\n');
         var headerLength = headerSb.Length;
 
-        resultList.AddRange(BitConverter.GetBytes((short)headerLength));
+        resultList.AddRange(BitConverter.GetBytes((short)headerLength)); //9-10 байты
         resultList.AddRange(Encoding.ASCII.GetBytes(headerSb.ToString()));
 
         var length = array.Length;

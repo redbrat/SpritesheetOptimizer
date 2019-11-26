@@ -7,7 +7,9 @@ using System.Text;
 using System.Threading;
 using UnityEditor;
 using UnityEngine;
+using static Algorythm;
 
+[Serializable]
 public class Optimizer : EditorWindow
 {
     private static Optimizer _intance;
@@ -30,6 +32,18 @@ public class Optimizer : EditorWindow
     private ProgressReport _operationProgressReport;
     private ProgressReport _overallProgressReport;
     private CancellationTokenSource _cts;
+
+    [Serializable]
+    public class StringsArrayContainer
+    {
+        public string[] Array;
+    }
+
+    [Serializable]
+    public class StringsArrayContainerArrayContainer
+    {
+        public StringsArrayContainer[] Array;
+    }
 
     private void OnGUI()
     {
@@ -95,6 +109,20 @@ public class Optimizer : EditorWindow
                     var arr = NumpySerializer.Deserialize(bytes);
                     Assert.AreEqual(arr, mdArray, "Serialization fail 2");
 
+                    if (i == 0)
+                    {
+                        var firstUChar = bytes[0];
+                        var lengthOfHeader = BitConverter.ToInt16(bytes, 8);
+                        var firstUCharOfHeader = bytes[8];
+                        var lastChar = bytes[bytes.Length - 1];
+
+                        var byteOfData1 = bytes[10 + lengthOfHeader];
+                        var byteOfData2 = bytes[10 + lengthOfHeader + 1];
+                        var byteOfData3 = bytes[10 + lengthOfHeader + 2];
+                        var byteOfData4 = bytes[10 + lengthOfHeader + 3];
+                        Debug.LogError($"firstUChar = {firstUChar}, lengthOfHeader = {lengthOfHeader}, firstUCharOfHeader = {firstUCharOfHeader}, lastChar = {lastChar}. byteOfData1 = {byteOfData1}, byteOfData2 = {byteOfData2}, byteOfData3 = {byteOfData3}, byteOfData4 = {byteOfData4}");
+                    }
+
                     var pathToSpriteInfo = new List<string>();
                     pathToSpriteInfo.Add(pathToSprite);
                     pathToSpriteInfo.Add(currentSprite.name);
@@ -111,6 +139,145 @@ public class Optimizer : EditorWindow
                 Assert.AreEqual(arr2, sizingsDeconstructedMD, "Serialization fail 3");
             }
             GUILayout.EndHorizontal();
+        }
+
+        if (GUILayout.Button("Send to CUDA"))
+        {
+            var colorsResults = getColors(_sprite);
+            var sizings = default(IEnumerable<MyVector2>);
+            sizings = new PickySizingConfigurator(_pickinessLevel).ConfigureSizings(sizings, colorsResults.colors.Length, _resolution.x, _resolution.y, default);
+            var sizingsDeconstructed = sizings.Select(s => new int[] { s.X, s.Y }).ToArray();
+            var fullPath = $"{Application.dataPath.Substring(0, Application.dataPath.Length - "Assets".Length)}{_numpyFileName}";
+            var fullPathToDirectory = Directory.GetParent(fullPath).ToString();
+
+            var dataList = new List<byte>();
+            var registry = new List<registryStruct>();
+
+            var spritesCount = (short)colorsResults.bytes.Length;
+
+
+            var metaList = new List<List<string>>();
+            for (int i = 0; i < spritesCount; i++)
+            {
+                var currentSprite = colorsResults.sprites[i];
+                var pathToSprite = AssetDatabase.GetAssetPath(currentSprite);
+                var pathToSpriteInfo = new List<string>();
+                pathToSpriteInfo.Add(pathToSprite);
+                pathToSpriteInfo.Add(currentSprite.name);
+                metaList.Add(pathToSpriteInfo);
+            }
+
+            var meta = new StringsArrayContainerArrayContainer();
+            meta.Array = new StringsArrayContainer[metaList.Count];
+            for (int i = 0; i < metaList.Count; i++)
+            {
+                meta.Array[i] = new StringsArrayContainer();
+                meta.Array[i].Array = metaList[i].ToArray();
+            }
+
+
+            var sizingsList = new List<byte>();
+            for (int i = 0; i < sizingsDeconstructed.Length; i++)
+                sizingsList.AddRange(BitConverter.GetBytes(sizingsDeconstructed[i][0]));
+            for (int i = 0; i < sizingsDeconstructed.Length; i++)
+                sizingsList.AddRange(BitConverter.GetBytes(sizingsDeconstructed[i][1]));
+
+
+            for (int i = 0; i < spritesCount; i++)
+            {
+                var currentSpriteBytes = colorsResults.bytes[i];
+                var width = currentSpriteBytes.Length;
+                var height = currentSpriteBytes[0].Length;
+
+                var widthAndHeight = width << 16 | height;
+                var registryEntry = new registryStruct();
+                registryEntry.SpritesDataOffset = dataList.Count;
+                registryEntry.WidthAndHeight = widthAndHeight;
+                registry.Add(registryEntry);
+
+                for (int x = 0; x < width; x++)
+                    for (int y = 0; y < height; y++)
+                        dataList.Add(currentSpriteBytes[x][y][0]);
+            }
+
+            for (int i = 0; i < spritesCount; i++)
+            {
+                var currentSpriteBytes = colorsResults.bytes[i];
+                var width = currentSpriteBytes.Length;
+                var height = currentSpriteBytes[0].Length;
+
+                for (int x = 0; x < width; x++)
+                    for (int y = 0; y < height; y++)
+                        dataList.Add(currentSpriteBytes[x][y][1]);
+            }
+
+            for (int i = 0; i < spritesCount; i++)
+            {
+                var currentSpriteBytes = colorsResults.bytes[i];
+                var width = currentSpriteBytes.Length;
+                var height = currentSpriteBytes[0].Length;
+
+                for (int x = 0; x < width; x++)
+                    for (int y = 0; y < height; y++)
+                        dataList.Add(currentSpriteBytes[x][y][2]);
+            }
+
+            for (int i = 0; i < spritesCount; i++)
+            {
+                var currentSpriteBytes = colorsResults.bytes[i];
+                var width = currentSpriteBytes.Length;
+                var height = currentSpriteBytes[0].Length;
+
+                for (int x = 0; x < width; x++)
+                    for (int y = 0; y < height; y++)
+                        dataList.Add(currentSpriteBytes[x][y][3]);
+            }
+
+            var registryParalellized = new List<byte>();
+            for (int i = 0; i < registry.Count; i++)
+                registryParalellized.AddRange(BitConverter.GetBytes(registry[i].SpritesDataOffset));
+            for (int i = 0; i < registry.Count; i++)
+                registryParalellized.AddRange(BitConverter.GetBytes((short)(registry[i].WidthAndHeight >> 16 & 65535)));
+            for (int i = 0; i < registry.Count; i++)
+                registryParalellized.AddRange(BitConverter.GetBytes((short)(registry[i].WidthAndHeight & 65535)));
+
+            var combinedData = new byte[dataList.Count + registry.Count * 8 + 4 + sizingsList.Count + 2];
+
+            combinedData[0] = 0; //Эти два байта 
+            combinedData[1] = 0; //зарезервированы
+            combinedData[2] = (byte)(spritesCount >> 8 & 255);
+            combinedData[3] = (byte)(spritesCount & 255);
+
+            var sizingsCount = (short)sizingsList.Count;
+            combinedData[4] = (byte)(sizingsCount >> 8 & 255);
+            combinedData[5] = (byte)(sizingsCount & 255);
+
+            var currentOffset = 6;
+            for (int i = 0; i < sizingsList.Count; i++)
+                combinedData[currentOffset + i] = sizingsList[i];
+            currentOffset += sizingsList.Count;
+
+            for (int i = 0; i < registryParalellized.Count; i++)
+                combinedData[currentOffset + i] = registryParalellized[i];
+            currentOffset += registryParalellized.Count;
+
+            for (int i = 0; i < dataList.Count; i++)
+                combinedData[currentOffset + i] = dataList[i];
+
+            var metaTextBytes = Encoding.UTF8.GetBytes(JsonUtility.ToJson(meta));
+            var metaLength = metaTextBytes.Length;
+            var header = new byte[metaLength + 4];
+            header[0] = (byte)(metaLength >> 24 & 255);
+            header[1] = (byte)(metaLength >> 16 & 255);
+            header[2] = (byte)(metaLength >> 8 & 255);
+            header[3] = (byte)(metaLength & 255);
+            Buffer.BlockCopy(metaTextBytes, 0, header, 4, metaLength);
+
+            var finalBlob = new byte[header.Length + combinedData.Length];
+            Buffer.BlockCopy(header, 0, finalBlob, 0, header.Length);
+            Buffer.BlockCopy(combinedData, 0, finalBlob, header.Length, combinedData.Length);
+
+            File.WriteAllBytes(Path.Combine(fullPathToDirectory, "data.bytes"), finalBlob);
         }
         if (_cts != null)
         {
