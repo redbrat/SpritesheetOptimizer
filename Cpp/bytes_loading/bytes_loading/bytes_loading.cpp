@@ -12,7 +12,7 @@ char* readFileBytes(const char* name);
 
 int main()
 {
-	std::string path = "P:\\U\\Some2DGame\\Py\\info";
+	std::string path = "P:\\U\\Some2DGame\\Cuda\\info";
 	DIR* directory = opendir(path.c_str());
 	struct dirent* direntStruct;
 

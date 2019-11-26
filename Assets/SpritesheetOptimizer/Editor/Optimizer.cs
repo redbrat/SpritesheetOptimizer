@@ -22,6 +22,7 @@ public class Optimizer : EditorWindow
     private static string _resultFileName = "Assets/scavenger.asset";
 
     private static string _numpyFileName = "Py/info/1.npy";
+    private static string _cudaFileName = "Cuda/info/data.bytes";
 
     [MenuItem("Optimizer/Optimize")]
     private static void Main()
@@ -141,14 +142,13 @@ public class Optimizer : EditorWindow
             GUILayout.EndHorizontal();
         }
 
-        if (GUILayout.Button("Send to CUDA"))
+        if (_sprite != null && GUILayout.Button("Send to CUDA"))
         {
             var colorsResults = getColors(_sprite);
             var sizings = default(IEnumerable<MyVector2>);
             sizings = new PickySizingConfigurator(_pickinessLevel).ConfigureSizings(sizings, colorsResults.colors.Length, _resolution.x, _resolution.y, default);
             var sizingsDeconstructed = sizings.Select(s => new int[] { s.X, s.Y }).ToArray();
-            var fullPath = $"{Application.dataPath.Substring(0, Application.dataPath.Length - "Assets".Length)}{_numpyFileName}";
-            var fullPathToDirectory = Directory.GetParent(fullPath).ToString();
+
 
             var dataList = new List<byte>();
             var registry = new List<registryStruct>();
@@ -277,7 +277,7 @@ public class Optimizer : EditorWindow
             Buffer.BlockCopy(header, 0, finalBlob, 0, header.Length);
             Buffer.BlockCopy(combinedData, 0, finalBlob, header.Length, combinedData.Length);
 
-            File.WriteAllBytes(Path.Combine(fullPathToDirectory, "data.bytes"), finalBlob);
+            File.WriteAllBytes(_cudaFileName, finalBlob);
         }
         if (_cts != null)
         {
