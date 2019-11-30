@@ -7,5 +7,6 @@
 !.gitignore
 !/Py/**
 !/Cpp/**
+!/Cuda/**
 /Py/**/*.npy
 /Py/**/*.txt
