@@ -13,7 +13,6 @@ int main()
 	string path = "P:\\U\\Some2DGame\\Cuda\\info\\data.bytes";
 	tuple<char*, int> blobTuple = file_reader::readFile(path);
 	char* blob = get<0>(blobTuple);
-
 	int blobLength = get<1>(blobTuple);
 
 	int metaLength;
@@ -34,6 +33,23 @@ int main()
 	int registryBlobLength = spritesCount * registryStructureLength;
 	char* dataBlob = registryBlob + registryBlobLength;
 	int dataBlobLength = blobLength - registryBlobLength - sizingsBlobLength - combinedDataOffset - 6;
+
+	char* deviceSizingsPtr;
+	cudaMalloc((void**)&deviceSizingsPtr, sizingsBlobLength);
+	char* deviceRegistryPtr;
+	cudaMalloc((void**)&deviceRegistryPtr, registryBlobLength);
+	char* deviceDataPtr;
+	cudaMalloc((void**)&deviceDataPtr, dataBlobLength);
+
+	cudaMemcpy(deviceSizingsPtr, sizingsBlob, sizingsBlobLength, cudaMemcpyHostToDevice);
+	cudaMemcpy(deviceRegistryPtr, registryBlob, sizingsBlobLength, cudaMemcpyHostToDevice);
+	cudaMemcpy(deviceDataPtr, dataBlob, sizingsBlobLength, cudaMemcpyHostToDevice);
+
+
+	cudaFree(deviceSizingsPtr);
+	cudaFree(deviceRegistryPtr);
+	cudaFree(deviceDataPtr);
+	free(blob);
 
     return 0;
 }
