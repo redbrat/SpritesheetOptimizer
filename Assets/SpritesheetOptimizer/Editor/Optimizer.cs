@@ -147,7 +147,7 @@ public class Optimizer : EditorWindow
             var colorsResults = getColors(_sprite);
             var sizings = default(IEnumerable<MyVector2>);
             sizings = new PickySizingConfigurator(_pickinessLevel).ConfigureSizings(sizings, colorsResults.colors.Length, _resolution.x, _resolution.y, default);
-            var sizingsDeconstructed = sizings.Select(s => new int[] { s.X, s.Y }).ToArray();
+            var sizingsDeconstructed = sizings.Select(s => new short[] { (short)s.X, (short)s.Y }).ToArray();
 
 
             var dataList = new List<byte>();
@@ -176,11 +176,11 @@ public class Optimizer : EditorWindow
             }
 
 
-            var sizingsList = new List<byte>();
+            var parallelizedSizingsList = new List<byte>();
             for (int i = 0; i < sizingsDeconstructed.Length; i++)
-                sizingsList.AddRange(BitConverter.GetBytes(sizingsDeconstructed[i][0]));
+                parallelizedSizingsList.AddRange(BitConverter.GetBytes(sizingsDeconstructed[i][0]));
             for (int i = 0; i < sizingsDeconstructed.Length; i++)
-                sizingsList.AddRange(BitConverter.GetBytes(sizingsDeconstructed[i][1]));
+                parallelizedSizingsList.AddRange(BitConverter.GetBytes(sizingsDeconstructed[i][1]));
 
 
             for (int i = 0; i < spritesCount; i++)
@@ -241,21 +241,24 @@ public class Optimizer : EditorWindow
             for (int i = 0; i < registry.Count; i++)
                 registryParalellized.AddRange(BitConverter.GetBytes((short)(registry[i].WidthAndHeight & 65535)));
 
-            var combinedData = new byte[dataList.Count + registry.Count * 8 + 4 + sizingsList.Count + 2];
+            var combinedData = new byte[dataList.Count + registry.Count * 8 + 4 + parallelizedSizingsList.Count + 2];
 
             combinedData[0] = 0; //Эти два байта 
             combinedData[1] = 0; //зарезервированы
-            combinedData[2] = (byte)(spritesCount >> 8 & 255);
-            combinedData[3] = (byte)(spritesCount & 255);
+            combinedData[2] = (byte)(spritesCount & 255);
+            combinedData[3] = (byte)(spritesCount >> 8 & 255);
 
-            var sizingsCount = (short)sizingsList.Count;
-            combinedData[4] = (byte)(sizingsCount >> 8 & 255);
-            combinedData[5] = (byte)(sizingsCount & 255);
+            //Debug.LogError($"spritesCount = {spritesCount}");
+
+            var sizingsCount = (short)parallelizedSizingsList.Count;
+            combinedData[4] = (byte)(sizingsCount & 255);
+            combinedData[5] = (byte)(sizingsCount >> 8 & 255);
+            //Debug.LogError($"sizingsCount = {sizingsCount}");
 
             var currentOffset = 6;
-            for (int i = 0; i < sizingsList.Count; i++)
-                combinedData[currentOffset + i] = sizingsList[i];
-            currentOffset += sizingsList.Count;
+            for (int i = 0; i < parallelizedSizingsList.Count; i++)
+                combinedData[currentOffset + i] = parallelizedSizingsList[i];
+            currentOffset += parallelizedSizingsList.Count;
 
             for (int i = 0; i < registryParalellized.Count; i++)
                 combinedData[currentOffset + i] = registryParalellized[i];
@@ -264,20 +267,68 @@ public class Optimizer : EditorWindow
             for (int i = 0; i < dataList.Count; i++)
                 combinedData[currentOffset + i] = dataList[i];
 
+            //var parallelizedSizingsArray = parallelizedSizingsList.ToArray();
+            //Debug.Log($"Sizings length: {parallelizedSizingsArray.Length}");
+            //Debug.Log($"Sizings[0]: {BitConverter.ToInt16(parallelizedSizingsArray, 0)}");
+            //Debug.Log($"Sizings[1]: {BitConverter.ToInt16(parallelizedSizingsArray, 2)}");
+            //Debug.Log($"Sizings[2]: {BitConverter.ToInt16(parallelizedSizingsArray, 4)}");
+            //Debug.Log($"Sizings[3]: {BitConverter.ToInt16(parallelizedSizingsArray, 6)}");
+
+            //var registryParalellizedArray = registryParalellized.ToArray();
+            //Debug.Log($"Registry length: {registryParalellizedArray.Length}");
+            //Debug.Log($"Registry[0]: {BitConverter.ToInt16(registryParalellizedArray, 0)}");
+            //Debug.Log($"Registry[1]: {BitConverter.ToInt16(registryParalellizedArray, 4)}");
+            //Debug.Log($"Registry[2]: {BitConverter.ToInt16(registryParalellizedArray, 8)}");
+            //Debug.Log($"Registry[3]: {BitConverter.ToInt16(registryParalellizedArray, 12)}");
+
+            //var dataArray = dataList.ToArray();
+            //Debug.Log($"Data length: {dataArray.Length}");
+            //Debug.Log($"Data[0]: {dataArray[0]}");
+            //Debug.Log($"Data[1]: {dataArray[1]}");
+            //Debug.Log($"Data[2]: {dataArray[2]}");
+            //Debug.Log($"Data[3]: {dataArray[3]}");
+            //Debug.Log($"Data[4]: {dataArray[4]}");
+            //Debug.Log($"Data[5]: {dataArray[5]}");
+            //Debug.Log($"Data[6]: {dataArray[6]}");
+            //Debug.Log($"Data[7]: {dataArray[7]}");
+            //Debug.Log($"Data[8]: {dataArray[8]}");
+            //Debug.Log($"Data[9]: {dataArray[9]}");
+            //Debug.Log($"Data[10]: {dataArray[10]}");
+            //Debug.Log($"Data[11]: {dataArray[11]}");
+            //Debug.Log($"Data[12]: {dataArray[12]}");
+            //Debug.Log($"Data[13]: {dataArray[13]}");
+            //Debug.Log($"Data[14]: {dataArray[14]}");
+            //Debug.Log($"Data[15]: {dataArray[15]}");
+
             var metaTextBytes = Encoding.UTF8.GetBytes(JsonUtility.ToJson(meta));
             var metaLength = metaTextBytes.Length;
             var header = new byte[metaLength + 4];
-            header[0] = (byte)(metaLength >> 24 & 255);
-            header[1] = (byte)(metaLength >> 16 & 255);
-            header[2] = (byte)(metaLength >> 8 & 255);
-            header[3] = (byte)(metaLength & 255);
+            header[0] = (byte)(metaLength & 255);
+            header[1] = (byte)(metaLength >> 8 & 255);
+            header[2] = (byte)(metaLength >> 16 & 255);
+            header[3] = (byte)(metaLength >> 24 & 255);
             Buffer.BlockCopy(metaTextBytes, 0, header, 4, metaLength);
+            //Debug.LogError($"metaLength = {metaLength}");
 
             var finalBlob = new byte[header.Length + combinedData.Length];
             Buffer.BlockCopy(header, 0, finalBlob, 0, header.Length);
             Buffer.BlockCopy(combinedData, 0, finalBlob, header.Length, combinedData.Length);
 
+
+            var combinedDataOffset = header.Length;
+            var sizingsOffset = combinedDataOffset + 6;
+            var registryOffset = sizingsOffset + parallelizedSizingsList.Count;
+            var dataOffset = registryOffset + registryParalellized.Count;
+
             File.WriteAllBytes(_cudaFileName, finalBlob);
+            Debug.Log($"Sent!");
+
+            //var blob = File.ReadAllBytes(_cudaFileName);
+            //Debug.LogError($"blob length = {blob.Length}");
+            //for (int i = 0; i < registryParalellized.Count; i++)
+            //{
+            //    Debug.LogError($"for registry {i} (offset: {registryOffset + i}): {blob[registryOffset + i]}");
+            //}
         }
         if (_cts != null)
         {

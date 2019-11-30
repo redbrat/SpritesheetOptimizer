@@ -151,6 +151,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="bit_converter.cpp" />
     <ClCompile Include="bytes_loading.cpp" />
     <ClCompile Include="FileGetter.cpp" />
     <ClCompile Include="file_reader.cpp" />
@@ -158,6 +159,7 @@
     <ClCompile Include="string_extensions.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="bit_converter.h" />
     <ClInclude Include="Dirent.h" />
     <ClInclude Include="FileGetter.h" />
     <ClInclude Include="file_reader.h" />

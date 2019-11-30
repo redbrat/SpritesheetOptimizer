@@ -3,111 +3,83 @@
 #include <vector>
 #include <string>
 #include "Dirent.h"
-#include "numpy_reader.h"
+#include "file_reader.h"
+#include "bit_converter.h"
 
 using namespace std;
 namespace fs = experimental::filesystem;
 
-char* readFileBytes(const char* name);
-
 int main()
 {
-	std::string path = "P:\\U\\Some2DGame\\Cuda\\info";
-	DIR* directory = opendir(path.c_str());
-	struct dirent* direntStruct;
+	std::string path = "P:\\U\\Some2DGame\\Cuda\\info\\data.bytes";
+	std::tuple<char*, int> blobTuple = file_reader::readFile(path);
+	char* blob = get<0>(blobTuple);
 
-	/*
-	Ок, тут мне нужно сложить все данные в один блоб, и записать все в регистр, чтобы как-то в нем ориентироваться.
-	Это по сути все, что мне нужно для перенесения старой логики в имплементацию на CUDA. Остальные буфферы - это уже
-	служебные всякие ну для поддержки многочисленных смен контекста цпу<->гпу. Тут мы все сразу отправим и примем только
-	уже конечный результат, для которого, конечно тоже понадобится буффер, но это уже ближе к делу.
+	int blobLength = get<1>(blobTuple);
 
-	В плане производительности желательно хранить еще и структуру массивов, а не массив структур, так что надо будет еще 
-	и немного переделывать этот входящий блоб.
+	int metaLength;
+	std::memcpy(&metaLength, blob, 4);
+	int combinedDataOffset = metaLength + 4;
 
-	Короче когда я получаю char* я получаю трехмерный массив, примерно такой формы - 16, 24, 4. Мне надо поменять 
-	размерность на 4, 16, 24.
+	short spritesCount;
+	std::memcpy(&spritesCount, blob + combinedDataOffset + 2, 2);
+	short sizingsBlobLength;
+	std::memcpy(&sizingsBlobLength, blob + combinedDataOffset + 4, 2);
 
-	Вообще-то я туплю. Все это можно и нужно делать на стороне клиента. Чтобы на серверной стороне уже только послать все
-	это на гпу.
-	*/
+	short sizingsCount = sizingsBlobLength / 4;
 
-	if (directory != NULL) {
+	int registryStructureLength = 8;
 
-		while (direntStruct = readdir(directory)) {
-			string fullpath(path);
-			fullpath.append("\\");
-			fullpath.append(direntStruct->d_name);
-			if (fullpath.find(".npy") != std::string::npos)
-			{
-				printf("File Name: %s\n", fullpath.c_str()); //If you are using <stdio.h>
-				if (fullpath.find("sizings") != std::string::npos)
-					std::tuple<int*, int, std::vector<int>> sizings = numpy_reader::readInt32(fullpath);
-				else
-					std::tuple<char*, int, std::vector<int>> sizings = numpy_reader::readInt8(fullpath);
-			}
-			//std::cout << direntStruct->d_name << std::endl; //If you are using <iostream>
-		}
-	}
-	closedir(directory);
+	char* sizingsBlob = blob + combinedDataOffset + 6;
+	char* registryBlob = sizingsBlob + sizingsBlobLength;
+	int registryBlobLength = spritesCount * registryStructureLength;
+	char* dataBlob = registryBlob + registryBlobLength;
+	int dataBlobLength = blobLength - registryBlobLength - sizingsBlobLength - combinedDataOffset - 6;
 
-	/*char* fileName = nullptr;
-	while (fileGetter.getNextFile(fileName))
-		std::cout << fileName << '\n';*/
 
-	//std::cout << "Size of unsigned char: " << sizeof(unsigned char) << '\n';
-	//std::cout << "Size of short: " << sizeof(short) << '\n';
+	/*printf("metaLength: %d\n", metaLength);
 
-	//char* filename = (char*)"P:\\U\\Some2DGame\\Py\\info\\0.npy";
-	//char* result = readFileBytes(filename);
+	printf("spritesCount: %d\n", spritesCount);
+	printf("sizingsCount: %d\n", sizingsCount);
 
-	//unsigned char c1 = result[0];
-	//unsigned char c2 = result[1];
-	//printf("%x\n", c1);
-	//printf("%x\n", c2);
+	printf("sizings block length: %d\n", sizingsBlobLength);
+	printf("sizings[0]: %d\n", bit_converter::GetShort(sizingsBlob, 0));
+	printf("sizings[1]: %d\n", bit_converter::GetShort(sizingsBlob, 2));
+	printf("sizings[2]: %d\n", bit_converter::GetShort(sizingsBlob, 4));
+	printf("sizings[3]: %d\n", bit_converter::GetShort(sizingsBlob, 6));
+	printf("\n");
 
-	////printf("%x\n", result[0]);
-	////std::cout << "1st symbol: " << (unsigned int)result[0] << '\n';
-	//return 0;
+	printf("registry block length: %d\n", registryBlobLength);
+	printf("registryBlob[0]: %d\n", bit_converter::GetInt(registryBlob, 0));
+	printf("registryBlob[1]: %d\n", bit_converter::GetInt(registryBlob, 4));
+	printf("registryBlob[2]: %d\n", bit_converter::GetInt(registryBlob, 8));
+	printf("registryBlob[3]: %d\n", bit_converter::GetInt(registryBlob, 12));
+	printf("\n");
 
-	//char* filename = (char*)"P:\\U\\Some2DGame\\Py\\info\\0.npy";
-	//char* result = readFileBytes(filename);
+	for (size_t i = 0; i < spritesCount; i++)
+		printf("for registry %d: %d\n", i, bit_converter::GetInt(blob, metaLength + 4 + 6 + sizingsBlobLength + i * 4));
+	for (size_t i = 0; i < spritesCount; i++)
+		printf("for registry %d: %d\n", i, bit_converter::GetShort(blob, metaLength + 4 + 6 + sizingsBlobLength + spritesCount * 4 + i * 2));
+	for (size_t i = 0; i < spritesCount; i++)
+		printf("for registry %d: %d\n", i, bit_converter::GetShort(blob, metaLength + 4 + 6 + sizingsBlobLength + spritesCount * 6 + i * 2));
 
-	//unsigned char firstUChar;
-	//std::memcpy(&firstUChar, result, 1);
-
-	//if (firstUChar != 147)
-	//	return 1;
-
-	//short lengthOfHeader;
-	//std::memcpy(&lengthOfHeader, result + 8, 2);
-
-	//char* finalArray = result + 10 + lengthOfHeader;
-
-	//printf("1. %u\n", finalArray[0]);
-	//printf("2. %u\n", finalArray[1]);
-	//printf("3. %u\n", finalArray[2]);
-	//printf("4. %u\n", finalArray[3]);
-
-	////printf("%x\n", firstUChar);
-	//std::cout << "firstUChar :" << firstUChar << '\n';
-	//std::cout << "lengthOfHeader :" << lengthOfHeader << '\n';
-	///*for (size_t i = 0; i < 16; i++)
-	//{
-	//	std::cout << "Byte #" << i << ": " << (int)(unsigned char)&result[i] << '\n';
-	//}*/
-
-	//delete []result;
-}
-
-char* readFileBytes(const char* name)
-{
-	std::ifstream fl(name);
-	fl.seekg(0, std::ios::end);
-	size_t len = fl.tellg();
-	char* ret = new char[len];
-	fl.seekg(0, std::ios::beg);
-	fl.read(ret, len);
-	fl.close();
-	return ret;
+	printf("\n");
+	printf("datablobpos: \n");
+	printf("dataBlob[0]: %d\n", (int)bit_converter::GetChar(dataBlob, 0));
+	printf("dataBlob[1]: %d\n", (int)bit_converter::GetChar(dataBlob, 1));
+	printf("dataBlob[2]: %d\n", (int)bit_converter::GetChar(dataBlob, 2));
+	printf("dataBlob[3]: %d\n", (int)bit_converter::GetChar(dataBlob, 3));
+	printf("dataBlob[4]: %d\n", (int)bit_converter::GetChar(dataBlob, 4));
+	printf("dataBlob[5]: %d\n", (int)bit_converter::GetChar(dataBlob, 5));
+	printf("dataBlob[6]: %d\n", (int)bit_converter::GetChar(dataBlob, 6));
+	printf("dataBlob[7]: %d\n", (int)bit_converter::GetChar(dataBlob, 7));
+	printf("dataBlob[8]: %d\n", (int)bit_converter::GetChar(dataBlob, 8));
+	printf("dataBlob[9]: %d\n", (int)bit_converter::GetChar(dataBlob, 9));
+	printf("dataBlob[10]: %d\n", (int)bit_converter::GetChar(dataBlob, 10));
+	printf("dataBlob[11]: %d\n", (int)bit_converter::GetChar(dataBlob, 11));
+	printf("dataBlob[12]: %d\n", (int)bit_converter::GetChar(dataBlob, 12));
+	printf("dataBlob[13]: %d\n", (int)bit_converter::GetChar(dataBlob, 13));
+	printf("dataBlob[14]: %d\n", (int)bit_converter::GetChar(dataBlob, 14));
+	printf("dataBlob[15]: %d\n", (int)bit_converter::GetChar(dataBlob, 15));
+	printf("\n");*/
 }
