@@ -241,7 +241,42 @@ public class Optimizer : EditorWindow
             for (int i = 0; i < registry.Count; i++)
                 registryParalellized.AddRange(BitConverter.GetBytes((short)(registry[i].WidthAndHeight & 65535)));
 
-            var combinedData = new byte[dataList.Count + registry.Count * 8 + 4 + parallelizedSizingsList.Count + 2];
+            /*
+             * Войдмапы должны храниться по спрайтам, а там по сайзингам, повторяя структуру куды для лучшего затем прасинга.
+             * 
+             * Надо будет потом проверить правильность войд-мап...
+             */
+
+            var voidMaps = new List<List<byte>>();
+            var voidBytesCount = 0;
+            for (int i = 0; i < spritesCount; i++)
+            {
+                var newSpriteVoidMaps = new List<byte>();
+                var bitsCounter = (long)0;
+
+                var currentSpriteBytes = colorsResults.bytes[i];
+                var width = currentSpriteBytes.Length;
+                var height = currentSpriteBytes[0].Length;
+                for (int j = 0; j < sizingsDeconstructed.Length; j++)
+                {
+                    var sizing = sizingsDeconstructed[j];
+                    var sizingWidth = sizing[0];
+                    var sizingHeight = sizing[1];
+                    for (int x = 0; x < width - sizingWidth; x++)
+                    {
+                        for (int y = 0; y < height - sizingHeight; y++)
+                        {
+                            var alpha = currentSpriteBytes[x][y][3];
+                            writeBit(newSpriteVoidMaps, bitsCounter++, alpha == 0 ? 1 : 0);
+                        }
+                    }
+                }
+
+                voidMaps.Add(newSpriteVoidMaps);
+                voidBytesCount += newSpriteVoidMaps.Count;
+            }
+
+            var combinedData = new byte[dataList.Count + registry.Count * 8 + 4 + parallelizedSizingsList.Count + 2 + voidBytesCount];
 
             combinedData[0] = 0; //Эти два байта 
             combinedData[1] = 0; //зарезервированы
@@ -266,6 +301,17 @@ public class Optimizer : EditorWindow
 
             for (int i = 0; i < dataList.Count; i++)
                 combinedData[currentOffset + i] = dataList[i];
+            currentOffset += dataList.Count;
+
+            var i2 = 0;
+            for (int i = 0; i < voidMaps.Count; i++)
+                for (int j = 0; j < voidMaps[i].Count; j++)
+                    combinedData[currentOffset + i2++] = voidMaps[i][j];
+
+            Debug.Log($"sizings length = {parallelizedSizingsList.Count}");
+            Debug.Log($"registry length = {registryParalellized.Count}");
+            Debug.Log($"data length = {dataList.Count}");
+            Debug.Log($"voids length = {i2}");
 
             //var parallelizedSizingsArray = parallelizedSizingsList.ToArray();
             //Debug.Log($"Sizings length: {parallelizedSizingsArray.Length}");
@@ -344,6 +390,14 @@ public class Optimizer : EditorWindow
         }
 
         Repaint();
+    }
+
+    private void writeBit(List<byte> bitsContainer, long bitsCounter, int bit)
+    {
+        var reminder = (int)(bitsCounter % 8);
+        if (reminder == 0)
+            bitsContainer.Add(0);
+        bitsContainer[bitsContainer.Count - 1] |= (byte)((bit & 1) << (7 - reminder));
     }
 
     private async void launch(Algorythm algorythm, Sprite[] sprites, MyColor[][][] colors, MyVector2Float[] pivots)

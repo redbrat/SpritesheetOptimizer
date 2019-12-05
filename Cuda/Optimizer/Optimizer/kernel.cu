@@ -50,14 +50,26 @@ P.S. Тут только проблемы с адресацией опять ж�
 блок будет с глобал мемори. Это значит большие задержки и простой мультипроцессоров. Решение здесь - ограничить сильнее использование шаред мемори - пусть 
 лучше будет больше итераций. Т.е. вообще-то кол-ву памяти будет достаточно быть равным кол-ву потоков - 1024 потокам не нужно больше инфы в шаред мемори, чем 
 1024 + полщадь сайзинга (8х8=64 в нашем случае). Если на каждый пиксель надо будет иметь 5 байтов (4 байта цвета + 1 байт пустоты), это всего лишь около 5.3кб 
-памяти на блок в одно и то же время. Это значит на одном мультипроцессоре смогут сожительствовать 18 блоков. Думаю, может быть норм, но надо смотреть. Если 
-что - уменьшать размер блока и соответсвенно размер требуемой шаред мемори на блок, таким образом увеличивая кол-во блоков на процессор.
+памяти на блок в одно и то же время. Это значит на одном мультипроцессоре смогут сожительствовать 18 блоков. Думаю, может быть норм, особенно учитывя еще, что 
+в 1 процессоре одновременно могут проходить только 4 варпа, но надо смотреть. Вообще круто, что на моей карточке 96Кб общей памяти - наибольшее кол-во из 
+текущих. Посмотрим, что принесет 8.0 compute capability... В общем, если будет не хватать памяти, буду уменьшать размер блока и соответсвенно размер требуемой 
+шаред мемори на блок, таким образом увеличивая кол-во блоков на процессор.
+
+
+5.12.2019
+Все-таки решил заполнять карты пустот самому. Ибо для больших наборов спрайтов (а скорее всего наборы будут большими) эти карты пустот будут большого размера.
+Для 100 мегапикселей например, карта пустот с 22 сайзингами будет дополнительными 300 мегабайтами информации. Есть мнение (мое), что это быстрее обсчитается 
+на видеокарте, чем загрузится в память... Хотя все же нет, 300 мб не так много. Это во-первых. А во-вторых вычислительные мощности - дефицитный ресурс, узкое 
+место. Даже если все это и обсчитается быстрее, чем прочитается с диска и загрузится, шине и диску все равно делать нефига, а за то время пока они грузят, 
+карта обсчитает больше действителньо нужной инфы.
+
+P.S. Я ошибся - войдмапы занимают меньше места: не в 3 раза больше для 22 сайзингов, а всего где-то 3/4 размера. Забыл, что в каждом пикселе еще по 4 байта.
 */
 
 //Наполняем карты пустот. Эти карты должны быть по одной на сайзинг и размером с дату.
 __global__ void populateVoidMaps(short sizingsCount, short spritesCount, char* sizings, char* registry, char* data, char* voidMaps)
 {
-	printf("Hello from videocard! sizingsCount = %d. spritesCount = %d\n", sizingsCount, spritesCount);
+	//printf("Hello from videocard! sizingsCount = %d. spritesCount = %d\n", sizingsCount, spritesCount);
 
 
 }
@@ -86,7 +98,20 @@ int main()
 	char* registryBlob = sizingsBlob + sizingsBlobLength;
 	int registryBlobLength = spritesCount * registryStructureLength;
 	char* dataBlob = registryBlob + registryBlobLength;
-	int dataBlobLength = blobLength - registryBlobLength - sizingsBlobLength - combinedDataOffset - 6;
+	//int dataBlobLength = blobLength - registryBlobLength - sizingsBlobLength - combinedDataOffset - 6;
+	//char* dataBlobs = new char[spritesCount];
+
+	int dataBlobLength = 0;
+	for (size_t i = 0; i < spritesCount; i++)
+	{
+		//int offset = bit_converter::GetInt(registryBlob, i * 4);
+		int width = bit_converter::GetShort(registryBlob, spritesCount * 4 + i * 2);
+		int height = bit_converter::GetShort(registryBlob, spritesCount * 6 + i * 2);
+		dataBlobLength += width * height * 4;
+	}
+	char* voidsBlob = dataBlob + dataBlobLength;
+	//int voidsBlobLength = (dataBlobLength / 32 * sizingsCount) / 8 + 1;
+	int voidsBlobLength = blobLength - dataBlobLength - registryBlobLength - sizingsBlobLength - combinedDataOffset - 6;
 
 	char* deviceSizingsPtr;
 	cudaMalloc((void**)&deviceSizingsPtr, sizingsBlobLength);
@@ -94,10 +119,13 @@ int main()
 	cudaMalloc((void**)&deviceRegistryPtr, registryBlobLength);
 	char* deviceDataPtr;
 	cudaMalloc((void**)&deviceDataPtr, dataBlobLength);
+	char* deviceVoidsPtr;
+	cudaMalloc((void**)&deviceVoidsPtr, voidsBlobLength);
 
 	cudaMemcpy(deviceSizingsPtr, sizingsBlob, sizingsBlobLength, cudaMemcpyHostToDevice);
-	cudaMemcpy(deviceRegistryPtr, registryBlob, sizingsBlobLength, cudaMemcpyHostToDevice);
-	cudaMemcpy(deviceDataPtr, dataBlob, sizingsBlobLength, cudaMemcpyHostToDevice);
+	cudaMemcpy(deviceRegistryPtr, registryBlob, registryBlobLength, cudaMemcpyHostToDevice);
+	cudaMemcpy(deviceDataPtr, dataBlob, dataBlobLength, cudaMemcpyHostToDevice);
+	cudaMemcpy(deviceVoidsPtr, voidsBlob, voidsBlobLength, cudaMemcpyHostToDevice);
 
 	dim3 block(128);
 	dim3 grid(dataBlobLength / block.x);
@@ -112,7 +140,7 @@ int main()
 			short spriteWidth = bit_converter::GetShort(registryBlob, spritesCount * 4 + i * 2);
 			short spriteHeight = bit_converter::GetShort(registryBlob, spritesCount * 6 + i * 2);
 
-			voidMapsCount += (spriteWidth - sizingWidth) * (spriteHeight * sizingHeight);
+			voidMapsCount += (spriteWidth - sizingWidth) * (spriteHeight - sizingHeight);
 		}
 	}
 	char* voidMaps;
@@ -124,6 +152,7 @@ int main()
 	cudaFree(deviceSizingsPtr);
 	cudaFree(deviceRegistryPtr);
 	cudaFree(deviceDataPtr);
+	cudaFree(deviceVoidsPtr);
 	free(blob);
 
     return 0;
