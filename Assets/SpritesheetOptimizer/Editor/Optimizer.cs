@@ -197,7 +197,10 @@ public class Optimizer : EditorWindow
 
                 for (int x = 0; x < width; x++)
                     for (int y = 0; y < height; y++)
-                        dataList.Add(currentSpriteBytes[x][y][0]);
+                    {
+                        var val = currentSpriteBytes[x][y][0];
+                        dataList.Add(val);
+                    }
             }
 
             for (int i = 0; i < spritesCount; i++)
@@ -208,7 +211,10 @@ public class Optimizer : EditorWindow
 
                 for (int x = 0; x < width; x++)
                     for (int y = 0; y < height; y++)
-                        dataList.Add(currentSpriteBytes[x][y][1]);
+                    {
+                        var val = currentSpriteBytes[x][y][1];
+                        dataList.Add(val);
+                    }
             }
 
             for (int i = 0; i < spritesCount; i++)
@@ -219,7 +225,10 @@ public class Optimizer : EditorWindow
 
                 for (int x = 0; x < width; x++)
                     for (int y = 0; y < height; y++)
-                        dataList.Add(currentSpriteBytes[x][y][2]);
+                    {
+                        var val = currentSpriteBytes[x][y][2];
+                        dataList.Add(val);
+                    }
             }
 
             for (int i = 0; i < spritesCount; i++)
@@ -230,7 +239,10 @@ public class Optimizer : EditorWindow
 
                 for (int x = 0; x < width; x++)
                     for (int y = 0; y < height; y++)
-                        dataList.Add(currentSpriteBytes[x][y][3]);
+                    {
+                        var val = currentSpriteBytes[x][y][3];
+                        dataList.Add(val);
+                    }
             }
 
             var registryParalellized = new List<byte>();
