@@ -183,6 +183,7 @@ public class Optimizer : EditorWindow
                 parallelizedSizingsList.AddRange(BitConverter.GetBytes(sizingsDeconstructed[i][1]));
 
 
+            var dataBlobLineLength = 0;
             for (int i = 0; i < spritesCount; i++)
             {
                 var currentSpriteBytes = colorsResults.bytes[i];
@@ -195,6 +196,8 @@ public class Optimizer : EditorWindow
                 registryEntry.WidthAndHeight = widthAndHeight;
                 registry.Add(registryEntry);
 
+                dataBlobLineLength += width * height;
+
                 for (int x = 0; x < width; x++)
                     for (int y = 0; y < height; y++)
                     {
@@ -202,6 +205,8 @@ public class Optimizer : EditorWindow
                         dataList.Add(val);
                     }
             }
+
+            Debug.Log($"dataBlobLineLength = {dataBlobLineLength}");
 
             for (int i = 0; i < spritesCount; i++)
             {
@@ -288,7 +293,45 @@ public class Optimizer : EditorWindow
                 voidBytesCount += newSpriteVoidMaps.Count;
             }
 
-            var combinedData = new byte[dataList.Count + registry.Count * 8 + 4 + parallelizedSizingsList.Count + 2 + voidBytesCount];
+            var rFlags = new List<List<byte>>();
+            var gFlags = new List<List<byte>>();
+            var bFlags = new List<List<byte>>();
+            var aFlags = new List<List<byte>>();
+            var flagsCount = 0;
+            for (int i = 0; i < spritesCount; i++)
+            {
+                var newRFlagsList = new List<byte>();
+                var newGFlagsList = new List<byte>();
+                var newBFlagsList = new List<byte>();
+                var newAFlagsList = new List<byte>();
+                var bitsCounter = (long)0;
+
+                var currentSpriteBytes = colorsResults.bytes[i];
+                var width = currentSpriteBytes.Length;
+                var height = currentSpriteBytes[0].Length;
+                for (int x = 0; x < width; x++)
+                {
+                    for (int y = 0; y < height; y++)
+                    {
+                        var r = currentSpriteBytes[x][y][0];
+                        var g = currentSpriteBytes[x][y][1];
+                        var b = currentSpriteBytes[x][y][2];
+                        var a = currentSpriteBytes[x][y][3];
+                        writeBit(newRFlagsList, bitsCounter, r > 127 ? 1 : 0);
+                        writeBit(newGFlagsList, bitsCounter, g > 127 ? 1 : 0);
+                        writeBit(newBFlagsList, bitsCounter, b > 127 ? 1 : 0);
+                        writeBit(newAFlagsList, bitsCounter++, a > 127 ? 1 : 0);
+                    }
+                }
+
+                rFlags.Add(newRFlagsList);
+                gFlags.Add(newGFlagsList);
+                bFlags.Add(newBFlagsList);
+                aFlags.Add(newAFlagsList);
+                flagsCount += newRFlagsList.Count;
+            }
+
+            var combinedData = new byte[dataList.Count + registry.Count * 8 + 4 + parallelizedSizingsList.Count + 2 + 4 + voidBytesCount + 4 + flagsCount * 4];
 
             combinedData[0] = 0; //Эти два байта 
             combinedData[1] = 0; //зарезервированы
@@ -315,15 +358,59 @@ public class Optimizer : EditorWindow
                 combinedData[currentOffset + i] = dataList[i];
             currentOffset += dataList.Count;
 
+            Debug.Log($"voidBytesCount = {voidBytesCount}");
+            combinedData[currentOffset] = (byte)(voidBytesCount & 255);
+            combinedData[currentOffset + 1] = (byte)(voidBytesCount >> 8 & 255);
+            combinedData[currentOffset + 2] = (byte)(voidBytesCount >> 16 & 255);
+            combinedData[currentOffset + 3] = (byte)(voidBytesCount >> 24 & 255);
+            currentOffset += 4;
+
             var i2 = 0;
             for (int i = 0; i < voidMaps.Count; i++)
                 for (int j = 0; j < voidMaps[i].Count; j++)
                     combinedData[currentOffset + i2++] = voidMaps[i][j];
+            currentOffset += voidBytesCount;
+
+            Debug.Log($"flagsCount = {flagsCount}");
+            combinedData[currentOffset] = (byte)(flagsCount & 255);
+            combinedData[currentOffset + 1] = (byte)(flagsCount >> 8 & 255);
+            combinedData[currentOffset + 2] = (byte)(flagsCount >> 16 & 255);
+            combinedData[currentOffset + 3] = (byte)(flagsCount >> 24 & 255);
+            currentOffset += 4;
+
+            i2 = 0;
+            for (int i = 0; i < rFlags.Count; i++)
+                for (int j = 0; j < rFlags[i].Count; j++)
+                    combinedData[currentOffset + i2++] = rFlags[i][j];
+            currentOffset += flagsCount;
+            i2 = 0;
+            for (int i = 0; i < gFlags.Count; i++)
+                for (int j = 0; j < gFlags[i].Count; j++)
+                    combinedData[currentOffset + i2++] = gFlags[i][j];
+            currentOffset += flagsCount;
+            i2 = 0;
+            for (int i = 0; i < bFlags.Count; i++)
+                for (int j = 0; j < bFlags[i].Count; j++)
+                    combinedData[currentOffset + i2++] = bFlags[i][j];
+            currentOffset += flagsCount;
+            i2 = 0;
+            for (int i = 0; i < aFlags.Count; i++)
+                for (int j = 0; j < aFlags[i].Count; j++)
+                    combinedData[currentOffset + i2++] = aFlags[i][j];
+            currentOffset += flagsCount;
 
             Debug.Log($"sizings length = {parallelizedSizingsList.Count}");
             Debug.Log($"registry length = {registryParalellized.Count}");
             Debug.Log($"data length = {dataList.Count}");
-            Debug.Log($"voids length = {i2}");
+
+            for (int i = 0; i < 16; i++)
+                Debug.Log($"R flag {i}: {rFlags[0][i]}");
+            for (int i = 0; i < 16; i++)
+                Debug.Log($"R flag {i}: {gFlags[0][i]}");
+            for (int i = 0; i < 16; i++)
+                Debug.Log($"R flag {i}: {bFlags[0][i]}");
+            for (int i = 0; i < 16; i++)
+                Debug.Log($"R flag {i}: {aFlags[0][i]}");
 
             //var parallelizedSizingsArray = parallelizedSizingsList.ToArray();
             //Debug.Log($"Sizings length: {parallelizedSizingsArray.Length}");

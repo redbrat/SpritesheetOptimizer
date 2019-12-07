@@ -69,9 +69,91 @@ P.S. Я ошибся - войдмапы занимают меньше места
 6.12.2019
 Ок, я что-то не подумал. Кернелы не могут выполняться по-настоящему параллельно. Поэтому надо делать все одним кернелом. Какие следствия из этого? Да
 собственно не такие уж большие, раз я решил разбивать задачи по блокам не равномерно. Просто теперь blockIdx.x будет содержать трехмерным.
+
+Ок, с адресацией решили. Но что теперь делать с дайверженси? Пожалуй уже сейчас пора принимать меры, потому что мы уже кешируем домен, а домен разным потокам 
+нужен все больше и больше разный.
+
+Итак, разберемся что же происходит у нас на уровне блока. По сути мы хотим предотвратить дайверженси разделив задачу на небольшие участки. Это значит, нам 
+понадобится трекать потоки, которые уже закончили работу и регулярно проводить компрессию. В принципе можно даже ввести параметр - как часто мы хотим 
+проводить компрессию на уровне блока и через него найти компромисс между оккупацией и производительностью.
+
+Это все хорошо, но это все влечет за собой то, что потоки должны будут свичиться между задачами. Не слишком ли большой оверхед для возможности ограничить
+дивергнецию? Да нет вроде. Тем более что не обязательно юзать шаред мемори для хранения контекстов. Хотя нет, нужно - шафл работает только на уровне ворпа. 
+В контексте надо будет хранить координату, на которой мы остановились. В пределах 1 спрайта это вполне может занимать 1 байт. Реже 2 байта. А можно вообще 
+просто присылать в кернел максимальное значение ширины/высоты и хранить побитно.
+
+Так что если какой-то поток закончил обработку (нашел такую же область и посчитал себя повтором), то он прибавляет кол-во простаивающих потоков на 1. А во 
+время следующей процедуры сжатия, он возмет себе контекст соседа и продолжит его работа с момента на котором тот остановился. Ах да, еще контект должен 
+содержать порядковый номер области, чтобы поток знал какая область его. И все, вся инфа у него есть, пошел работать. А поток, чья работа ему досталась взял 
+себе например новую область, которую пока еще никто себе не брал. Или опять же - область соседа, если есть такая.
+
+Только я вот начал сомневаться в разумности загрузки домена в шаред-память. В конце-концов как узнать какую область нам грузить? Даже в самом простом случае 
+это нетривиально, учитывая, что загрузить надо с запасом в сайзинг. Кто будет эти доп. данные грузить? А как быть в случае с пропусками? При большом разбросе 
+есть вероятность, что нам понадобится весь кандидатский спрайт. Думаю, надо отказаться от идеи кеширования домена в шаред-мемори. Может это и к лучшему. 
+Во-первых будет большая оккупация. Во-вторых можно будет не особо экономить на других вещах, скажем, не хранить данные контекста побитово, а тупо каждому 
+выделить по 2 байта с барского плеча и пусть ни в чем себе не отказывают. Так 1 блок будет занимать 6Кб. Вообще-то все равно дофига, оккупация будет 
+слабенькой. Лучше уже хранить побитово. Да уж, если контекст столько занимает, может и все равно пришлось бы отказаться от кеша, т.к. лучше обойтись без кеша, 
+чем иметь большую дивергенцию. Получается, что для средних заданий, скажем изображения до 64х64 и до 256 спрайтов у нас контекст одного потока займет 20 
+битов, а это оккупация 38 блоков на см! Большие же задания приведут к меньшей оккупации, но, т.к. там сами блоки будут выполняться дольше, думаю, это в 
+какой-то мере скомпенсирует меньшее кол-во блоков на см.
+
+А стоит ли вообще заморачиваться с контекстами? Вообще-то чем больше размеры спрайта тем более стоит и чем меньше тем менее. А раз мы ориентируемся на 
+большие спрайты, то, видимо, стоит. Допустим, у нас задание, состоящее из спрайтов 256х192. Это (256 - 8) * (192 - 8) * 64 = 2_920_448 операций для каждого 
+потока. Выигрыш может быть значительным.
+
+
+7.12.19
+Ок, оказалось, что лучше загружать в см не наш спрайт а спрайт кандидата, т.к. наш спрайт всегда разный у каждого блока и на карте более оптимизирована для 
+массовых запросов глобальная память. Запрос же одного и того же значения разными потоками, который гораздо чаще будет осуществляться именно к спрайту 
+кандидата, более оптимизирован из шаред мемори - там по сути идет 1 запрос и остальным потокам это значение раздается мультикастом. Я подумываю сделать такую 
+оптимизацию - загружать в шаред мемори не всю инфу, а лишь по одному каналу. Т.к. нас интересуют совпадения, этой инфы хватит в 255 из 256 случаев, т.е. мы 
+таким образом уменьшаем пол-во запросов к глобал мемори до 1/256 случая.
+
+Таким образом использование шаред мемори увеличивается на 1024 байта, если мы кешируем только кандидатский спрайт и до 2 кб, если еще и свой. Хотя... 
+Вообще-то да, там ведь из-за ужимания будет та же проблема с невозможностью предсказать наличие в шаред-мемори ни одного пикселя кроме своего. Да, ок. 
+Получается, единственное что мы имеем возможность кешировать с таким подходом - это вспомогательные флаги, скажем, карты пустот, или может быть придумать 
+еще какой-то признак, типа r >= 127, сразу уменьшая кол-во загрузок из глобальной памяти вдвое. Для большого спрайта, размером, скажем, 256х256, такая маска 
+будет весить 8 кб, что вполне нормально.
+
+Можно было бы конечно разделить спрайты на дальнейшие куски, таким образом, чтобы стало возможным загрузить всю инфу этого куска в шаред-память полностью и 
+это не сильно сказалось бы на оккупанси. Давайте посчитаем - допустим приемлемое кол-во занимаемой памяти для блока - 16 кб, это 6 резидентов на процессоре. 
+Все равно мало, но допустим. Тогда мы должны будем ограничиться куском в 4096 пикселей, это, например, картинка 64х64. И это только для одного спрайта. 
+Загрузив два спрайта, пикселей будет всего 2048, или куски примерно 64х32. Получается, каждый поток сможет проверить лишь 2048 областей. А учитывая 
+использование войдмапов и того меньше. В общем, не факт, что оно того стоит, непосредственная работа может быть сделается быстрее, чем загрузится такое 
+кол-во памяти, т.е. налицо будет неравномерное распределение нагрузки по ресурсам видеокарты. Или, наоборот более равномерное? Вроде бы пока инфа грузится 
+процессор может выполнять новые ворпы. Но в случае с 16 кб, если всего 5 альтернативных блоков по 32 ворпа, т.е. 160 альтернативных ворпов. Мне кажется, если 
+уж делать нагружать память по полной, нужно обеспечить высокую оккупацию. Если сделать так, что блок будет работать с 4 кб инфы от своего и кандидата, то 
+это по 8 кб на блок и 12 резидентов, или 384 альтернативных ворпа.
+
+Так, так, нет, отмена. Максимальное кол-во варпов-резидентов на см составляет 64 для моей архитектуры, значит, в целом, для блока шириной 1024, оптимальное 
+потребление шаред памяти - 48 кб. Тогда на см будет ровно два блока-резидента и вся память будет зайдествована. Что это значит? Это значит что мы не можем 
+обеспечить высокую оккупацию за счет увеличения кол-ва блоков или ворпов (<=64) или потоков (<=2048) в принципе. Таким образом нам остается использовать эти 
+48 кб на блок максимально эффективно, в том числе для уменьше дайерженси и увеличения оккупации своими силами. А это как раз, что достигается тем, о чем я 
+рассуждал в позапрошлом абзаце. Но тогда я не знал про это ограничение. Теперь нам остается только решить на что потратить эти 48 кб.
+
+Предположим, что средний размер спрайта у нас будет 256х256.
+Тогда одна битовая маска у нас будет занимать 8кб. Мы можем взять, например:
+1 карту пустоты полную.
+4 битовых карты для 4х каналов.
+Оставшиеся 8 кб - это 8 байтов информации на поток. Пока что из них я вижу 6 уйдет на контекст - 2 шорта для описания своей области и кандидатской и по 1 
+байту на описание текущей точки остановки. Вообще, я могу выделить и по полтора байта, таким образом сразу предупредив поддержку спрайтов до 4096х4096. И 
+таким образом у меня останется всего 1 неиспользованный байт.
+
 */
 
-//Наполняем карты пустот. Эти карты должны быть по одной на сайзинг и размером с дату.
+
+#define BLOCK_SIZE 1024
+#define DIVERGENCE_CONTROL_CYCLE 128 //Через какое кол-во операций мы проверяем на необходимость ужатия, чтобы избежать дивергенции?
+#define DIVERGENCE_CONTROL_THRESHOLD 32 //Если какое число потоков простаивают надо ужимать? Думаю это значение вряд ли когда-нибудь изменится.
+
+__constant__ int SpritesCountBits;
+__constant__ int MaxWidthBits;
+__constant__ int MaxHeightBits;
+__constant__ int ContextBits;
+__constant__ int SpritesCountBitMask;
+__constant__ int MaxWidthBitMask;
+__constant__ int MaxHeightBitMask;
+
 __global__ void mainKernel(int sizingsCount, short* sizingWidths, short* sizingHeights, int spritesCount, int* offsets, short* widths, short* heights, unsigned char* r, unsigned char* g, unsigned char* b, unsigned char* a)
 {
 	int ourSpriteIndex = blockIdx.x;
@@ -81,16 +163,29 @@ __global__ void mainKernel(int sizingsCount, short* sizingWidths, short* sizingH
 	int ourOffset = offsets[ourSpriteIndex];
 	int ourWidth = widths[ourSpriteIndex];
 	int ourHeight = heights[ourSpriteIndex];
+	int ourSquare = ourWidth * ourHeight;
 
 	int candidateSpriteOffset = offsets[candidateSpriteIndex];
 	int candidateSpriteWidth = widths[candidateSpriteIndex];
 	int candidateSpriteHeight = heights[candidateSpriteIndex];
+	int candidateSpriteSquare = candidateSpriteWidth * candidateSpriteHeight;
 
 	int sizingWidth = sizingWidths[sizingIndex];
 	int sizingHeight = sizingHeights[sizingIndex];
 
-	if (threadIdx.x == 0)
-		printf("Hello from block! My sprite is #%d (width %d, height %d) and I work with sprite %d (width %d, height %d) and sizing %d (width %d, height %d) \n", ourSpriteIndex, ourWidth, ourHeight, candidateSpriteIndex, candidateSpriteWidth, candidateSpriteHeight, sizingIndex, sizingWidth, sizingHeight);
+
+	//if (threadIdx.x == 0)
+	//	printf("Hello from block! My sprite is #%d (width %d, height %d) and I work with sprite %d (width %d, height %d) and sizing %d (width %d, height %d) \n", ourSpriteIndex, ourWidth, ourHeight, candidateSpriteIndex, candidateSpriteWidth, candidateSpriteHeight, sizingIndex, sizingWidth, sizingHeight);
+
+	extern __shared__ int contexts[];
+
+	int myInitialContextAddress = threadIdx.x * ContextBits;
+	int myInitialContextAddressByteIndex = myInitialContextAddress / 8;
+	int myInitialContextAddressBitOffset = myInitialContextAddressByteIndex % 8;
+
+	int myArea = threadIdx.x;
+	int currentCandidateX = 0;
+	int currentCandidateY = 0;
 }
 
 __global__ void testKernel(int sizingsCount, short* sizingWidths, short* sizingHeights, int spritesCount, int* offsets, short* widths, short* heights, unsigned char* r, unsigned char* g, unsigned char* b, unsigned char* a)
@@ -105,6 +200,43 @@ __global__ void testKernel(int sizingsCount, short* sizingWidths, short* sizingH
 	int sizingIndex = blockIdx.z;
 
 	int ourOffset = offsets[ourSpriteIndex];
+}
+
+int getBitsRequired(int value)
+{
+	if (value < 2)
+		return 1;
+	if (value < 4)
+		return 2;
+	if (value < 8)
+		return 3;
+	if (value < 16)
+		return 4;
+	if (value < 32)
+		return 5;
+	if (value < 64)
+		return 6;
+	if (value < 128)
+		return 7;
+	if (value < 256)
+		return 8;
+	if (value < 512)
+		return 9;
+	if (value < 1024)
+		return 10;
+	if (value < 2048)
+		return 11;
+	if (value < 4096)
+		return 12;
+	if (value < 8192)
+		return 13;
+	if (value < 16384)
+		return 14;
+	if (value < 32768)
+		return 15;
+	if (value < 65536)
+		return 16;
+	return -1;
 }
 
 int main()
@@ -135,17 +267,48 @@ int main()
 	//char* dataBlobs = new char[spritesCount];
 
 	int dataBlobLineLength = 0;
+	int maxWidth = 0;
+	int maxHeight = 0;
 	for (size_t i = 0; i < spritesCount; i++)
 	{
 		int width = bit_converter::GetShort(registryBlob, spritesCount * 4 + i * 2);
 		int height = bit_converter::GetShort(registryBlob, spritesCount * 6 + i * 2);
+		if (width > maxWidth)
+			maxWidth = width;
+		if (height > maxHeight)
+			maxHeight = height;
 		dataBlobLineLength += width * height;
 	}
-	int dataBlobLength = dataBlobLineLength * 4;
-	char* voidsBlob = dataBlob + dataBlobLength;
-	//int voidsBlobLength = (dataBlobLength / 32 * sizingsCount) / 8 + 1;
-	int voidsBlobLength = blobLength - dataBlobLength - registryBlobLength - sizingsBlobLength - combinedDataOffset - 6;
 
+	int spritesCountBits = getBitsRequired(spritesCount);
+	int maxWidthBits = getBitsRequired(maxWidth);
+	int maxHeightBits = getBitsRequired(maxHeight);
+	int contextBits = SpritesCountBits + MaxWidthBits + MaxHeightBits;
+	cudaMemcpyToSymbol(&SpritesCountBits, &spritesCountBits, 4);
+	cudaMemcpyToSymbol(&MaxWidthBits, &maxWidthBits, 4);
+	cudaMemcpyToSymbol(&MaxHeightBits, &maxHeightBits, 4);
+	cudaMemcpyToSymbol(&ContextBits, &contextBits, 4);
+
+	int spritesCountBitMask = 1 << spritesCountBits - 1;
+	int maxWidthBitMask = 1 << maxWidthBits - 1;
+	int maxHeightBitMask = 1 << maxHeightBits - 1;
+	cudaMemcpyToSymbol(&SpritesCountBitMask, &spritesCountBitMask, 4);
+	cudaMemcpyToSymbol(&MaxWidthBitMask, &maxWidthBitMask, 4);
+	cudaMemcpyToSymbol(&MaxHeightBitMask, &maxHeightBitMask, 4);
+
+	int dataBlobLength = dataBlobLineLength * 4;
+	//int voidsBlobLength = (dataBlobLength / 32 * sizingsCount) / 8 + 1;
+	//int voidsBlobLength = blobLength - dataBlobLength - registryBlobLength - sizingsBlobLength - combinedDataOffset - 6;
+	int voidsBlobLength = bit_converter::GetInt(dataBlob + dataBlobLength, 0);
+	char* voidsBlob = dataBlob + dataBlobLength + 4;
+
+
+	int lineMaskLenght = bit_converter::GetInt(voidsBlob + voidsBlobLength, 0);
+
+	char* rFlagsBlob = voidsBlob + voidsBlobLength + 4;
+	char* gFlagsBlob = rFlagsBlob + lineMaskLenght;
+	char* bFlagsBlob = gFlagsBlob + lineMaskLenght;
+	char* aFlagsBlob = bFlagsBlob + lineMaskLenght;
 
 	char* deviceSizingsPtr;
 	cudaMalloc((void**)&deviceSizingsPtr, sizingsBlobLength);
@@ -156,10 +319,24 @@ int main()
 	char* deviceVoidsPtr;
 	cudaMalloc((void**)&deviceVoidsPtr, voidsBlobLength);
 
+	char* deviceRFlagsPtr;
+	cudaMalloc((void**)&deviceRFlagsPtr, lineMaskLenght);
+	char* deviceGFlagsPtr;
+	cudaMalloc((void**)&deviceGFlagsPtr, lineMaskLenght);
+	char* deviceBFlagsPtr;
+	cudaMalloc((void**)&deviceBFlagsPtr, lineMaskLenght);
+	char* deviceAFlagsPtr;
+	cudaMalloc((void**)&deviceAFlagsPtr, lineMaskLenght);
+
 	cudaMemcpy(deviceSizingsPtr, sizingsBlob, sizingsBlobLength, cudaMemcpyHostToDevice);
 	cudaMemcpy(deviceRegistryPtr, registryBlob, registryBlobLength, cudaMemcpyHostToDevice);
 	cudaMemcpy(deviceDataPtr, dataBlob, dataBlobLength, cudaMemcpyHostToDevice);
 	cudaMemcpy(deviceVoidsPtr, voidsBlob, voidsBlobLength, cudaMemcpyHostToDevice);
+
+	cudaMemcpy(deviceRFlagsPtr, rFlagsBlob, lineMaskLenght, cudaMemcpyHostToDevice);
+	cudaMemcpy(deviceGFlagsPtr, gFlagsBlob, lineMaskLenght, cudaMemcpyHostToDevice);
+	cudaMemcpy(deviceBFlagsPtr, bFlagsBlob, lineMaskLenght, cudaMemcpyHostToDevice);
+	cudaMemcpy(deviceAFlagsPtr, aFlagsBlob, lineMaskLenght, cudaMemcpyHostToDevice);
 
 
 	int* offsets = (int*)deviceRegistryPtr;
@@ -179,9 +356,18 @@ int main()
 	unsigned char* b = (unsigned char*)(deviceDataPtr + dataBlobLineLength * 2);
 	unsigned char* a = (unsigned char*)(deviceDataPtr + dataBlobLineLength * 3);
 
-	dim3 block(1024);
+	for (size_t i = 0; i < 16; i++)
+		printf("R flag %d: %d\n", i, (unsigned char)rFlagsBlob[i]);
+	for (size_t i = 0; i < 16; i++)
+		printf("G flag %d: %d\n", i, (unsigned char)gFlagsBlob[i]);
+	for (size_t i = 0; i < 16; i++)
+		printf("B flag %d: %d\n", i, (unsigned char)bFlagsBlob[i]);
+	for (size_t i = 0; i < 16; i++)
+		printf("A flag %d: %d\n", i, (unsigned char)aFlagsBlob[i]);
+
+	dim3 block(BLOCK_SIZE);
 	dim3 grid(spritesCount, spritesCount, sizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
-	mainKernel << <grid, block >> > (sizingsCount, sizingWidths, sizingHeights, spritesCount, offsets, widths, heights, r, g, b, a);
+	mainKernel << <grid, block, BLOCK_SIZE * contextBits / 32 + 1 >> > (sizingsCount, sizingWidths, sizingHeights, spritesCount, offsets, widths, heights, r, g, b, a);
 
 	cudaDeviceSynchronize();
 
@@ -189,6 +375,12 @@ int main()
 	cudaFree(deviceRegistryPtr);
 	cudaFree(deviceDataPtr);
 	cudaFree(deviceVoidsPtr);
+
+	cudaFree(deviceRFlagsPtr);
+	cudaFree(deviceGFlagsPtr);
+	cudaFree(deviceBFlagsPtr);
+	cudaFree(deviceAFlagsPtr);
+
 	free(blob);
 
 	return 0;
