@@ -16,7 +16,7 @@
         int opsCountResult = currentOpsCount;
         int weAreReapeatingResult = 0; //Флаг обозначающий, что мы - повтор
 
-        int spriteOffset = spriteInfo.SpritesDataOffset;
+        int spriteOffset = spriteInfo.SpritesByteOffset;
         int spriteWidth = spriteInfo.WidthAndHeight >> 16 & 65535;
         int spriteHeight = spriteInfo.WidthAndHeight & 65535;
 
@@ -165,7 +165,7 @@
         }
 
         var areaSpriteInfo = RegistryBuffer[areaSpriteIndex];
-        int areaSpriteOffset = areaSpriteInfo.SpritesDataOffset;
+        int areaSpriteOffset = areaSpriteInfo.SpritesByteOffset;
         int areaSpriteWidth = areaSpriteInfo.WidthAndHeight >> 16 & 65535;
         int areaSpriteHeight = areaSpriteInfo.WidthAndHeight & 65535;
 

@@ -192,7 +192,8 @@ public class Optimizer : EditorWindow
 
                 var widthAndHeight = width << 16 | height;
                 var registryEntry = new registryStruct();
-                registryEntry.SpritesDataOffset = dataList.Count;
+                registryEntry.SpritesByteOffset = dataList.Count;
+                registryEntry.SpritesBitOffset = dataList.Count / 8 + (dataList.Count % 8 == 0 ? 0 : 1);
                 registryEntry.WidthAndHeight = widthAndHeight;
                 registry.Add(registryEntry);
 
@@ -252,7 +253,9 @@ public class Optimizer : EditorWindow
 
             var registryParalellized = new List<byte>();
             for (int i = 0; i < registry.Count; i++)
-                registryParalellized.AddRange(BitConverter.GetBytes(registry[i].SpritesDataOffset));
+                registryParalellized.AddRange(BitConverter.GetBytes(registry[i].SpritesByteOffset));
+            for (int i = 0; i < registry.Count; i++)
+                registryParalellized.AddRange(BitConverter.GetBytes(registry[i].SpritesBitOffset));
             for (int i = 0; i < registry.Count; i++)
                 registryParalellized.AddRange(BitConverter.GetBytes((short)(registry[i].WidthAndHeight >> 16 & 65535)));
             for (int i = 0; i < registry.Count; i++)
@@ -265,10 +268,12 @@ public class Optimizer : EditorWindow
              */
 
             var voidMaps = new List<List<byte>>();
+            var voidMapsLengths = new List<List<int>>();
             var voidBytesCount = 0;
             for (int i = 0; i < spritesCount; i++)
             {
                 var newSpriteVoidMaps = new List<byte>();
+                var newSpriteVoidMapsLengths = new List<int>();
                 var bitsCounter = (long)0;
 
                 var currentSpriteBytes = colorsResults.bytes[i];
@@ -279,17 +284,21 @@ public class Optimizer : EditorWindow
                     var sizing = sizingsDeconstructed[j];
                     var sizingWidth = sizing[0];
                     var sizingHeight = sizing[1];
+                    var localBitsCounter = 0;
                     for (int x = 0; x < width - sizingWidth; x++)
                     {
                         for (int y = 0; y < height - sizingHeight; y++)
                         {
                             var alpha = currentSpriteBytes[x][y][3];
                             writeBit(newSpriteVoidMaps, bitsCounter++, alpha == 0 ? 1 : 0);
+                            localBitsCounter++;
                         }
                     }
+                    newSpriteVoidMapsLengths.Add(localBitsCounter);
                 }
 
                 voidMaps.Add(newSpriteVoidMaps);
+                voidMapsLengths.Add(newSpriteVoidMapsLengths);
                 voidBytesCount += newSpriteVoidMaps.Count;
             }
 
@@ -331,7 +340,9 @@ public class Optimizer : EditorWindow
                 flagsCount += newRFlagsList.Count;
             }
 
-            var combinedData = new byte[dataList.Count + registry.Count * 8 + 4 + parallelizedSizingsList.Count + 2 + 4 + voidBytesCount + 4 + flagsCount * 4];
+            var voidMapsLengthsCount = spritesCount * sizings.Count();
+
+            var combinedData = new byte[dataList.Count + registry.Count * 12 + 4 + parallelizedSizingsList.Count + 2 + 4 + voidBytesCount + 4 + flagsCount * 4 + voidMapsLengthsCount * 4];
 
             combinedData[0] = 0; //Эти два байта 
             combinedData[1] = 0; //зарезервированы
@@ -398,6 +409,21 @@ public class Optimizer : EditorWindow
                 for (int j = 0; j < aFlags[i].Count; j++)
                     combinedData[currentOffset + i2++] = aFlags[i][j];
             currentOffset += flagsCount;
+
+            i2 = 0;
+            for (int i = 0; i < voidMapsLengths.Count; i++)
+            {
+                for (int j = 0; j < voidMapsLengths[i].Count; j++)
+                {
+                    combinedData[currentOffset + i2++] = (byte)(voidMapsLengths[i][j] & 255);
+                    combinedData[currentOffset + i2++] = (byte)(voidMapsLengths[i][j] >> 8 & 255);
+                    combinedData[currentOffset + i2++] = (byte)(voidMapsLengths[i][j] >> 16 & 255);
+                    combinedData[currentOffset + i2++] = (byte)(voidMapsLengths[i][j] >> 24 & 255);
+
+                    Debug.Log($"void map for i({i}), j({j}): {voidMapsLengths[i][j]}");
+                }
+            }
+            currentOffset += voidMapsLengthsCount * 4;
 
             Debug.Log($"sizings length = {parallelizedSizingsList.Count}");
             Debug.Log($"registry length = {registryParalellized.Count}");

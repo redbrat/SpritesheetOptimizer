@@ -129,12 +129,14 @@ public class Algorythm
 
     public struct registryStruct
     {
-        public int SpritesDataOffset; //С какой позиции в буффере data начинается данный спрайт
+        public int SpritesByteOffset; //С какой позиции в байтовых буфферах начинается данный спрайт
+        public int SpritesBitOffset; //С какой позиции в битовыйх буфферах начинается данный спрайт
         public int WidthAndHeight;
 
-        public registryStruct(int spritesDataOffset, int widthAndHeight)
+        public registryStruct(int spritesByteOffset, int spritesBitOffset, int widthAndHeight)
         {
-            SpritesDataOffset = spritesDataOffset;
+            SpritesByteOffset = spritesByteOffset;
+            SpritesBitOffset = spritesBitOffset;
             WidthAndHeight = widthAndHeight;
         }
     }
@@ -237,7 +239,7 @@ public class Algorythm
             var width = sprite.Length;
             var height = sprite[0].Length;
 
-            registry[i] = new registryStruct(dataOffset, width << 16 | height);
+            registry[i] = new registryStruct(dataOffset, dataOffset / 8 + (dataOffset % 8 == 0 ? 0 : 1), width << 16 | height);
             var printsCount = 0;
             var printing = false;
             if (dataOffset == 11728)
@@ -956,7 +958,7 @@ public class Algorythm
             //var theWinnerArea = MyArea.CreateFromSprite(_sprites[finalOfTheBest.Value.spriteIndex], finalOfTheBest.Value.spriteIndex, finalOfTheBest.Value.position.X, finalOfTheBest.Value.position.Y, finalOfTheBest.Key);
             stopwatch.Start($"Areas removing from data");
             var opaqueCount = 0;
-            var theWinnerAreaSpriteDataOffset = registry[finalOfTheBest.Value.spriteIndex].SpritesDataOffset;
+            var theWinnerAreaSpriteDataOffset = registry[finalOfTheBest.Value.spriteIndex].SpritesByteOffset;
             var theWinnerAreaSpriteHeight = registry[finalOfTheBest.Value.spriteIndex].WidthAndHeight & 65535;
             for (int areaX = 0; areaX < finalOfTheBest.Key.X; areaX++)
             {
@@ -1002,7 +1004,7 @@ public class Algorythm
                 var lastSpriteX = spriteWidth - finalOfTheBest.Key.X + 1;
                 var lastSpriteY = spriteHeight - finalOfTheBest.Key.Y + 1;
 
-                var spriteDataOffset = registry[spriteIndex].SpritesDataOffset;
+                var spriteDataOffset = registry[spriteIndex].SpritesByteOffset;
 
                 for (int spriteX = 0; spriteX < lastSpriteX; spriteX++)
                 {
@@ -1125,7 +1127,7 @@ public class Algorythm
             fileInfo.Width = spriteWidth;
             fileInfo.Height = spriteHeight;
 
-            var spriteDataOffset = registry[i].SpritesDataOffset;
+            var spriteDataOffset = registry[i].SpritesByteOffset;
 
             var colors = new Color[spriteWidth * spriteHeight];
             for (int spriteX = 0; spriteX < spriteWidth; spriteX++)
@@ -1153,7 +1155,7 @@ public class Algorythm
 
     private int getCoincidentsCount(KeyValuePair<MyVector2, (int spriteIndex, MyVector2 position, int count, int score, string test)> kvp, registryStruct[] registry, int[] data)
     {
-        var areaSpriteDataOffset = registry[kvp.Value.spriteIndex].SpritesDataOffset;
+        var areaSpriteDataOffset = registry[kvp.Value.spriteIndex].SpritesByteOffset;
         var areaSpriteHeight = registry[kvp.Value.spriteIndex].WidthAndHeight & 65535;
 
         var result = 0;
@@ -1166,7 +1168,7 @@ public class Algorythm
             var lastSpriteX = spriteWidth - kvp.Key.X + 1;
             var lastSpriteY = spriteHeight - kvp.Key.Y + 1;
 
-            var spriteDataOffset = registry[spriteIndex].SpritesDataOffset;
+            var spriteDataOffset = registry[spriteIndex].SpritesByteOffset;
 
             for (int spriteX = 0; spriteX < lastSpriteX; spriteX++)
             {
@@ -1278,7 +1280,7 @@ public class Algorythm
             var width = sprite.Length;
             var height = sprite[0].Length;
 
-            registry[i] = new registryStruct(dataOffset, width << 16 | height);
+            registry[i] = new registryStruct(dataOffset, dataOffset / 8 + (dataOffset % 8 == 0 ? 0 : 1), width << 16 | height);
 
             for (int x = 0; x < width; x++)
                 for (int y = 0; y < height; y++)

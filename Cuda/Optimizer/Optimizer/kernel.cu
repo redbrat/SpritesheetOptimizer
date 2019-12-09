@@ -128,8 +128,8 @@ P.S. Я ошибся - войдмапы занимают меньше места
 Так, так, нет, отмена. Максимальное кол-во варпов-резидентов на см составляет 64 для моей архитектуры, значит, в целом, для блока шириной 1024, оптимальное 
 потребление шаред памяти - 48 кб. Тогда на см будет ровно два блока-резидента и вся память будет зайдествована. Что это значит? Это значит что мы не можем 
 обеспечить высокую оккупацию за счет увеличения кол-ва блоков или ворпов (<=64) или потоков (<=2048) в принципе. Таким образом нам остается использовать эти 
-48 кб на блок максимально эффективно, в том числе для уменьше дайерженси и увеличения оккупации своими силами. А это как раз, что достигается тем, о чем я 
-рассуждал в позапрошлом абзаце. Но тогда я не знал про это ограничение. Теперь нам остается только решить на что потратить эти 48 кб.
+48 кб на блок максимально эффективно, в том числе для уменьшения дайверженси и увеличения оккупации своими силами. А это как раз, что достигается тем, о чем 
+я рассуждал в позапрошлом абзаце. Но тогда я не знал про это ограничение. Теперь нам остается только решить на что потратить эти 48 кб.
 
 Предположим, что средний размер спрайта у нас будет 256х256.
 Тогда одна битовая маска у нас будет занимать 8кб. Мы можем взять, например:
@@ -139,6 +139,62 @@ P.S. Я ошибся - войдмапы занимают меньше места
 байту на описание текущей точки остановки. Вообще, я могу выделить и по полтора байта, таким образом сразу предупредив поддержку спрайтов до 4096х4096. И 
 таким образом у меня останется всего 1 неиспользованный байт.
 
+
+8.12.2019
+Ок, хранить по 1.5 байта на контекст, пожалуй, не буду, потому что я не уверен, как это будет записываться, думаю поведение при записи может быть undefined. 
+Так что выделю сразу 2 байта.
+
+А вообще да, мы конечно молодцы, выделили 2 байта, типа поддерживаем спрайты до 65536х65536, а на деле все наши рассчеты были для спрайта размером 256х256. 
+Вообще с таким подходом максимум, что может потянуть 1 см - 512х256, тогда 1 блок займет всю шаред память под завязку. Поэтому мы должны иметь это в виду. В 
+будущем, возможно, надо будет сделать варианты кернелов для больших текстур - с некоторыми отключенными флагами например. В принципе, если оставлять размер 
+контекста, каким мы его видим сейчас, 8 кб на блок, то максимальный поддерживаемый размер спрайта, который может использовать хотя бы 1 вспомогательную мапу 
+(саму полезную, пускай будет войдмапу) - это 1024х704 - (96Кб - 8Кб контекста) * 1024 * 8 = 720_896 бит информации доступной для записи какого-нибудь флага, 
+т.е. меньше 1мегапикселя, довольно скромно. Т.е. это граничный вариант, при котором возможно кеширование хоть чего-нибудь, дальнейшее увеличение размера 
+приведет к отсутствию хоть какого-то кеширования и существенному замедлению производительности. Хотя можно все еще кешировать, просто неполную информацию - 
+часть информации будет с кешем, часть без кеша, тоже вариант, хоть какая-то доля кеширования все же будет.
+
+Так ок, еще одна засада, мы сейчас раздали шорты областям, а ведь если они будут шортами, то они смогут обозначить себя лишь на области 256х256. Так стоп. А 
+нафига мне хранить области и еще дополнительно координаты? Ведь это одно и то же! В общем, мне нужно всего лишь по 4 байта для своей и кандидатской области. 
+При этом обе можно хранить в виде координат. Хотя нет, попробую сначала хранить их порядковыми номерами, потом посмотрю, что удобнее.
+
+Так, так, так, еще одна засада - я рассчитал все значения для одного спрайта. Для двух, потребуется в 2 раза больше памяти. Этого мы себе позволить не можем. 
+Вообще вариантов с использованием всех 96кб одним блоком не может быть, потому что половина см будет простаивать. Таким образом нам надо по-другому 
+распределить выделенные 48 кб.
+
+8 кб на контекст.
+16 кб на войдмапы
+и остается всего 24 кб. Мы можем взять еще по одному флагу, скажем r-флаг.
+И у нас останется неиспользованными еще 8 кб. Может быть есть смысл их оставить пока что неиспользованными. Т.к. эффективно использовать именно 8 кб я сейчас 
+не могу. А в будущем, возможно они понадобятся.
+
+Ок, новая проблема. Динамически мы можем инициализировать лишь 1 значение. Следовательно надо будет сделать 1 общий массив, содержащий все флаги и кеши и 
+потом из него сделать нужные нам подмассивы. Структура этого общего массива должна быть такой: ourR + candidateR + ourVoid...
+
+Придумал. Нам совсем не обязательно кашировать оба войд-массива. То, что мы - войд, мы можем посчитать сами довольно эффективно, для этого не нужен кеш, т.к. 
+считать придется всего 1 раз. И получается что у нас остается еще 16Кб, которые мы можем потратить на еще 1 флаг-канал.
+
+Итак, структура общего массива: ourR + candidateR + ourG + candidateG + candidateVoid: 8 кб + 8 кб + 8 кб + 8 кб + 8 кб = 40 кб. Это мы пока что не 
+рассматриваем другие варианты кроме спрайтов 256х256. Далее можно будет не только сделать варианты для большего размера текстур с меньшими оптимизациями, но и 
+для меньшего размера текстур с большими оптимизациями.
+
+Хм, кстати... Если я заранее знаю размеры структур, то зачем мне динамическая инициализация? Я могу просто проинициализировать массивы по-максимому для 
+данного типоразмера. Просто если спрайты окажутся меньше, этот массив окажется недозаполненным. Но я все равно не смогу эту недозаполненную память 
+использовать, потому что я тут должен ориентироваться на максимальный размер. Ок, делаем так тогда - это облегчит инициализацию.
+
+Ок, записываем мы флаги в таком порядке. Для каждого спрайта записываем поочередно все пиксели. Для каждого потока нам надо будет определить сперва смещение 
+спрайта. В принципе мы можем использовать регистр. Просто делить значение на 4. Я проверил - нет нужды делать на 4, т.к. в регистре записан сдвиг по каналам, 
+т.е. по байтам.
+
+Так, нет, стоп, нельзя просто так взять сдвиг из регистра, т.к. флаги мы записываем побитно, поэтому эти оффсеты не будут точны. Так что надо еще сделать 
+битовый регистр.
+
+Ок, это самая муторная часть, но потом уже будет полегче и поинтереснее...
+
+9.12.2019
+Ок, кажись я кое-чего не учел. А именно - отступы сайзингов. С кешированием все понятно - мы кешируем все флаги данного спрайта без исключения. А вот с 
+войдмапами совсем другая история. Там войдмапы имеют другую размерность нежели спрайты, поэтому их будет меньше, но это не столь важно. Непонятно откуда брать 
+размер данных войдмапа каждого спрайта. Мы их тупо не присылаем. Надо прислать, опять в регистр, наверно. Так, нет, стоп. А откуда ж регистру знать об этом, 
+если он вообще не учитывает сайзинги? Блин, надо тогда самому вычислять что ли? Не, это нереально. Надо отдельную структуру под это?
 */
 
 
@@ -146,29 +202,23 @@ P.S. Я ошибся - войдмапы занимают меньше места
 #define DIVERGENCE_CONTROL_CYCLE 128 //Через какое кол-во операций мы проверяем на необходимость ужатия, чтобы избежать дивергенции?
 #define DIVERGENCE_CONTROL_THRESHOLD 32 //Если какое число потоков простаивают надо ужимать? Думаю это значение вряд ли когда-нибудь изменится.
 
-__constant__ int SpritesCountBits;
-__constant__ int MaxWidthBits;
-__constant__ int MaxHeightBits;
-__constant__ int ContextBits;
-__constant__ int SpritesCountBitMask;
-__constant__ int MaxWidthBitMask;
-__constant__ int MaxHeightBitMask;
-
-__global__ void mainKernel(int sizingsCount, short* sizingWidths, short* sizingHeights, int spritesCount, int* offsets, short* widths, short* heights, unsigned char* r, unsigned char* g, unsigned char* b, unsigned char* a)
+__global__ void mainKernel(int sizingsCount, short* sizingWidths, short* sizingHeights, int spritesCount, int* byteOffsets, int* bitOffsets, short* widths, short* heights, unsigned char* r, unsigned char* g, unsigned char* b, unsigned char* a, char* voids, char* rFlags, char* gFlags, char* bFlags, char* aFlags)
 {
 	int ourSpriteIndex = blockIdx.x;
 	int candidateSpriteIndex = blockIdx.y;
 	int sizingIndex = blockIdx.z;
 
-	int ourOffset = offsets[ourSpriteIndex];
+	int ourByteOffset = byteOffsets[ourSpriteIndex];
+	int ourBitOffset = bitOffsets[ourSpriteIndex];
 	int ourWidth = widths[ourSpriteIndex];
 	int ourHeight = heights[ourSpriteIndex];
 	int ourSquare = ourWidth * ourHeight;
 
-	int candidateSpriteOffset = offsets[candidateSpriteIndex];
-	int candidateSpriteWidth = widths[candidateSpriteIndex];
-	int candidateSpriteHeight = heights[candidateSpriteIndex];
-	int candidateSpriteSquare = candidateSpriteWidth * candidateSpriteHeight;
+	int candidateByteOffset = byteOffsets[candidateSpriteIndex];
+	int candidateBitOffset = bitOffsets[candidateSpriteIndex];
+	int candidateWidth = widths[candidateSpriteIndex];
+	int candidateHeight = heights[candidateSpriteIndex];
+	int candidateSquare = candidateWidth * candidateHeight;
 
 	int sizingWidth = sizingWidths[sizingIndex];
 	int sizingHeight = sizingHeights[sizingIndex];
@@ -177,30 +227,82 @@ __global__ void mainKernel(int sizingsCount, short* sizingWidths, short* sizingH
 	//if (threadIdx.x == 0)
 	//	printf("Hello from block! My sprite is #%d (width %d, height %d) and I work with sprite %d (width %d, height %d) and sizing %d (width %d, height %d) \n", ourSpriteIndex, ourWidth, ourHeight, candidateSpriteIndex, candidateSpriteWidth, candidateSpriteHeight, sizingIndex, sizingWidth, sizingHeight);
 
-	extern __shared__ int contexts[];
-
-	int myInitialContextAddress = threadIdx.x * ContextBits;
-	int myInitialContextAddressByteIndex = myInitialContextAddress / 8;
-	int myInitialContextAddressBitOffset = myInitialContextAddressByteIndex % 8;
+	__shared__ int ourAreaContexts[BLOCK_SIZE];
+	__shared__ int candidateAreaContexts[BLOCK_SIZE];
 
 	int myArea = threadIdx.x;
-	int currentCandidateX = 0;
-	int currentCandidateY = 0;
-}
+	int candidateArea = threadIdx.x;
 
-__global__ void testKernel(int sizingsCount, short* sizingWidths, short* sizingHeights, int spritesCount, int* offsets, short* widths, short* heights, unsigned char* r, unsigned char* g, unsigned char* b, unsigned char* a)
-{
-	if (threadIdx.x == 0)
+	ourAreaContexts[threadIdx.x] = myArea;
+	candidateAreaContexts[threadIdx.x] = candidateArea;
+
+	//Так, ок, с инициализацией контекста вроде разобрались. Сейчас нам надо тупо скопировать всю нужную инфу в шаред-мемори
+
+	__shared__ char ourRFlags[8192];
+	__shared__ char candidateRFlags[8192];
+	__shared__ char ourGFlags[8192];
+	__shared__ char candidateGFlags[8192];
+	__shared__ char candidateVoidMap[8192];
+
+	int numberOfTimesWeNeedToLoadSelf = ourSquare / BLOCK_SIZE;
+	int numberOfTimesWeNeedToLoadSelfRemainder = ourSquare % BLOCK_SIZE;
+	if (numberOfTimesWeNeedToLoadSelfRemainder != 0)
+		numberOfTimesWeNeedToLoadSelf++;
+
+	int numberOfTimesWeNeedToLoadCandidate = candidateSquare / BLOCK_SIZE;
+	int numberOfTimesWeNeedToLoadCandidateRemainder = candidateSquare % BLOCK_SIZE;
+	if (numberOfTimesWeNeedToLoadCandidateRemainder != 0)
+		numberOfTimesWeNeedToLoadCandidate++;
+
+	for (size_t i = 0; i < numberOfTimesWeNeedToLoadSelf; i++)
 	{
-		printf("%d\n", threadIdx.x);
-		return;
+		int ourByteAddress = i * BLOCK_SIZE + threadIdx.x;
+		if (ourByteAddress >= ourSquare)
+			continue;
+		ourRFlags[ourByteAddress] = rFlags[ourBitOffset + ourByteAddress];
+		ourGFlags[ourByteAddress] = gFlags[ourBitOffset + ourByteAddress];
 	}
-	int ourSpriteIndex = blockIdx.x;
-	int candidateSpriteIndex = blockIdx.y;
-	int sizingIndex = blockIdx.z;
 
-	int ourOffset = offsets[ourSpriteIndex];
+	for (size_t i = 0; i < numberOfTimesWeNeedToLoadCandidate; i++)
+	{
+		int candidateByteAddress = i * BLOCK_SIZE + threadIdx.x;
+		if (candidateByteAddress >= candidateSquare)
+			continue;
+		candidateRFlags[candidateByteAddress] = rFlags[candidateBitOffset + candidateByteAddress];
+		candidateGFlags[candidateByteAddress] = gFlags[candidateBitOffset + candidateByteAddress];
+	}
+
+	int candidateWidthMinusSizing = candidateWidth - sizingWidth;
+	int candidateHeightMinusSizing = candidateHeight - sizingHeight;
+	int candidateVoidAreaSquare = candidateWidthMinusSizing * candidateHeightMinusSizing;
+
+	int numberOfTimesWeNeedToLoadVoid = candidateVoidAreaSquare / BLOCK_SIZE;
+	int numberOfTimesWeNeedToLoadVoidRemainder = candidateVoidAreaSquare % BLOCK_SIZE;
+	if (numberOfTimesWeNeedToLoadVoidRemainder != 0)
+		numberOfTimesWeNeedToLoadVoid++;
+
+	/*for (size_t i = 0; i < numberOfTimesWeNeedToLoadVoid; i++)
+	{
+		int voidByteAddress = i * BLOCK_SIZE + threadIdx.x;
+		if (voidByteAddress >= candidateVoidAreaSquare)
+			continue;
+		candidateVoidMap[voidByteAddress] = voids[candidateBitOffset];
+	}*/
 }
+//
+//__global__ void testKernel(int sizingsCount, short* sizingWidths, short* sizingHeights, int spritesCount, int* byteOffsets, int* bitOffsets, short* widths, short* heights, unsigned char* r, unsigned char* g, unsigned char* b, unsigned char* a)
+//{
+//	if (threadIdx.x == 0)
+//	{
+//		printf("%d\n", threadIdx.x);
+//		return;
+//	}
+//	int ourSpriteIndex = blockIdx.x;
+//	int candidateSpriteIndex = blockIdx.y;
+//	int sizingIndex = blockIdx.z;
+//
+//	int ourOffset = offsets[ourSpriteIndex];
+//}
 
 int getBitsRequired(int value)
 {
@@ -257,7 +359,7 @@ int main()
 
 	short sizingsCount = sizingsBlobLength / 4;
 
-	int registryStructureLength = 8;
+	int registryStructureLength = 12;
 
 	char* sizingsBlob = blob + combinedDataOffset + 6;
 	char* registryBlob = sizingsBlob + sizingsBlobLength;
@@ -271,30 +373,14 @@ int main()
 	int maxHeight = 0;
 	for (size_t i = 0; i < spritesCount; i++)
 	{
-		int width = bit_converter::GetShort(registryBlob, spritesCount * 4 + i * 2);
-		int height = bit_converter::GetShort(registryBlob, spritesCount * 6 + i * 2);
+		int width = bit_converter::GetShort(registryBlob, spritesCount * 8 + i * 2);
+		int height = bit_converter::GetShort(registryBlob, spritesCount * 10 + i * 2);
 		if (width > maxWidth)
 			maxWidth = width;
 		if (height > maxHeight)
 			maxHeight = height;
 		dataBlobLineLength += width * height;
 	}
-
-	int spritesCountBits = getBitsRequired(spritesCount);
-	int maxWidthBits = getBitsRequired(maxWidth);
-	int maxHeightBits = getBitsRequired(maxHeight);
-	int contextBits = SpritesCountBits + MaxWidthBits + MaxHeightBits;
-	cudaMemcpyToSymbol(&SpritesCountBits, &spritesCountBits, 4);
-	cudaMemcpyToSymbol(&MaxWidthBits, &maxWidthBits, 4);
-	cudaMemcpyToSymbol(&MaxHeightBits, &maxHeightBits, 4);
-	cudaMemcpyToSymbol(&ContextBits, &contextBits, 4);
-
-	int spritesCountBitMask = 1 << spritesCountBits - 1;
-	int maxWidthBitMask = 1 << maxWidthBits - 1;
-	int maxHeightBitMask = 1 << maxHeightBits - 1;
-	cudaMemcpyToSymbol(&SpritesCountBitMask, &spritesCountBitMask, 4);
-	cudaMemcpyToSymbol(&MaxWidthBitMask, &maxWidthBitMask, 4);
-	cudaMemcpyToSymbol(&MaxHeightBitMask, &maxHeightBitMask, 4);
 
 	int dataBlobLength = dataBlobLineLength * 4;
 	//int voidsBlobLength = (dataBlobLength / 32 * sizingsCount) / 8 + 1;
@@ -303,12 +389,15 @@ int main()
 	char* voidsBlob = dataBlob + dataBlobLength + 4;
 
 
-	int lineMaskLenght = bit_converter::GetInt(voidsBlob + voidsBlobLength, 0);
+	int lineMaskLength = bit_converter::GetInt(voidsBlob + voidsBlobLength, 0);
 
 	char* rFlagsBlob = voidsBlob + voidsBlobLength + 4;
-	char* gFlagsBlob = rFlagsBlob + lineMaskLenght;
-	char* bFlagsBlob = gFlagsBlob + lineMaskLenght;
-	char* aFlagsBlob = bFlagsBlob + lineMaskLenght;
+	char* gFlagsBlob = rFlagsBlob + lineMaskLength;
+	char* bFlagsBlob = gFlagsBlob + lineMaskLength;
+	char* aFlagsBlob = bFlagsBlob + lineMaskLength;
+
+	int* voidMapsLengths = (int*)(aFlagsBlob + lineMaskLength);
+	int voidMapsLengthsCount = spritesCount * sizingsCount;
 
 	char* deviceSizingsPtr;
 	cudaMalloc((void**)&deviceSizingsPtr, sizingsBlobLength);
@@ -320,30 +409,42 @@ int main()
 	cudaMalloc((void**)&deviceVoidsPtr, voidsBlobLength);
 
 	char* deviceRFlagsPtr;
-	cudaMalloc((void**)&deviceRFlagsPtr, lineMaskLenght);
+	cudaMalloc((void**)&deviceRFlagsPtr, lineMaskLength);
 	char* deviceGFlagsPtr;
-	cudaMalloc((void**)&deviceGFlagsPtr, lineMaskLenght);
+	cudaMalloc((void**)&deviceGFlagsPtr, lineMaskLength);
 	char* deviceBFlagsPtr;
-	cudaMalloc((void**)&deviceBFlagsPtr, lineMaskLenght);
+	cudaMalloc((void**)&deviceBFlagsPtr, lineMaskLength);
 	char* deviceAFlagsPtr;
-	cudaMalloc((void**)&deviceAFlagsPtr, lineMaskLenght);
+	cudaMalloc((void**)&deviceAFlagsPtr, lineMaskLength);
+
+	int* deviceVoidMapsLengthsPtr;
+	cudaMalloc((void**)&deviceVoidMapsLengthsPtr, voidMapsLengthsCount);
 
 	cudaMemcpy(deviceSizingsPtr, sizingsBlob, sizingsBlobLength, cudaMemcpyHostToDevice);
 	cudaMemcpy(deviceRegistryPtr, registryBlob, registryBlobLength, cudaMemcpyHostToDevice);
 	cudaMemcpy(deviceDataPtr, dataBlob, dataBlobLength, cudaMemcpyHostToDevice);
 	cudaMemcpy(deviceVoidsPtr, voidsBlob, voidsBlobLength, cudaMemcpyHostToDevice);
 
-	cudaMemcpy(deviceRFlagsPtr, rFlagsBlob, lineMaskLenght, cudaMemcpyHostToDevice);
-	cudaMemcpy(deviceGFlagsPtr, gFlagsBlob, lineMaskLenght, cudaMemcpyHostToDevice);
-	cudaMemcpy(deviceBFlagsPtr, bFlagsBlob, lineMaskLenght, cudaMemcpyHostToDevice);
-	cudaMemcpy(deviceAFlagsPtr, aFlagsBlob, lineMaskLenght, cudaMemcpyHostToDevice);
+	cudaMemcpy(deviceRFlagsPtr, rFlagsBlob, lineMaskLength, cudaMemcpyHostToDevice);
+	cudaMemcpy(deviceGFlagsPtr, gFlagsBlob, lineMaskLength, cudaMemcpyHostToDevice);
+	cudaMemcpy(deviceBFlagsPtr, bFlagsBlob, lineMaskLength, cudaMemcpyHostToDevice);
+	cudaMemcpy(deviceAFlagsPtr, aFlagsBlob, lineMaskLength, cudaMemcpyHostToDevice);
 
+	cudaMemcpy(deviceVoidMapsLengthsPtr, voidMapsLengths, voidMapsLengthsCount * 4, cudaMemcpyHostToDevice);
 
-	int* offsets = (int*)deviceRegistryPtr;
+	for (size_t i = 0; i < voidMapsLengthsCount; i++)
+	{
+		int voidSprite = i / sizingsCount;
+		int voidSizing = i % sizingsCount;
+		printf("void map i(%d), j(%d): %d\n", voidSprite, voidSizing, voidMapsLengths[i]);
+	}
+
+	int* byteOffsets = (int*)deviceRegistryPtr;
 	int offsetsLength = spritesCount * 4;
-	short* widths = (short*)(deviceRegistryPtr + offsetsLength);
+	int* bitOffsets = (int*)(deviceRegistryPtr + offsetsLength);
+	short* widths = (short*)(deviceRegistryPtr + offsetsLength * 2);
 	int widthsLength = spritesCount * 2;
-	short* heights = (short*)(deviceRegistryPtr + offsetsLength + widthsLength);
+	short* heights = (short*)(deviceRegistryPtr + offsetsLength * 2 + widthsLength);
 	int heightsLength = widthsLength;
 
 	short* sizingWidths = (short*)deviceSizingsPtr;
@@ -367,7 +468,7 @@ int main()
 
 	dim3 block(BLOCK_SIZE);
 	dim3 grid(spritesCount, spritesCount, sizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
-	mainKernel << <grid, block, BLOCK_SIZE * contextBits / 32 + 1 >> > (sizingsCount, sizingWidths, sizingHeights, spritesCount, offsets, widths, heights, r, g, b, a);
+	mainKernel << <grid, block >> > (sizingsCount, sizingWidths, sizingHeights, spritesCount, byteOffsets, bitOffsets, widths, heights, r, g, b, a, deviceVoidsPtr, deviceRFlagsPtr, deviceGFlagsPtr, deviceBFlagsPtr, deviceAFlagsPtr);
 
 	cudaDeviceSynchronize();
 
