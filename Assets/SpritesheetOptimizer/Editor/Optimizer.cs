@@ -193,7 +193,7 @@ public class Optimizer : EditorWindow
                 var widthAndHeight = width << 16 | height;
                 var registryEntry = new registryStruct();
                 registryEntry.SpritesByteOffset = dataList.Count;
-                registryEntry.SpritesBitOffset = dataList.Count / 8 + (dataList.Count % 8 == 0 ? 0 : 1);
+                //registryEntry.SpritesBitOffset = dataList.Count / 8 + (dataList.Count % 8 == 0 ? 0 : 1);
                 registryEntry.WidthAndHeight = widthAndHeight;
                 registry.Add(registryEntry);
 
@@ -268,12 +268,13 @@ public class Optimizer : EditorWindow
              */
 
             var voidMaps = new List<List<byte>>();
-            var voidMapsLengths = new List<List<int>>();
+            var voidMapsOffsets = new List<List<int>>();
             var voidBytesCount = 0;
+            var currentVoidOffset = 0;
             for (int i = 0; i < spritesCount; i++)
             {
                 var newSpriteVoidMaps = new List<byte>();
-                var newSpriteVoidMapsLengths = new List<int>();
+                var newSpriteVoidMapsOffsets = new List<int>();
                 var bitsCounter = (long)0;
 
                 var currentSpriteBytes = colorsResults.bytes[i];
@@ -281,24 +282,31 @@ public class Optimizer : EditorWindow
                 var height = currentSpriteBytes[0].Length;
                 for (int j = 0; j < sizingsDeconstructed.Length; j++)
                 {
+                    if (i == 7 && j == 11)
+                        Debug.Log($"Area offset for 7th sprite and 11th sizing is {newSpriteVoidMapsOffsets}");
+
+
                     var sizing = sizingsDeconstructed[j];
                     var sizingWidth = sizing[0];
                     var sizingHeight = sizing[1];
-                    var localBitsCounter = 0;
                     for (int x = 0; x < width - sizingWidth; x++)
                     {
                         for (int y = 0; y < height - sizingHeight; y++)
                         {
                             var alpha = currentSpriteBytes[x][y][3];
                             writeBit(newSpriteVoidMaps, bitsCounter++, alpha == 0 ? 1 : 0);
-                            localBitsCounter++;
+
+                            if (i == 7 && j == 11)
+                                Debug.Log($"	void ({x}, {y}): {(alpha == 0 ? 1 : 0)}");
                         }
                     }
-                    newSpriteVoidMapsLengths.Add(localBitsCounter);
+
+                    newSpriteVoidMapsOffsets.Add(currentVoidOffset);
+                    currentVoidOffset += newSpriteVoidMaps.Count;
                 }
 
                 voidMaps.Add(newSpriteVoidMaps);
-                voidMapsLengths.Add(newSpriteVoidMapsLengths);
+                voidMapsOffsets.Add(newSpriteVoidMapsOffsets);
                 voidBytesCount += newSpriteVoidMaps.Count;
             }
 
@@ -337,6 +345,9 @@ public class Optimizer : EditorWindow
                 gFlags.Add(newGFlagsList);
                 bFlags.Add(newBFlagsList);
                 aFlags.Add(newAFlagsList);
+                var registryEntry = registry[i];
+                registryEntry.SpritesBitOffset = flagsCount;
+                registry[i] = registryEntry;
                 flagsCount += newRFlagsList.Count;
             }
 
@@ -411,16 +422,16 @@ public class Optimizer : EditorWindow
             currentOffset += flagsCount;
 
             i2 = 0;
-            for (int i = 0; i < voidMapsLengths.Count; i++)
+            for (int i = 0; i < voidMapsOffsets.Count; i++)
             {
-                for (int j = 0; j < voidMapsLengths[i].Count; j++)
+                for (int j = 0; j < voidMapsOffsets[i].Count; j++)
                 {
-                    combinedData[currentOffset + i2++] = (byte)(voidMapsLengths[i][j] & 255);
-                    combinedData[currentOffset + i2++] = (byte)(voidMapsLengths[i][j] >> 8 & 255);
-                    combinedData[currentOffset + i2++] = (byte)(voidMapsLengths[i][j] >> 16 & 255);
-                    combinedData[currentOffset + i2++] = (byte)(voidMapsLengths[i][j] >> 24 & 255);
+                    combinedData[currentOffset + i2++] = (byte)(voidMapsOffsets[i][j] & 255);
+                    combinedData[currentOffset + i2++] = (byte)(voidMapsOffsets[i][j] >> 8 & 255);
+                    combinedData[currentOffset + i2++] = (byte)(voidMapsOffsets[i][j] >> 16 & 255);
+                    combinedData[currentOffset + i2++] = (byte)(voidMapsOffsets[i][j] >> 24 & 255);
 
-                    Debug.Log($"void map for i({i}), j({j}): {voidMapsLengths[i][j]}");
+                    //Debug.Log($"void map for i({i}), j({j}): {voidMapsOffsets[i][j]}");
                 }
             }
             currentOffset += voidMapsLengthsCount * 4;
