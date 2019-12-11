@@ -209,39 +209,75 @@ P.S. Я ошибся - войдмапы занимают меньше места
 Ок, у меня уже только в качестве аргументов функции используются 18 регистров. И где-то на 30й-31й переменной оно отваливается. И это только то, что вижу я. 
 Там еще возможно при разворачивании выражений добавляется, скорее всего до максимальных 62х регистров на поток. Короче надо врубить режим максимальной 
 экономии.
+
+11.12.2019
+Давайте посчитаем как нам уложиться в 30 регистров.
+
+Ну, во-первых, надо избавляться от такой раскоши, как хранение ссылок на однородные части массивов отдельно. r, g, b и a идут лесом, вместо них rgba.
+sizingsCount и spritesCount непонятно что вообще делают в аргументах - им место в контантах.
+В принципе вообще все, что не массивы может идти в константы. Хотя, собственно у нас таких только 2... ну ладно.
+Хранение отдельных составляющих blockIdx, естественно, тоже не имеет смысла.
+Отдельные каналы флагов тоже уходят.
+На самом деле не обязательно сейчас прямо жестко оптимизировать. Достаточно, чтобы хотя бы все заработало и протестировать. А потом можно будет уже жестко оптимизировать.
+Не вижу причин voidLengths не кинуть в константы. Они маленькие и запрашиваются потоками не параллельно. Ну хотя как немного? Для такого небольшого набора как 40 спрайтов и 22 сайзинга - это 4 * 40 * 22 = 3520 байт. Константной 
+памяти у нас всего 64 кб. Допустим, 4 кб мы займем единичными константами. Оставшихся 60Кб хватит на то, чтобы разместить оффсеты для 2792 спрайтов при 22х сайзингах. Ну, вполне реальная цифра для большого проекта. Для бОльших 
+циферь, думаю, можно будет что-нибудь придумать.
+Сайзинги тоже идут в константы.
+Думаю, весь регистр тоже туда идет. Это для условных 2000 спрайтов 24 кб
+
 */
 
 #define BLOCK_SIZE 1024
 #define DIVERGENCE_CONTROL_CYCLE 128 //Через какое кол-во операций мы проверяем на необходимость ужатия, чтобы избежать дивергенции?
 #define DIVERGENCE_CONTROL_THRESHOLD 32 //Если какое число потоков простаивают надо ужимать? Думаю это значение вряд ли когда-нибудь изменится.
+#define REGISTRY_STRUCTURE_LENGTH 12
+#define SIZING_STRUCTURE_LENGTH 4
+#define DATA_STRUCTURE_LENGTH 4
+#define RESERVED_DATA_LENGHT 2
 
-__global__ void mainKernel(int sizingsCount, short* sizingWidths, short* sizingHeights, int spritesCount, int* byteOffsets, int* bitOffsets, short* widths, short* heights, unsigned char* r, unsigned char* g, unsigned char* b, unsigned char* a, int* voidLengths, char* voids, char* rFlags, char* gFlags, char* bFlags, char* aFlags)
+__constant__ short SizingsCount;
+__constant__ short SpritesCount;
+__constant__ int ByteLineLength;
+__constant__ int BitLineLength;
+
+__constant__ short* SizingWidths;
+__constant__ short* SizingHeights;
+__constant__ int* SpriteByteOffsets;
+__constant__ int* SpriteBitOffsets;
+__constant__ short* SpriteWidths;
+__constant__ short* SpriteHeights;
+__constant__ int* VoidOffsets;
+
+__global__ void mainKernel(unsigned char* rgbaData, char* voids, char* rgbaFlags)
 {
-	int ourSpriteIndex = blockIdx.x;
-	int candidateSpriteIndex = blockIdx.y;
-	int sizingIndex = blockIdx.z;
+	//int ourSpriteIndex = blockIdx.x;
+	//int candidateSpriteIndex = blockIdx.y;
+	//int sizingIndex = blockIdx.z;
 
-	int ourByteOffset = byteOffsets[ourSpriteIndex];
-	int ourBitOffset = bitOffsets[ourSpriteIndex];
-	int ourWidth = widths[ourSpriteIndex];
-	int ourHeight = heights[ourSpriteIndex];
+	printf("Hello world!\n");
+	printf("SpriteByteOffsets[0] = %d", SpriteByteOffsets[0]);
+	return;
+
+	int ourByteOffset = SpriteByteOffsets[blockIdx.x];
+	int ourBitOffset = SpriteBitOffsets[blockIdx.x];
+	short ourWidth = SpriteWidths[blockIdx.x];
+	int ourHeight = SpriteHeights[blockIdx.x];
 	int ourSquare = ourWidth * ourHeight;
 	int ourBitsSquare = ourSquare / 8;
 	if (ourSquare % 8 != 0)
 		ourBitsSquare++;
 
-	int candidateByteOffset = byteOffsets[candidateSpriteIndex];
-	int candidateBitOffset = bitOffsets[candidateSpriteIndex];
-	int candidateWidth = widths[candidateSpriteIndex];
-	int candidateHeight = heights[candidateSpriteIndex];
+	int candidateByteOffset = SpriteByteOffsets[blockIdx.y];
+	int candidateBitOffset = SpriteBitOffsets[blockIdx.y];
+	int candidateWidth = SpriteWidths[blockIdx.y];
+	int candidateHeight = SpriteHeights[blockIdx.y];
 	int candidateSquare = candidateWidth * candidateHeight;
 	int candidateBitsSquare = candidateSquare / 8;
 	if (candidateSquare % 8 != 0)
 		candidateBitsSquare++;
 
-	int sizingWidth = sizingWidths[sizingIndex];
-	int sizingHeight = sizingHeights[sizingIndex];
-
+	int sizingWidth = SizingWidths[blockIdx.z];
+	int sizingHeight = SizingHeights[blockIdx.z];
 	//if (threadIdx.x == 0)
 	//	printf("Hello from block! My sprite is #%d (width %d, height %d) and I work with sprite %d (width %d, height %d) and sizing %d (width %d, height %d) \n", ourSpriteIndex, ourWidth, ourHeight, candidateSpriteIndex, candidateSpriteWidth, candidateSpriteHeight, sizingIndex, sizingWidth, sizingHeight);
 
@@ -267,17 +303,7 @@ __global__ void mainKernel(int sizingsCount, short* sizingWidths, short* sizingH
 	if (numberOfTimesWeNeedToLoadSelfRemainder != 0)
 		numberOfTimesWeNeedToLoadSelf++;
 
-	int numberOfTimesWeNeedToLoadSelf2 = ourSquare / BLOCK_SIZE;
-	int numberOfTimesWeNeedToLoadSelf2Remainder = ourSquare % BLOCK_SIZE;
-	int numberOfTimesWeNeedToLoadSelf3 = ourSquare / BLOCK_SIZE;
-	int numberOfTimesWeNeedToLoadSelf3Remainder = ourSquare % BLOCK_SIZE;
-	int numberOfTimesWeNeedToLoadSelf4 = ourSquare / BLOCK_SIZE;
-	int numberOfTimesWeNeedToLoadSelf4Remainder = ourSquare % BLOCK_SIZE;
-	/*if (numberOfTimesWeNeedToLoadSelf2Remainder != 0)
-		numberOfTimesWeNeedToLoadSelf2++;*/
-
 	printf("ourSquare = %d, candidateSquare = %d\n", ourSquare, candidateSquare);
-	//printf("Hello world!\n");
 	return;
 
 	int numberOfTimesWeNeedToLoadCandidate = candidateSquare / BLOCK_SIZE;
@@ -289,7 +315,7 @@ __global__ void mainKernel(int sizingsCount, short* sizingWidths, short* sizingH
 	printf("ourBitsSquare = %d, ourBitOffset = %d\n", ourBitsSquare, ourBitOffset);
 	return;
 
-	for (size_t i = 0; i < numberOfTimesWeNeedToLoadSelf; i++)
+	/*for (size_t i = 0; i < numberOfTimesWeNeedToLoadSelf; i++)
 	{
 		int ourByteAddress = i * BLOCK_SIZE + threadIdx.x;
 		if (ourByteAddress >= ourBitsSquare)
@@ -316,10 +342,10 @@ __global__ void mainKernel(int sizingsCount, short* sizingWidths, short* sizingH
 	if (numberOfTimesWeNeedToLoadVoidRemainder != 0)
 		numberOfTimesWeNeedToLoadVoid++;
 
-	int candidateVoidMapOffset = voidLengths[candidateSpriteIndex * sizingsCount + sizingIndex];
+	int candidateVoidMapOffset = voidLengths[blockIdx.y * SizingsCount + sizingIndex];
 	char* candidateVoidMapGlobal = voids + candidateVoidMapOffset;
-	printf("asdkoasd %d, %d", candidateSpriteIndex, sizingIndex);
-	if (candidateSpriteIndex == 7 && sizingIndex == 11)
+	printf("asdkoasd %d, %d", blockIdx.y, sizingIndex);
+	if (blockIdx.y == 7 && sizingIndex == 11)
 	{
 		printf("Area offset for 7th sprite and 11th sizing is %d", candidateVoidMapOffset);
 
@@ -340,8 +366,9 @@ __global__ void mainKernel(int sizingsCount, short* sizingWidths, short* sizingH
 		if (voidByteAddress >= candidateVoidAreaSquare)
 			continue;
 		candidateVoidMap[voidByteAddress] = voids[candidateBitOffset];
-	}
+	}*/
 }
+
 //
 //__global__ void testKernel(int sizingsCount, short* sizingWidths, short* sizingHeights, int spritesCount, int* byteOffsets, int* bitOffsets, short* widths, short* heights, unsigned char* r, unsigned char* g, unsigned char* b, unsigned char* a)
 //{
@@ -401,139 +428,85 @@ int main()
 	char* blob = get<0>(blobTuple);
 	int blobLength = get<1>(blobTuple);
 
-	int metaLength;
-	memcpy(&metaLength, blob, 4);
-	int combinedDataOffset = metaLength + 4;
+	//blob состоит из мета-инфы, которую мы не используем в рассчетах, и основной инфы. Мета - 4 байта длина и собственно данные.
+	int metaLength = bit_converter::GetInt(blob, 0);
+	int combinedDataOffset = metaLength + sizeof(int); //указатель на начало массива основных данных
 
-	short spritesCount;
-	memcpy(&spritesCount, blob + combinedDataOffset + 2, 2);
-	short sizingsBlobLength;
-	memcpy(&sizingsBlobLength, blob + combinedDataOffset + 4, 2);
+	short spritesCount = bit_converter::GetShort(blob, combinedDataOffset + RESERVED_DATA_LENGHT); // первые 2 байта основных данных зарезервированы, вторые - кол-во спрайтов.
+	cudaMemcpyToSymbol(&SpritesCount, &spritesCount, sizeof(short)); //Сразу записываем их в константы устройства
+	short sizingsCount = bit_converter::GetShort(blob, combinedDataOffset + RESERVED_DATA_LENGHT + sizeof(short)); //вторые 2 байта - кол-во сайзингов
+	cudaMemcpyToSymbol(&SizingsCount, &sizingsCount, sizeof(short)); //Тоже записываем сразу туда.
 
-	short sizingsCount = sizingsBlobLength / 4;
+	//Определяем массивы и длины данных сайзингов и регистра
 
-	int registryStructureLength = 12;
+	//Сначала сайзинги...
+	char* sizingsBlob = blob + combinedDataOffset + RESERVED_DATA_LENGHT + sizeof(short) * 2;
+	int sizingsBlobLenght = sizingsCount * SIZING_STRUCTURE_LENGTH; //Сайзинги состоят из 2 шортов - х и у
+	//Записываем сайзинги на девайс. Они там идут последовательно, сначала иксы потом игрики
+	int sizingsLineLength = sizeof(short) * sizingsCount;
+	cudaMemcpyToSymbol(SizingWidths, sizingsBlob, sizingsLineLength);
+	cudaMemcpyToSymbol(SizingHeights, sizingsBlob + sizingsLineLength, sizingsLineLength);
 
-	char* sizingsBlob = blob + combinedDataOffset + 6;
-	char* registryBlob = sizingsBlob + sizingsBlobLength;
-	int registryBlobLength = spritesCount * registryStructureLength;
-	char* dataBlob = registryBlob + registryBlobLength;
-	//int dataBlobLength = blobLength - registryBlobLength - sizingsBlobLength - combinedDataOffset - 6;
-	//char* dataBlobs = new char[spritesCount];
+	
+	char* registryBlob = sizingsBlob + sizingsBlobLenght;
+	int registryBlobLength = spritesCount * REGISTRY_STRUCTURE_LENGTH; //регистр на данный момент состоит из 2 шортов и 2 интов, длина структуры задается через REGISTRY_STRUCTURE_LENGTH
+	//Записываем регистр на девайс. Они там идут последовательно, сначала байтовые оффсеты потом битовые, потом иксы, потом игрики
+	int registryLineCount = spritesCount * sizingsCount;
+	cudaMemcpyToSymbol(SpriteByteOffsets, registryBlob, registryLineCount * sizeof(int));
+	cudaMemcpyToSymbol(SpriteBitOffsets, registryBlob + registryLineCount * sizeof(int), registryLineCount * sizeof(int));
+	cudaMemcpyToSymbol(SpriteWidths, registryBlob + registryLineCount * sizeof(int) * 2, registryLineCount * sizeof(short));
+	cudaMemcpyToSymbol(SpriteHeights, registryBlob + registryLineCount * (sizeof(int) * 2 + sizeof(short)), registryLineCount * sizeof(short));
 
-	int dataBlobLineLength = 0;
-	int maxWidth = 0;
-	int maxHeight = 0;
-	for (size_t i = 0; i < spritesCount; i++)
-	{
-		int width = bit_converter::GetShort(registryBlob, spritesCount * 8 + i * 2);
-		int height = bit_converter::GetShort(registryBlob, spritesCount * 10 + i * 2);
-		if (width > maxWidth)
-			maxWidth = width;
-		if (height > maxHeight)
-			maxHeight = height;
-		dataBlobLineLength += width * height;
-	}
+	//Дальше идет длина 1 канала цвета
+	int byteLineLength = bit_converter::GetInt(registryBlob + registryBlobLength, 0);
+	cudaMemcpyToSymbol(&ByteLineLength, &byteLineLength, sizeof(int)); //Сразу записываем ее в константы
 
-	int dataBlobLength = dataBlobLineLength * 4;
-	//int voidsBlobLength = (dataBlobLength / 32 * sizingsCount) / 8 + 1;
-	//int voidsBlobLength = blobLength - dataBlobLength - registryBlobLength - sizingsBlobLength - combinedDataOffset - 6;
-	int voidsBlobLength = bit_converter::GetInt(dataBlob + dataBlobLength, 0);
-	char* voidsBlob = dataBlob + dataBlobLength + 4;
+	//Дальше идут данные. А зная длину 1 канала цвета, мы можем легкр посчитать общую длину массива цветов
+	char* rgbaBlob = registryBlob + registryBlobLength;
+	int rgbaBlobLength = byteLineLength * DATA_STRUCTURE_LENGTH; //Длина структуры основных данных у нас 4 - по 1 байту на канал.
+	//Сразу записываем их в глобальную память
+	char* deviceRgbaDataPtr;
+	cudaMalloc((void**)&deviceRgbaDataPtr, rgbaBlobLength);
+	cudaMemcpy(deviceRgbaDataPtr, rgbaBlob, rgbaBlobLength, cudaMemcpyHostToDevice);
+
+	/*
+		Это были основные данные. Дальше идут вспомогательные.
+	*/
 
 
-	int lineMaskLength = bit_converter::GetInt(voidsBlob + voidsBlobLength, 0);
+	//Следующими за данными о цвете идут оффсеты карт пустот
+	int voidMapsCount = spritesCount * sizingsCount; //Карта пустот есть отдельно для каждого спрайта каждого сайзинга
+	int* voidMapsOffsets = (int*)(rgbaBlob + rgbaBlobLength);
+	int voidMapsOffsetsLength = voidMapsCount * sizeof(int);
+	cudaMemcpyToSymbol(&VoidOffsets, &voidMapsOffsets, voidMapsOffsetsLength); //Пишем ее в константы
 
-	char* rFlagsBlob = voidsBlob + voidsBlobLength + 4;
-	char* gFlagsBlob = rFlagsBlob + lineMaskLength;
-	char* bFlagsBlob = gFlagsBlob + lineMaskLength;
-	char* aFlagsBlob = bFlagsBlob + lineMaskLength;
-
-	int* voidMapsOffsets = (int*)(aFlagsBlob + lineMaskLength);
-	int voidMapsLengthsCount = spritesCount * sizingsCount;
-
-	char* deviceSizingsPtr;
-	cudaMalloc((void**)&deviceSizingsPtr, sizingsBlobLength);
-	char* deviceRegistryPtr;
-	cudaMalloc((void**)&deviceRegistryPtr, registryBlobLength);
-	char* deviceDataPtr;
-	cudaMalloc((void**)&deviceDataPtr, dataBlobLength);
+	//Потом длина уже непосредственно карт и за ней - сами дынне карты
+	int voidsBlobLength = bit_converter::GetInt((char*)voidMapsOffsets + voidMapsOffsetsLength, 0);
+	char* voidsBlob = (char*)voidMapsOffsets + voidMapsOffsetsLength + sizeof(int);
+	//Пишем эти данные в глобал мемори
 	char* deviceVoidsPtr;
 	cudaMalloc((void**)&deviceVoidsPtr, voidsBlobLength);
-
-	char* deviceRFlagsPtr;
-	cudaMalloc((void**)&deviceRFlagsPtr, lineMaskLength);
-	char* deviceGFlagsPtr;
-	cudaMalloc((void**)&deviceGFlagsPtr, lineMaskLength);
-	char* deviceBFlagsPtr;
-	cudaMalloc((void**)&deviceBFlagsPtr, lineMaskLength);
-	char* deviceAFlagsPtr;
-	cudaMalloc((void**)&deviceAFlagsPtr, lineMaskLength);
-
-	int* deviceVoidMapsOffsetsPtr;
-	cudaMalloc((void**)&deviceVoidMapsOffsetsPtr, voidMapsLengthsCount);
-
-	cudaMemcpy(deviceSizingsPtr, sizingsBlob, sizingsBlobLength, cudaMemcpyHostToDevice);
-	cudaMemcpy(deviceRegistryPtr, registryBlob, registryBlobLength, cudaMemcpyHostToDevice);
-	cudaMemcpy(deviceDataPtr, dataBlob, dataBlobLength, cudaMemcpyHostToDevice);
 	cudaMemcpy(deviceVoidsPtr, voidsBlob, voidsBlobLength, cudaMemcpyHostToDevice);
 
-	cudaMemcpy(deviceRFlagsPtr, rFlagsBlob, lineMaskLength, cudaMemcpyHostToDevice);
-	cudaMemcpy(deviceGFlagsPtr, gFlagsBlob, lineMaskLength, cudaMemcpyHostToDevice);
-	cudaMemcpy(deviceBFlagsPtr, bFlagsBlob, lineMaskLength, cudaMemcpyHostToDevice);
-	cudaMemcpy(deviceAFlagsPtr, aFlagsBlob, lineMaskLength, cudaMemcpyHostToDevice);
-
-	cudaMemcpy(deviceVoidMapsOffsetsPtr, voidMapsOffsets, voidMapsLengthsCount * 4, cudaMemcpyHostToDevice);
-
-	/*for (size_t i = 0; i < voidMapsLengthsCount; i++)
-	{
-		int voidSprite = i / sizingsCount;
-		int voidSizing = i % sizingsCount;
-		printf("void map i(%d), j(%d): %d\n", voidSprite, voidSizing, voidMapsOffsets[i]);
-	}*/
-
-	int* byteOffsets = (int*)deviceRegistryPtr;
-	int offsetsLength = spritesCount * 4;
-	int* bitOffsets = (int*)(deviceRegistryPtr + offsetsLength);
-	short* widths = (short*)(deviceRegistryPtr + offsetsLength * 2);
-	int widthsLength = spritesCount * 2;
-	short* heights = (short*)(deviceRegistryPtr + offsetsLength * 2 + widthsLength);
-	int heightsLength = widthsLength;
-
-	short* sizingWidths = (short*)deviceSizingsPtr;
-	int sizingWidthsLength = sizingsCount * 2;
-	short* sizingHeights = (short*)(deviceSizingsPtr + sizingWidthsLength);
-	int sizingHeightsLength = sizingWidthsLength;
-
-	unsigned char* r = (unsigned char*)deviceDataPtr;
-	unsigned char* g = (unsigned char*)(deviceDataPtr + dataBlobLineLength);
-	unsigned char* b = (unsigned char*)(deviceDataPtr + dataBlobLineLength * 2);
-	unsigned char* a = (unsigned char*)(deviceDataPtr + dataBlobLineLength * 3);
-
-	for (size_t i = 0; i < 16; i++)
-		printf("R flag %d: %d\n", i, (unsigned char)rFlagsBlob[i]);
-	for (size_t i = 0; i < 16; i++)
-		printf("G flag %d: %d\n", i, (unsigned char)gFlagsBlob[i]);
-	for (size_t i = 0; i < 16; i++)
-		printf("B flag %d: %d\n", i, (unsigned char)bFlagsBlob[i]);
-	for (size_t i = 0; i < 16; i++)
-		printf("A flag %d: %d\n", i, (unsigned char)aFlagsBlob[i]);
+	//Дальше длина канала основных данных в битах
+	int bitLineLength = bit_converter::GetInt(voidsBlob + voidsBlobLength, 0);
+	cudaMemcpyToSymbol(&BitLineLength, &bitLineLength, sizeof(int)); // Сразу записываем ее
+	char* rgbaFlags = voidsBlob + voidsBlobLength + sizeof(int);
+	int rgbaFlagsLength = bitLineLength * DATA_STRUCTURE_LENGTH;
+	//Пишем их тоже в глобальную
+	char* deviceRgbaFlagsPtr;
+	cudaMalloc((void**)&deviceRgbaFlagsPtr, bitLineLength * 4);
+	cudaMemcpy(deviceRgbaFlagsPtr, rgbaFlags, bitLineLength * 4, cudaMemcpyHostToDevice);
 
 	dim3 block(BLOCK_SIZE);
 	dim3 grid(spritesCount, spritesCount, sizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
-	mainKernel << <grid, block >> > (sizingsCount, sizingWidths, sizingHeights, spritesCount, byteOffsets, bitOffsets, widths, heights, r, g, b, a, deviceVoidMapsOffsetsPtr, deviceVoidsPtr, deviceRFlagsPtr, deviceGFlagsPtr, deviceBFlagsPtr, deviceAFlagsPtr);
+	mainKernel << <grid, block >> > ((unsigned char*)deviceRgbaDataPtr, deviceVoidsPtr, deviceRgbaFlagsPtr);
 
 	cudaDeviceSynchronize();
 
-	cudaFree(deviceSizingsPtr);
-	cudaFree(deviceRegistryPtr);
-	cudaFree(deviceDataPtr);
+	cudaFree(deviceRgbaDataPtr);
 	cudaFree(deviceVoidsPtr);
-
-	cudaFree(deviceRFlagsPtr);
-	cudaFree(deviceGFlagsPtr);
-	cudaFree(deviceBFlagsPtr);
-	cudaFree(deviceAFlagsPtr);
+	cudaFree(deviceRgbaFlagsPtr);
 
 	free(blob);
 

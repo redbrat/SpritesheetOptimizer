@@ -183,7 +183,7 @@ public class Optimizer : EditorWindow
                 parallelizedSizingsList.AddRange(BitConverter.GetBytes(sizingsDeconstructed[i][1]));
 
 
-            var dataBlobLineLength = 0;
+            var byteLineLength = 0;
             for (int i = 0; i < spritesCount; i++)
             {
                 var currentSpriteBytes = colorsResults.bytes[i];
@@ -197,7 +197,7 @@ public class Optimizer : EditorWindow
                 registryEntry.WidthAndHeight = widthAndHeight;
                 registry.Add(registryEntry);
 
-                dataBlobLineLength += width * height;
+                byteLineLength += width * height;
 
                 for (int x = 0; x < width; x++)
                     for (int y = 0; y < height; y++)
@@ -207,7 +207,7 @@ public class Optimizer : EditorWindow
                     }
             }
 
-            Debug.Log($"dataBlobLineLength = {dataBlobLineLength}");
+            Debug.Log($"byteLineLength = {byteLineLength}");
 
             for (int i = 0; i < spritesCount; i++)
             {
@@ -269,7 +269,7 @@ public class Optimizer : EditorWindow
 
             var voidMaps = new List<List<byte>>();
             var voidMapsOffsets = new List<List<int>>();
-            var voidBytesCount = 0;
+            var voidMapsLength = 0;
             var currentVoidOffset = 0;
             for (int i = 0; i < spritesCount; i++)
             {
@@ -307,14 +307,14 @@ public class Optimizer : EditorWindow
 
                 voidMaps.Add(newSpriteVoidMaps);
                 voidMapsOffsets.Add(newSpriteVoidMapsOffsets);
-                voidBytesCount += newSpriteVoidMaps.Count;
+                voidMapsLength += newSpriteVoidMaps.Count;
             }
 
             var rFlags = new List<List<byte>>();
             var gFlags = new List<List<byte>>();
             var bFlags = new List<List<byte>>();
             var aFlags = new List<List<byte>>();
-            var flagsCount = 0;
+            var flagsLineLength = 0;
             for (int i = 0; i < spritesCount; i++)
             {
                 var newRFlagsList = new List<byte>();
@@ -346,14 +346,32 @@ public class Optimizer : EditorWindow
                 bFlags.Add(newBFlagsList);
                 aFlags.Add(newAFlagsList);
                 var registryEntry = registry[i];
-                registryEntry.SpritesBitOffset = flagsCount;
+                registryEntry.SpritesBitOffset = flagsLineLength;
                 registry[i] = registryEntry;
-                flagsCount += newRFlagsList.Count;
+                flagsLineLength += newRFlagsList.Count;
             }
 
+            var sizingsCount = (short)sizingsDeconstructed.Length;
             var voidMapsLengthsCount = spritesCount * sizings.Count();
 
-            var combinedData = new byte[dataList.Count + registry.Count * 12 + 4 + parallelizedSizingsList.Count + 2 + 4 + voidBytesCount + 4 + flagsCount * 4 + voidMapsLengthsCount * 4];
+            //var combinedData = new byte[dataList.Count + registry.Count * 12 + 4 + parallelizedSizingsList.Count + 2 + 4 + 4 + voidMapsBytesCount + 4 + flagsCount * 4 + voidMapsLengthsCount * 4];
+            var combinedData = new byte[
+                2 //Зарезервировано
+                + sizeof(short) //spritesCount
+                + sizeof(short) //sizingsCount
+                + sizingsCount * sizeof(short) * 2 //структура сайзинга - это два шорта (х и у)
+                + spritesCount * (sizeof(int) * 2 + sizeof(short) * 2) //текущая структура регистра состоит из 2 интов и 2 шортов на спрайт
+                + sizeof(int) //byteLineLength - длина канала данных в байтах
+                + byteLineLength * 4 //Дальше идут собственно данные - 4 канала (r, g, b, a)
+
+                                //Дальше вспомогательные
+
+                + sizingsCount * spritesCount * sizeof(int) //Это регистр оффсетов пустот. Там оффсеты на кажду карту пустот для каждого спрайта и каждого сайзинга.
+                + sizeof(int) // voidMapsLength - длина всей карты пустот в байтах (на самом деле она в битах), но тут именно длина блоба
+                + voidMapsLength //Собсно она, в байтах
+                + sizeof(int) // flagsLineLength - длина 1 канала флагов для данных в байтах (на самом деле она в битах), но тут именно длина блоба
+                + flagsLineLength * 4 // 4 канала флагов - по одному для каждого канала данных
+                ];
 
             combinedData[0] = 0; //Эти два байта 
             combinedData[1] = 0; //зарезервированы
@@ -362,7 +380,6 @@ public class Optimizer : EditorWindow
 
             //Debug.LogError($"spritesCount = {spritesCount}");
 
-            var sizingsCount = (short)parallelizedSizingsList.Count;
             combinedData[4] = (byte)(sizingsCount & 255);
             combinedData[5] = (byte)(sizingsCount >> 8 & 255);
             //Debug.LogError($"sizingsCount = {sizingsCount}");
@@ -376,65 +393,63 @@ public class Optimizer : EditorWindow
                 combinedData[currentOffset + i] = registryParalellized[i];
             currentOffset += registryParalellized.Count;
 
+            combinedData[currentOffset++] = (byte)(byteLineLength & 255);
+            combinedData[currentOffset++] = (byte)(byteLineLength >> 8 & 255);
+            combinedData[currentOffset++] = (byte)(byteLineLength >> 16 & 255);
+            combinedData[currentOffset++] = (byte)(byteLineLength >> 24 & 255);
+
             for (int i = 0; i < dataList.Count; i++)
                 combinedData[currentOffset + i] = dataList[i];
             currentOffset += dataList.Count;
 
-            Debug.Log($"voidBytesCount = {voidBytesCount}");
-            combinedData[currentOffset] = (byte)(voidBytesCount & 255);
-            combinedData[currentOffset + 1] = (byte)(voidBytesCount >> 8 & 255);
-            combinedData[currentOffset + 2] = (byte)(voidBytesCount >> 16 & 255);
-            combinedData[currentOffset + 3] = (byte)(voidBytesCount >> 24 & 255);
-            currentOffset += 4;
 
-            var i2 = 0;
-            for (int i = 0; i < voidMaps.Count; i++)
-                for (int j = 0; j < voidMaps[i].Count; j++)
-                    combinedData[currentOffset + i2++] = voidMaps[i][j];
-            currentOffset += voidBytesCount;
+            
+            //Вспомогательные данные.
 
-            Debug.Log($"flagsCount = {flagsCount}");
-            combinedData[currentOffset] = (byte)(flagsCount & 255);
-            combinedData[currentOffset + 1] = (byte)(flagsCount >> 8 & 255);
-            combinedData[currentOffset + 2] = (byte)(flagsCount >> 16 & 255);
-            combinedData[currentOffset + 3] = (byte)(flagsCount >> 24 & 255);
-            currentOffset += 4;
-
-            i2 = 0;
-            for (int i = 0; i < rFlags.Count; i++)
-                for (int j = 0; j < rFlags[i].Count; j++)
-                    combinedData[currentOffset + i2++] = rFlags[i][j];
-            currentOffset += flagsCount;
-            i2 = 0;
-            for (int i = 0; i < gFlags.Count; i++)
-                for (int j = 0; j < gFlags[i].Count; j++)
-                    combinedData[currentOffset + i2++] = gFlags[i][j];
-            currentOffset += flagsCount;
-            i2 = 0;
-            for (int i = 0; i < bFlags.Count; i++)
-                for (int j = 0; j < bFlags[i].Count; j++)
-                    combinedData[currentOffset + i2++] = bFlags[i][j];
-            currentOffset += flagsCount;
-            i2 = 0;
-            for (int i = 0; i < aFlags.Count; i++)
-                for (int j = 0; j < aFlags[i].Count; j++)
-                    combinedData[currentOffset + i2++] = aFlags[i][j];
-            currentOffset += flagsCount;
-
-            i2 = 0;
             for (int i = 0; i < voidMapsOffsets.Count; i++)
             {
                 for (int j = 0; j < voidMapsOffsets[i].Count; j++)
                 {
-                    combinedData[currentOffset + i2++] = (byte)(voidMapsOffsets[i][j] & 255);
-                    combinedData[currentOffset + i2++] = (byte)(voidMapsOffsets[i][j] >> 8 & 255);
-                    combinedData[currentOffset + i2++] = (byte)(voidMapsOffsets[i][j] >> 16 & 255);
-                    combinedData[currentOffset + i2++] = (byte)(voidMapsOffsets[i][j] >> 24 & 255);
+                    combinedData[currentOffset++] = (byte)(voidMapsOffsets[i][j] & 255);
+                    combinedData[currentOffset++] = (byte)(voidMapsOffsets[i][j] >> 8 & 255);
+                    combinedData[currentOffset++] = (byte)(voidMapsOffsets[i][j] >> 16 & 255);
+                    combinedData[currentOffset++] = (byte)(voidMapsOffsets[i][j] >> 24 & 255);
 
                     //Debug.Log($"void map for i({i}), j({j}): {voidMapsOffsets[i][j]}");
                 }
             }
-            currentOffset += voidMapsLengthsCount * 4;
+
+            Debug.Log($"voidBytesCount = {voidMapsLength}");
+            combinedData[currentOffset++] = (byte)(voidMapsLength & 255);
+            combinedData[currentOffset++] = (byte)(voidMapsLength >> 8 & 255);
+            combinedData[currentOffset++] = (byte)(voidMapsLength >> 16 & 255);
+            combinedData[currentOffset++] = (byte)(voidMapsLength >> 24 & 255);
+
+            for (int i = 0; i < voidMaps.Count; i++)
+                for (int j = 0; j < voidMaps[i].Count; j++)
+                    combinedData[currentOffset++] = voidMaps[i][j];
+
+            Debug.Log($"flagsCount = {flagsLineLength}");
+            combinedData[currentOffset++] = (byte)(flagsLineLength & 255);
+            combinedData[currentOffset++] = (byte)(flagsLineLength >> 8 & 255);
+            combinedData[currentOffset++] = (byte)(flagsLineLength >> 16 & 255);
+            combinedData[currentOffset++] = (byte)(flagsLineLength >> 24 & 255);
+
+            for (int i = 0; i < rFlags.Count; i++)
+                for (int j = 0; j < rFlags[i].Count; j++)
+                    combinedData[currentOffset++] = rFlags[i][j];
+
+            for (int i = 0; i < gFlags.Count; i++)
+                for (int j = 0; j < gFlags[i].Count; j++)
+                    combinedData[currentOffset++] = gFlags[i][j];
+
+            for (int i = 0; i < bFlags.Count; i++)
+                for (int j = 0; j < bFlags[i].Count; j++)
+                    combinedData[currentOffset++] = bFlags[i][j];
+
+            for (int i = 0; i < aFlags.Count; i++)
+                for (int j = 0; j < aFlags[i].Count; j++)
+                    combinedData[currentOffset++] = aFlags[i][j];
 
             Debug.Log($"sizings length = {parallelizedSizingsList.Count}");
             Debug.Log($"registry length = {registryParalellized.Count}");
