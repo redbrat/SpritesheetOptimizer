@@ -225,6 +225,19 @@ sizingsCount и spritesCount непонятно что вообще делают
 Сайзинги тоже идут в константы.
 Думаю, весь регистр тоже туда идет. Это для условных 2000 спрайтов 24 кб
 
+
+12.12.2019
+Ок, оказалось, что нельзя делать константы из массивов, не зная их длину заранее. Для каких-то данных это не проблема, для других это решаемо с некоторыми оговорками, для третьих это нелья делать вообще.
+
+А вот еще один прием. Нам ведь не нужны особо больше константы. Можно заблокировать кол-во сайзингов, скажем, на 22, и все оставшееся место распределить пропорционально этому кол-ву сайзигнов. Тогда и выяснится максимальное 
+кол-во спрайтов. Точнее даже не спрайтов а в целом пикселей.
+
+Итак, у нас всего пока что занято 12 байтов единичными значениями, все остальное - массивы. Остально состоит из следующего:
+22 * (sizeof(short) + 2) - все сайзинги. = 22*4 = 88
+spritesCount * (sizeof(int) + sizeof(int) + sizeof(short) + sizeof(short)) - битовые и байтовые сдвиги спрайтов (int), а также их ширина и высота (short) =  12 * spritesCount
+spritesCount * 22 * sizeof(int) - сдвиги карты пустот. = 88 * spritesCount
+Итого, как ни странно уравнение для неизвестного получилось 100 * spritesCount = 64кб - 100б. Решив его мы получаем spritesCount = 654.36. Мда, маловато. Наверное придется исключать карты пустот. Тогда spritesCount получится 
+равным 5453. Уже более-менее. На самом деле можно сделать отдельные версии кернела для разного кол-ва спрайтов, с теми или иными ограничениями и трейдофами.
 */
 
 #define BLOCK_SIZE 1024
@@ -240,13 +253,13 @@ __constant__ short SpritesCount;
 __constant__ int ByteLineLength;
 __constant__ int BitLineLength;
 
-__constant__ short* SizingWidths;
-__constant__ short* SizingHeights;
-__constant__ int* SpriteByteOffsets;
-__constant__ int* SpriteBitOffsets;
-__constant__ short* SpriteWidths;
-__constant__ short* SpriteHeights;
-__constant__ int* VoidOffsets;
+__constant__ short SizingWidths[22];
+__constant__ short SizingHeights[22];
+__constant__ int SpriteByteOffsets[654];
+__constant__ int* SpriteBitOffsets[654];
+__constant__ short* SpriteWidths[654];
+__constant__ short* SpriteHeights[654];
+__constant__ int* VoidOffsets[14388];
 
 __global__ void mainKernel(unsigned char* rgbaData, char* voids, char* rgbaFlags)
 {
