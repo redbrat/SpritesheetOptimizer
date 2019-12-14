@@ -263,14 +263,14 @@ __constant__ short SpriteWidths[654];
 __constant__ short SpriteHeights[654];
 __constant__ int VoidOffsets[14388];
 
-__global__ void mainKernel(unsigned char* rgbaData, char* voids, char* rgbaFlags)
+__global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags)
 {
 	//int ourSpriteIndex = blockIdx.x;
 	//int candidateSpriteIndex = blockIdx.y;
 	//int sizingIndex = blockIdx.z;
 
-	int ourByteOffset = SpriteByteOffsets[blockIdx.x];
-	int ourBitOffset = SpriteBitOffsets[blockIdx.x];
+	//int ourByteOffset = SpriteByteOffsets[blockIdx.x];
+	//int ourBitOffset = SpriteBitOffsets[blockIdx.x];
 	short ourWidth = SpriteWidths[blockIdx.x];
 	short ourHeight = SpriteHeights[blockIdx.x];
 	int ourSquare = ourWidth * ourHeight;
@@ -330,17 +330,13 @@ __global__ void mainKernel(unsigned char* rgbaData, char* voids, char* rgbaFlags
 	if (numberOfTimesWeNeedToLoadCandidateRemainder != 0)
 		numberOfTimesWeNeedToLoadCandidate++;
 
-	//printf("numberOfTimesWeNeedToLoadSelf = %d, ourSquare = %d\n", numberOfTimesWeNeedToLoadSelf, ourSquare);
-	//printf("ourBitsSquare = %d, ourBitOffset = %d\n", ourBitsSquare, ourBitOffset);
-	//return;
-
 	for (size_t i = 0; i < numberOfTimesWeNeedToLoadSelf; i++)
 	{
 		int byteAddress = i * BLOCK_SIZE + threadIdx.x;
 		if (byteAddress >= ourBitsSquare)
 			continue;
-		ourRFlags[byteAddress] = rgbaFlags[ourBitOffset + byteAddress];
-		ourGFlags[byteAddress] = rgbaFlags[BitLineLength + ourBitOffset + byteAddress];
+		ourRFlags[byteAddress] = rgbaFlags[SpriteBitOffsets[blockIdx.x] + byteAddress];
+		ourGFlags[byteAddress] = rgbaFlags[BitLineLength + SpriteBitOffsets[blockIdx.x] + byteAddress];
 	}
 
 	//printf("BitLineLength = %d, ByteLineLength = %d, SpritesCount = %d, SizingsCount = %d\n", BitLineLength, ByteLineLength, SpritesCount, SizingsCount);
@@ -355,21 +351,17 @@ __global__ void mainKernel(unsigned char* rgbaData, char* voids, char* rgbaFlags
 	}
 
 	//Проверяем, что все скопировалось правильно. Для этого выбираем случайный спрайт и логируем его флаги. Пускай будет спрайт №7
+	//if (blockIdx.x == 7 && blockIdx.y == 7 && blockIdx.z == 18) //Так мы обойдемся без повторов, только 1 блок будет логировать
+	//{
+	//	if (threadIdx.x < ourSquare)
+	//	{
+	//		int x = threadIdx.x / BLOCK_SIZE;
+	//		int y = threadIdx.x % BLOCK_SIZE;
+	//		printf("for pixel #%d (%d, %d) the flags of r and g are (%d, %d) == (%d, %d)\n", threadIdx.x, x, y, ourRFlags[threadIdx.x / 8] >> threadIdx.x % 8 & 1, ourGFlags[threadIdx.x / 8] >> threadIdx.x % 8 & 1, candidateRFlags[threadIdx.x / 8] >> threadIdx.x % 8 & 1, candidateGFlags[threadIdx.x / 8] >> threadIdx.x % 8 & 1);
+	//	}
+	//} //Проверил, работает
 
-	if (blockIdx.x == 7 && blockIdx.y == 7 && blockIdx.z == 11) //Так мы обойдемся без повторов, только 1 блок будет логировать
-	{
-		if (threadIdx.x < ourSquare)
-		{
-			int x = threadIdx.x / BLOCK_SIZE;
-			int y = threadIdx.x % BLOCK_SIZE;
-			printf("for pixel #%d (%d, %d) the flags of r and g are (%d, %d)\n", threadIdx.x, x, y, ourRFlags[threadIdx.x / 8] >> threadIdx.x % 8 & 1, ourGFlags[threadIdx.x / 8] >> threadIdx.x % 8 & 1);
-		}
-	}
-
-
-
-
-	/*int candidateWidthMinusSizing = candidateWidth - sizingWidth;
+	int candidateWidthMinusSizing = candidateWidth - sizingWidth;
 	int candidateHeightMinusSizing = candidateHeight - sizingHeight;
 	int candidateVoidAreaSquare = candidateWidthMinusSizing * candidateHeightMinusSizing;
 
@@ -378,21 +370,43 @@ __global__ void mainKernel(unsigned char* rgbaData, char* voids, char* rgbaFlags
 	if (numberOfTimesWeNeedToLoadVoidRemainder != 0)
 		numberOfTimesWeNeedToLoadVoid++;
 
-	int candidateVoidMapOffset = voidLengths[blockIdx.y * SizingsCount + sizingIndex];
-	char* candidateVoidMapGlobal = voids + candidateVoidMapOffset;
-	printf("asdkoasd %d, %d", blockIdx.y, sizingIndex);
-	if (blockIdx.y == 7 && sizingIndex == 11)
+	int candidateVoidMapOffset = VoidOffsets[blockIdx.y * SizingsCount + blockIdx.z];
+	unsigned char* candidateVoidMapGlobal = voids + candidateVoidMapOffset;
+	if (blockIdx.x == 7 && blockIdx.y == 7 && blockIdx.z == 18 && threadIdx.x < candidateVoidAreaSquare)
 	{
-		printf("Area offset for 7th sprite and 11th sizing is %d", candidateVoidMapOffset);
+		//printf("voids[%d] = %d\n", threadIdx.x, voids[threadIdx.x]);
+		/*
+			Ок, здесь у нас есть оффсет нашей войдмапы, она размером candidateWidthMinusSizing х candidateHeightMinusSizing, и мы хотим проверить первые 1024 значения. Допустим мы начали цикл и первые 1024 
+			потока начали работать. Они знают свой сайзинг, спрайт, и область и теперь они обходят кандидатскую область, порядковый номер которой в данном случае совпадает с их собственным.
+		*/
 
-		for (size_t x = 0; x < candidateWidthMinusSizing; x++)
+		//printf("candidateVoidMapOffset = %d\n", candidateVoidMapOffset);
+		//printf("candidateVoidAreaSquare = %d\n", candidateVoidAreaSquare);
+		if (threadIdx.x < candidateVoidAreaSquare)
+		{
+			printf("void byte at %d = %d\n", threadIdx.x, candidateVoidMapGlobal[threadIdx.x]);
+			int candidateX = threadIdx.x / candidateHeightMinusSizing;
+			int candidateY = threadIdx.x % candidateHeightMinusSizing;
+			printf("	void (%d, %d): %d\n", candidateX, candidateY, candidateVoidMapGlobal[threadIdx.x / 8] << threadIdx.x % 8 & 1);
+			//printf("Hello World! threadIdx.x = %d, candidateWidth = %d, candidateHeight = %d, sizingWidth = %d, sizingHeight = %d, candidateWidthMinusSizing = %d, candidateHeightMinusSizing = %d\n", threadIdx.x, candidateWidth, candidateHeight, sizingWidth, sizingHeight, candidateWidthMinusSizing, candidateHeightMinusSizing);
+			//printf("candidateX = %d,candidateY = %d\n", candidateX, candidateY);
+		}
+		return;
+
+		//printf("candidateVoidMapOffset = %d, first byte of candidateVoidMapGlobal = %d\n", candidateVoidMapOffset, candidateVoidMapGlobal[0]);
+		//printf("candidateWidth = %d, candidateHeight = %d, sizingWidth = %d, sizingHeight = %d\n", candidateWidthMinusSizing, candidateHeightMinusSizing, sizingWidth, sizingHeight);
+		//printf("candidateWidthMinusSizing = %d, candidateHeightMinusSizing = %d\n", candidateWidthMinusSizing, candidateHeightMinusSizing);
+		//return;
+		//printf("Void map offset for 7th sprite and 18th sizing is %d", candidateVoidMapOffset);
+
+		/*for (size_t x = 0; x < candidateWidthMinusSizing; x++)
 		{
 			for (size_t y = 0; y < candidateHeightMinusSizing; y++)
 			{
 				int bitIndex = x * candidateHeightMinusSizing + y;
 				printf("	void (%d, %d): %d", x, y, (unsigned char)(candidateVoidMapGlobal[bitIndex / 8] >> bitIndex % 8 & 1));
 			}
-		}
+		}*/
 	}
 
 
@@ -402,7 +416,7 @@ __global__ void mainKernel(unsigned char* rgbaData, char* voids, char* rgbaFlags
 		if (voidByteAddress >= candidateVoidAreaSquare)
 			continue;
 		candidateVoidMap[voidByteAddress] = voids[candidateBitOffset];
-	}*/
+	}
 }
 
 //
@@ -536,7 +550,7 @@ int main()
 
 	dim3 block(BLOCK_SIZE);
 	dim3 grid(spritesCount, spritesCount, sizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
-	mainKernel << <grid, block >> > ((unsigned char*)deviceRgbaDataPtr, deviceVoidsPtr, deviceRgbaFlagsPtr);
+	mainKernel << <grid, block >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr);
 
 	cudaDeviceSynchronize();
 

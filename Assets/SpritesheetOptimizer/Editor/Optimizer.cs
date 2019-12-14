@@ -272,9 +272,7 @@ public class Optimizer : EditorWindow
                 var height = currentSpriteBytes[0].Length;
                 for (int j = 0; j < sizingsDeconstructed.Length; j++)
                 {
-                    if (i == 7 && j == 11)
-                        Debug.Log($"Area offset for 7th sprite and 11th sizing is {newSpriteVoidMapsOffsets}");
-
+                    newSpriteVoidMapsOffsets.Add(currentVoidOffset + newSpriteVoidMaps.Count);
 
                     var sizing = sizingsDeconstructed[j];
                     var sizingWidth = sizing[0];
@@ -283,20 +281,37 @@ public class Optimizer : EditorWindow
                     {
                         for (int y = 0; y < height - sizingHeight; y++)
                         {
-                            var alpha = currentSpriteBytes[x][y][3];
-                            writeBit(newSpriteVoidMaps, bitsCounter++, alpha == 0 ? 1 : 0);
+                            var isVoid = true;
+                            for (int xx = 0; xx < sizingWidth; xx++)
+                            {
+                                for (int yy = 0; yy < sizingHeight; yy++)
+                                {
+                                    var alpha = currentSpriteBytes[x + xx][y + yy][3];
+                                    if (alpha != 0)
+                                    {
+                                        isVoid = false;
+                                        break;
+                                    }
+                                }
 
-                            if (i == 7 && j == 11)
-                                Debug.Log($"	void ({x}, {y}): {(alpha == 0 ? 1 : 0)}");
+                                if (!isVoid)
+                                    break;
+                            }
+                            writeBit(newSpriteVoidMaps, bitsCounter++, isVoid ? 0 : 1);
+
+                            if (i == 7 && j == 18)
+                                Debug.Log($"	{currentVoidOffset + newSpriteVoidMaps.Count}: void ({x}, {y}): {(isVoid ? 0 : 1)} - {newSpriteVoidMaps[newSpriteVoidMaps.Count - 1]}");
                         }
                     }
 
-                    newSpriteVoidMapsOffsets.Add(currentVoidOffset);
-                    currentVoidOffset += newSpriteVoidMaps.Count;
+                    //newSpriteVoidMapsOffsets.Add(currentVoidOffset + newSpriteVoidMaps.Count);
+                    if (i == 7 && j == 18)
+                        Debug.Log($"Area offset for {i}th sprite and {j}th sizing is {newSpriteVoidMapsOffsets[j]}");
                 }
 
                 voidMaps.Add(newSpriteVoidMaps);
                 voidMapsOffsets.Add(newSpriteVoidMapsOffsets);
+                currentVoidOffset += newSpriteVoidMaps.Count;
                 voidMapsLength += newSpriteVoidMaps.Count;
             }
 
@@ -329,10 +344,8 @@ public class Optimizer : EditorWindow
                         writeBit(newBFlagsList, bitsCounter, b > 127 ? 1 : 0);
                         writeBit(newAFlagsList, bitsCounter, a > 127 ? 1 : 0);
 
-                        if (i == 7)
-                        {
-                            Debug.Log($"for pixel {bitsCounter} ({x}, {y}) the flags of r and g are ({(r > 127 ? 1 : 0)}, {(g > 127 ? 1 : 0)})");
-                        }
+                        //if (i == 7)
+                        //    Debug.Log($"for pixel {bitsCounter} ({x}, {y}) the flags of r and g are ({(r > 127 ? 1 : 0)}, {(g > 127 ? 1 : 0)})");
                         bitsCounter++;
                     }
                 }
@@ -422,6 +435,8 @@ public class Optimizer : EditorWindow
                     combinedData[currentOffset++] = (byte)(voidMapsOffsets[i][j] >> 16 & 255);
                     combinedData[currentOffset++] = (byte)(voidMapsOffsets[i][j] >> 24 & 255);
 
+                    //if (i == 7 && j == 18)
+                    //    Debug.Log($"VoidMapOffset = {voidMapsOffsets[i][j]}, first byte of candidateVoidMapGlobal = {voidMaps[i][j]}");
                     //Debug.Log($"void map for i({i}), j({j}): {voidMapsOffsets[i][j]}");
                 }
             }
@@ -432,9 +447,18 @@ public class Optimizer : EditorWindow
             combinedData[currentOffset++] = (byte)(voidMapsLength >> 16 & 255);
             combinedData[currentOffset++] = (byte)(voidMapsLength >> 24 & 255);
 
+            var ourStartingOffset = 4295;
+            var i2 = 0;
             for (int i = 0; i < voidMaps.Count; i++)
+            {
                 for (int j = 0; j < voidMaps[i].Count; j++)
+                {
                     combinedData[currentOffset++] = voidMaps[i][j];
+                    if (i2 >= ourStartingOffset && i2 < ourStartingOffset + 300)
+                        Debug.Log($"void[{i2 - 1}] = {voidMaps[i][j]}");
+                    i2++;
+                }
+            }
 
             Debug.Log($"flagsCount = {flagsLineLength}");
             combinedData[currentOffset++] = (byte)(flagsLineLength & 255);
