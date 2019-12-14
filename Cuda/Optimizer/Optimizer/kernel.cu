@@ -287,9 +287,9 @@ __global__ void mainKernel(unsigned char* rgbaData, char* voids, char* rgbaFlags
 
 	short sizingWidth = SizingWidths[blockIdx.z];
 	short sizingHeight = SizingHeights[blockIdx.z];
-	if (threadIdx.x == 0)
+	/*if (threadIdx.x == 0)
 		printf("Hello from block! My sprite is #%d (width %d, height %d) and I work with sprite %d (width %d, height %d) and sizing %d (width %d, height %d) \n", blockIdx.x, ourWidth, ourHeight, blockIdx.y, candidateWidth, candidateHeight, blockIdx.z, sizingWidth, sizingHeight);
-	return;
+	return;*/
 
 	__shared__ int ourAreaContexts[BLOCK_SIZE];
 	__shared__ int candidateAreaContexts[BLOCK_SIZE];
@@ -300,6 +300,8 @@ __global__ void mainKernel(unsigned char* rgbaData, char* voids, char* rgbaFlags
 	ourAreaContexts[threadIdx.x] = myArea;
 	candidateAreaContexts[threadIdx.x] = candidateArea;
 
+	/*printf("Hello World!\n");
+	return;*/
 	//Так, ок, с инициализацией контекста вроде разобрались. Сейчас нам надо тупо скопировать всю нужную инфу в шаред-мемори
 
 	__shared__ char ourRFlags[8192];
@@ -313,17 +315,17 @@ __global__ void mainKernel(unsigned char* rgbaData, char* voids, char* rgbaFlags
 	if (numberOfTimesWeNeedToLoadSelfRemainder != 0)
 		numberOfTimesWeNeedToLoadSelf++;
 
-	printf("ourSquare = %d, candidateSquare = %d\n", ourSquare, candidateSquare);
-	return;
+	/*printf("ourSquare = %d, candidateSquare = %d\n", ourSquare, candidateSquare);
+	return;*/
 
 	int numberOfTimesWeNeedToLoadCandidate = candidateSquare / BLOCK_SIZE;
 	int numberOfTimesWeNeedToLoadCandidateRemainder = candidateSquare % BLOCK_SIZE;
 	if (numberOfTimesWeNeedToLoadCandidateRemainder != 0)
 		numberOfTimesWeNeedToLoadCandidate++;
-	//printf("numberOfTimesWeNeedToLoadSelf = %d, ourSquare = %d\n", numberOfTimesWeNeedToLoadSelf, ourSquare);
 
-	printf("ourBitsSquare = %d, ourBitOffset = %d\n", ourBitsSquare, ourBitOffset);
-	return;
+	//printf("numberOfTimesWeNeedToLoadSelf = %d, ourSquare = %d\n", numberOfTimesWeNeedToLoadSelf, ourSquare);
+	//printf("ourBitsSquare = %d, ourBitOffset = %d\n", ourBitsSquare, ourBitOffset);
+	//return;
 
 	/*for (size_t i = 0; i < numberOfTimesWeNeedToLoadSelf; i++)
 	{

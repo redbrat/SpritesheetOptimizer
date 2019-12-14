@@ -251,16 +251,6 @@ public class Optimizer : EditorWindow
                     }
             }
 
-            var registryParalellized = new List<byte>();
-            for (int i = 0; i < registry.Count; i++)
-                registryParalellized.AddRange(BitConverter.GetBytes(registry[i].SpritesByteOffset));
-            for (int i = 0; i < registry.Count; i++)
-                registryParalellized.AddRange(BitConverter.GetBytes(registry[i].SpritesBitOffset));
-            for (int i = 0; i < registry.Count; i++)
-                registryParalellized.AddRange(BitConverter.GetBytes((short)(registry[i].WidthAndHeight >> 16 & 65535)));
-            for (int i = 0; i < registry.Count; i++)
-                registryParalellized.AddRange(BitConverter.GetBytes((short)(registry[i].WidthAndHeight & 65535)));
-
             /*
              * Войдмапы должны храниться по спрайтам, а там по сайзингам, повторяя структуру куды для лучшего затем прасинга.
              * 
@@ -347,9 +337,20 @@ public class Optimizer : EditorWindow
                 aFlags.Add(newAFlagsList);
                 var registryEntry = registry[i];
                 registryEntry.SpritesBitOffset = flagsLineLength;
+                Debug.Log($"registryEntry.SpritesBitOffset = {registryEntry.SpritesBitOffset}");
                 registry[i] = registryEntry;
                 flagsLineLength += newRFlagsList.Count;
             }
+
+            var registryParalellized = new List<byte>();
+            for (int i = 0; i < registry.Count; i++)
+                registryParalellized.AddRange(BitConverter.GetBytes(registry[i].SpritesByteOffset));
+            for (int i = 0; i < registry.Count; i++)
+                registryParalellized.AddRange(BitConverter.GetBytes(registry[i].SpritesBitOffset));
+            for (int i = 0; i < registry.Count; i++)
+                registryParalellized.AddRange(BitConverter.GetBytes((short)(registry[i].WidthAndHeight >> 16 & 65535)));
+            for (int i = 0; i < registry.Count; i++)
+                registryParalellized.AddRange(BitConverter.GetBytes((short)(registry[i].WidthAndHeight & 65535)));
 
             var sizingsCount = (short)sizingsDeconstructed.Length;
             var voidMapsLengthsCount = spritesCount * sizings.Count();
@@ -451,18 +452,18 @@ public class Optimizer : EditorWindow
                 for (int j = 0; j < aFlags[i].Count; j++)
                     combinedData[currentOffset++] = aFlags[i][j];
 
-            Debug.Log($"sizings length = {parallelizedSizingsList.Count}");
-            Debug.Log($"registry length = {registryParalellized.Count}");
-            Debug.Log($"data length = {dataList.Count}");
+            //Debug.Log($"sizings length = {parallelizedSizingsList.Count}");
+            //Debug.Log($"registry length = {registryParalellized.Count}");
+            //Debug.Log($"data length = {dataList.Count}");
 
-            for (int i = 0; i < 16; i++)
-                Debug.Log($"R flag {i}: {rFlags[0][i]}");
-            for (int i = 0; i < 16; i++)
-                Debug.Log($"R flag {i}: {gFlags[0][i]}");
-            for (int i = 0; i < 16; i++)
-                Debug.Log($"R flag {i}: {bFlags[0][i]}");
-            for (int i = 0; i < 16; i++)
-                Debug.Log($"R flag {i}: {aFlags[0][i]}");
+            //for (int i = 0; i < 16; i++)
+            //    Debug.Log($"R flag {i}: {rFlags[0][i]}");
+            //for (int i = 0; i < 16; i++)
+            //    Debug.Log($"R flag {i}: {gFlags[0][i]}");
+            //for (int i = 0; i < 16; i++)
+            //    Debug.Log($"R flag {i}: {bFlags[0][i]}");
+            //for (int i = 0; i < 16; i++)
+            //    Debug.Log($"R flag {i}: {aFlags[0][i]}");
 
             //var parallelizedSizingsArray = parallelizedSizingsList.ToArray();
             //Debug.Log($"Sizings length: {parallelizedSizingsArray.Length}");
