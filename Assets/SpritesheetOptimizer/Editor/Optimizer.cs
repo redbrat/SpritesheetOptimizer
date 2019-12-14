@@ -327,7 +327,13 @@ public class Optimizer : EditorWindow
                         writeBit(newRFlagsList, bitsCounter, r > 127 ? 1 : 0);
                         writeBit(newGFlagsList, bitsCounter, g > 127 ? 1 : 0);
                         writeBit(newBFlagsList, bitsCounter, b > 127 ? 1 : 0);
-                        writeBit(newAFlagsList, bitsCounter++, a > 127 ? 1 : 0);
+                        writeBit(newAFlagsList, bitsCounter, a > 127 ? 1 : 0);
+
+                        if (i == 7)
+                        {
+                            Debug.Log($"for pixel {bitsCounter} ({x}, {y}) the flags of r and g are ({(r > 127 ? 1 : 0)}, {(g > 127 ? 1 : 0)})");
+                        }
+                        bitsCounter++;
                     }
                 }
 
@@ -337,7 +343,7 @@ public class Optimizer : EditorWindow
                 aFlags.Add(newAFlagsList);
                 var registryEntry = registry[i];
                 registryEntry.SpritesBitOffset = flagsLineLength;
-                Debug.Log($"registryEntry.SpritesBitOffset = {registryEntry.SpritesBitOffset}");
+                //Debug.Log($"registryEntry.SpritesBitOffset = {registryEntry.SpritesBitOffset}");
                 registry[i] = registryEntry;
                 flagsLineLength += newRFlagsList.Count;
             }
@@ -549,7 +555,7 @@ public class Optimizer : EditorWindow
         var reminder = (int)(bitsCounter % 8);
         if (reminder == 0)
             bitsContainer.Add(0);
-        bitsContainer[bitsContainer.Count - 1] |= (byte)((bit & 1) << (7 - reminder));
+        bitsContainer[bitsContainer.Count - 1] |= (byte)((bit & 1) << reminder);
     }
 
     private async void launch(Algorythm algorythm, Sprite[] sprites, MyColor[][][] colors, MyVector2Float[] pivots)

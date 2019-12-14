@@ -248,6 +248,8 @@ spritesCount * 22 * sizeof(int) - сдвиги карты пустот. = 88 * s
 #define DATA_STRUCTURE_LENGTH 4
 #define RESERVED_DATA_LENGHT 2
 
+#define MAX_FLAGS_LENGTH_FOR_SPRITE 8192 //Для 256х256 спрайта он именно такой
+
 __constant__ short SizingsCount;
 __constant__ short SpritesCount;
 __constant__ int ByteLineLength;
@@ -304,11 +306,16 @@ __global__ void mainKernel(unsigned char* rgbaData, char* voids, char* rgbaFlags
 	return;*/
 	//Так, ок, с инициализацией контекста вроде разобрались. Сейчас нам надо тупо скопировать всю нужную инфу в шаред-мемори
 
-	__shared__ char ourRFlags[8192];
-	__shared__ char candidateRFlags[8192];
-	__shared__ char ourGFlags[8192];
-	__shared__ char candidateGFlags[8192];
-	__shared__ char candidateVoidMap[8192];
+	/*
+		Дальше мы просто загружаем кешированные флаги, для нашей и кандидатской текстур в полном объеме. Для 256х256 спрайтов, размер должен быть 8192 байт.
+	*/
+
+	__shared__ char ourRFlags[MAX_FLAGS_LENGTH_FOR_SPRITE];
+	__shared__ char candidateRFlags[MAX_FLAGS_LENGTH_FOR_SPRITE];
+	__shared__ char ourGFlags[MAX_FLAGS_LENGTH_FOR_SPRITE];
+	__shared__ char candidateGFlags[MAX_FLAGS_LENGTH_FOR_SPRITE];
+	__shared__ char candidateVoidMap[MAX_FLAGS_LENGTH_FOR_SPRITE];//Экономим регистры
+	//__shared__ char cachedFlags[MAX_FLAGS_LENGTH_FOR_SPRITE * 5];
 
 	int numberOfTimesWeNeedToLoadSelf = ourSquare / BLOCK_SIZE;
 	int numberOfTimesWeNeedToLoadSelfRemainder = ourSquare % BLOCK_SIZE;
@@ -327,25 +334,42 @@ __global__ void mainKernel(unsigned char* rgbaData, char* voids, char* rgbaFlags
 	//printf("ourBitsSquare = %d, ourBitOffset = %d\n", ourBitsSquare, ourBitOffset);
 	//return;
 
-	/*for (size_t i = 0; i < numberOfTimesWeNeedToLoadSelf; i++)
+	for (size_t i = 0; i < numberOfTimesWeNeedToLoadSelf; i++)
 	{
-		int ourByteAddress = i * BLOCK_SIZE + threadIdx.x;
-		if (ourByteAddress >= ourBitsSquare)
+		int byteAddress = i * BLOCK_SIZE + threadIdx.x;
+		if (byteAddress >= ourBitsSquare)
 			continue;
-		ourRFlags[ourByteAddress] = rFlags[ourBitOffset + ourByteAddress];
-		ourGFlags[ourByteAddress] = gFlags[ourBitOffset + ourByteAddress];
+		ourRFlags[byteAddress] = rgbaFlags[ourBitOffset + byteAddress];
+		ourGFlags[byteAddress] = rgbaFlags[BitLineLength + ourBitOffset + byteAddress];
 	}
+
+	//printf("BitLineLength = %d, ByteLineLength = %d, SpritesCount = %d, SizingsCount = %d\n", BitLineLength, ByteLineLength, SpritesCount, SizingsCount);
 
 	for (size_t i = 0; i < numberOfTimesWeNeedToLoadCandidate; i++)
 	{
-		int candidateByteAddress = i * BLOCK_SIZE + threadIdx.x;
-		if (candidateByteAddress >= candidateBitsSquare)
+		int byteAddress = i * BLOCK_SIZE + threadIdx.x;
+		if (byteAddress >= candidateBitsSquare)
 			continue;
-		candidateRFlags[candidateByteAddress] = rFlags[candidateBitOffset + candidateByteAddress];
-		candidateGFlags[candidateByteAddress] = gFlags[candidateBitOffset + candidateByteAddress];
+		candidateRFlags[byteAddress] = rgbaFlags[candidateBitOffset + byteAddress];
+		candidateGFlags[byteAddress] = rgbaFlags[BitLineLength + candidateBitOffset + byteAddress];
 	}
 
-	int candidateWidthMinusSizing = candidateWidth - sizingWidth;
+	//Проверяем, что все скопировалось правильно. Для этого выбираем случайный спрайт и логируем его флаги. Пускай будет спрайт №7
+
+	if (blockIdx.x == 7 && blockIdx.y == 7 && blockIdx.z == 11) //Так мы обойдемся без повторов, только 1 блок будет логировать
+	{
+		if (threadIdx.x < ourSquare)
+		{
+			int x = threadIdx.x / BLOCK_SIZE;
+			int y = threadIdx.x % BLOCK_SIZE;
+			printf("for pixel #%d (%d, %d) the flags of r and g are (%d, %d)\n", threadIdx.x, x, y, ourRFlags[threadIdx.x / 8] >> threadIdx.x % 8 & 1, ourGFlags[threadIdx.x / 8] >> threadIdx.x % 8 & 1);
+		}
+	}
+
+
+
+
+	/*int candidateWidthMinusSizing = candidateWidth - sizingWidth;
 	int candidateHeightMinusSizing = candidateHeight - sizingHeight;
 	int candidateVoidAreaSquare = candidateWidthMinusSizing * candidateHeightMinusSizing;
 
@@ -445,9 +469,9 @@ int main()
 	int combinedDataOffset = metaLength + sizeof(int); //указатель на начало массива основных данных
 
 	short spritesCount = bit_converter::GetShort(blob, combinedDataOffset + RESERVED_DATA_LENGHT); // первые 2 байта основных данных зарезервированы, вторые - кол-во спрайтов.
-	cudaMemcpyToSymbol(&SpritesCount, &spritesCount, sizeof(short)); //Сразу записываем их в константы устройства
+	cudaMemcpyToSymbol(SpritesCount, &spritesCount, sizeof(short)); //Сразу записываем их в константы устройства
 	short sizingsCount = bit_converter::GetShort(blob, combinedDataOffset + RESERVED_DATA_LENGHT + sizeof(short)); //третьи 2 байта - кол-во сайзингов
-	cudaMemcpyToSymbol(&SizingsCount, &sizingsCount, sizeof(short)); //Тоже записываем сразу туда.
+	cudaMemcpyToSymbol(SizingsCount, &sizingsCount, sizeof(short)); //Тоже записываем сразу туда.
 
 	//Определяем массивы и длины данных сайзингов и регистра
 
@@ -471,7 +495,7 @@ int main()
 
 	//Дальше идет длина 1 канала цвета
 	int byteLineLength = bit_converter::GetInt(registryBlob + registryBlobLength, 0);
-	cudaMemcpyToSymbol(&ByteLineLength, &byteLineLength, sizeof(int)); //Сразу записываем ее в константы
+	cudaMemcpyToSymbol(ByteLineLength, &byteLineLength, sizeof(int)); //Сразу записываем ее в константы
 
 	//Дальше идут данные. А зная длину 1 канала цвета, мы можем легко посчитать общую длину массива цветов
 	char* rgbaBlob = registryBlob + registryBlobLength + sizeof(int);
@@ -502,7 +526,7 @@ int main()
 
 	//Дальше длина канала основных данных в битах
 	int bitLineLength = bit_converter::GetInt(voidsBlob + voidsBlobLength, 0);
-	cudaMemcpyToSymbol(&BitLineLength, &bitLineLength, sizeof(int)); // Сразу записываем ее
+	cudaMemcpyToSymbol(BitLineLength, &bitLineLength, sizeof(int)); // Сразу записываем ее
 	char* rgbaFlags = voidsBlob + voidsBlobLength + sizeof(int);
 	int rgbaFlagsLength = bitLineLength * DATA_STRUCTURE_LENGTH;
 	//Пишем их тоже в глобальную
