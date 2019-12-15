@@ -350,26 +350,15 @@ __global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsign
 		candidateGFlags[byteAddress] = rgbaFlags[BitLineLength + SpriteBitOffsets[blockIdx.y] + byteAddress];
 	}
 
-	__syncthreads();
-
-	//Проверяем, что все скопировалось правильно. Для этого выбираем случайный спрайт и логируем его флаги. Пускай будет спрайт №7
-	if (blockIdx.x == 7 && blockIdx.y == 7 && blockIdx.z == 18) //Так мы обойдемся без повторов, только 1 блок будет логировать
-	{
-		if (threadIdx.x < ourSquare)
-		{
-			int x = threadIdx.x / BLOCK_SIZE;
-			int y = threadIdx.x % BLOCK_SIZE;
-			printf("for pixel #%d (%d, %d) the flags of r and g are (%d, %d) == (%d, %d)\n", threadIdx.x, x, y, (ourRFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1, (ourGFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1, (candidateRFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1, (candidateGFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1);
-		}
-	} //Проверил, работает
-
 	int candidateWidthMinusSizing = candidateWidth - sizingWidth;
 	int candidateHeightMinusSizing = candidateHeight - sizingHeight;
 	int candidateVoidAreaSquare = candidateWidthMinusSizing * candidateHeightMinusSizing;
+	int candidateVoidAreaBitSquare = candidateVoidAreaSquare / 8;
+	if (candidateVoidAreaSquare % 8 != 0)
+		candidateVoidAreaBitSquare++;
 
-	int numberOfTimesWeNeedToLoadVoid = candidateVoidAreaSquare / BLOCK_SIZE;
-	int numberOfTimesWeNeedToLoadVoidRemainder = candidateVoidAreaSquare % BLOCK_SIZE;
-	if (numberOfTimesWeNeedToLoadVoidRemainder != 0)
+	int numberOfTimesWeNeedToLoadVoid = candidateVoidAreaBitSquare / BLOCK_SIZE;
+	if (candidateVoidAreaBitSquare % BLOCK_SIZE != 0)
 		numberOfTimesWeNeedToLoadVoid++;
 
 	int candidateVoidMapOffset = VoidOffsets[blockIdx.y * SizingsCount + blockIdx.z];
@@ -385,10 +374,32 @@ __global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsign
 	for (size_t i = 0; i < numberOfTimesWeNeedToLoadVoid; i++)
 	{
 		int voidByteAddress = i * BLOCK_SIZE + threadIdx.x;
-		if (voidByteAddress >= candidateVoidAreaSquare)
+		if (voidByteAddress >= candidateVoidAreaBitSquare)
 			continue;
-		candidateVoidMap[voidByteAddress] = voids[SpriteBitOffsets[blockIdx.y]];
+		candidateVoidMap[voidByteAddress] = candidateVoidMapGlobal[voidByteAddress];
+		//candidateVoidMap[voidByteAddress] = voids[SpriteBitOffsets[blockIdx.y]];
 	}
+
+	__syncthreads(); //Обязательна синхронизация для того, чтобы потоки которые не выполняли загрузку в шаред-память не начали с этой шаред памятью работать пока другие в нее еще не все загрузили.
+
+	//Проверяем, что все скопировалось правильно. Для этого выбираем случайный спрайт и логируем его флаги. Пускай будет спрайт №7
+	if (blockIdx.x == 7 && blockIdx.y == 7 && blockIdx.z == 18) //Так мы обойдемся без повторов, только 1 блок будет логировать
+	{
+		if (threadIdx.x < ourSquare)
+		{
+			int x = threadIdx.x / BLOCK_SIZE;
+			int y = threadIdx.x % BLOCK_SIZE;
+			printf("for pixel #%d (%d, %d) the flags of r and g are (%d, %d) == (%d, %d)\n", threadIdx.x, x, y, (ourRFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1, (ourGFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1, (candidateRFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1, (candidateGFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1);
+		}
+	} //Проверил, работает
+
+
+	if (blockIdx.x == 7 && blockIdx.y == 7 && blockIdx.z == 18 && threadIdx.x < candidateVoidAreaSquare)
+	{
+		int candidateX = threadIdx.x / candidateHeightMinusSizing;
+		int candidateY = threadIdx.x % candidateHeightMinusSizing;
+		printf("	void (%d, %d): %d\n", candidateX, candidateY, candidateVoidMap[threadIdx.x / 8] >> threadIdx.x % 8 & 1);
+	} //Проверили правильность апрсинга войдмап
 }
 
 //
