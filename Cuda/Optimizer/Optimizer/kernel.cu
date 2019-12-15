@@ -202,12 +202,12 @@ P.S. Я ошибся - войдмапы занимают меньше места
 Ок, нужно расписать раз и навсегда правильный вариант записи битовых оффсетов - битовые оффсеты всегда записываются по своим группам и с округлением до
 байтов. У меня и войдмапы были неправильно записаны, и судя по всему еще и флаги щас надо будет переделывать.
 
-Ок, похоже я еще не начал, а уже приближаюсь к максимально возможному числу регистров процессора на поток. На самом деле число регистров на см - всего 64к. В 
-рассчете на поток при наших плановых 2048 потоках это всего 31.25 потоков. Пипец какой-то. Т.е. это не только мегасложно удержать все в голове, но еще и надо 
+Ок, похоже я еще не начал, а уже приближаюсь к максимально возможному числу регистров процессора на поток. На самом деле число регистров на см - всего 64к. В
+рассчете на поток при наших плановых 2048 потоках это всего 31.25 потоков. Пипец какой-то. Т.е. это не только мегасложно удержать все в голове, но еще и надо
 при этом стараться переиспорльзовать переменные, т.е. они скорее всего будут с малоговорящими названиями. Круто.
 
-Ок, у меня уже только в качестве аргументов функции используются 18 регистров. И где-то на 30й-31й переменной оно отваливается. И это только то, что вижу я. 
-Там еще возможно при разворачивании выражений добавляется, скорее всего до максимальных 62х регистров на поток. Короче надо врубить режим максимальной 
+Ок, у меня уже только в качестве аргументов функции используются 18 регистров. И где-то на 30й-31й переменной оно отваливается. И это только то, что вижу я.
+Там еще возможно при разворачивании выражений добавляется, скорее всего до максимальных 62х регистров на поток. Короче надо врубить режим максимальной
 экономии.
 
 11.12.2019
@@ -219,8 +219,8 @@ sizingsCount и spritesCount непонятно что вообще делают
 Хранение отдельных составляющих blockIdx, естественно, тоже не имеет смысла.
 Отдельные каналы флагов тоже уходят.
 На самом деле не обязательно сейчас прямо жестко оптимизировать. Достаточно, чтобы хотя бы все заработало и протестировать. А потом можно будет уже жестко оптимизировать.
-Не вижу причин voidLengths не кинуть в константы. Они маленькие и запрашиваются потоками не параллельно. Ну хотя как немного? Для такого небольшого набора как 40 спрайтов и 22 сайзинга - это 4 * 40 * 22 = 3520 байт. Константной 
-памяти у нас всего 64 кб. Допустим, 4 кб мы займем единичными константами. Оставшихся 60Кб хватит на то, чтобы разместить оффсеты для 2792 спрайтов при 22х сайзингах. Ну, вполне реальная цифра для большого проекта. Для бОльших 
+Не вижу причин voidLengths не кинуть в константы. Они маленькие и запрашиваются потоками не параллельно. Ну хотя как немного? Для такого небольшого набора как 40 спрайтов и 22 сайзинга - это 4 * 40 * 22 = 3520 байт. Константной
+памяти у нас всего 64 кб. Допустим, 4 кб мы займем единичными константами. Оставшихся 60Кб хватит на то, чтобы разместить оффсеты для 2792 спрайтов при 22х сайзингах. Ну, вполне реальная цифра для большого проекта. Для бОльших
 циферь, думаю, можно будет что-нибудь придумать.
 Сайзинги тоже идут в константы.
 Думаю, весь регистр тоже туда идет. Это для условных 2000 спрайтов 24 кб
@@ -229,14 +229,14 @@ sizingsCount и spritesCount непонятно что вообще делают
 12.12.2019
 Ок, оказалось, что нельзя делать константы из массивов, не зная их длину заранее. Для каких-то данных это не проблема, для других это решаемо с некоторыми оговорками, для третьих это нелья делать вообще.
 
-А вот еще один прием. Нам ведь не нужны особо больше константы. Можно заблокировать кол-во сайзингов, скажем, на 22, и все оставшееся место распределить пропорционально этому кол-ву сайзигнов. Тогда и выяснится максимальное 
+А вот еще один прием. Нам ведь не нужны особо больше константы. Можно заблокировать кол-во сайзингов, скажем, на 22, и все оставшееся место распределить пропорционально этому кол-ву сайзигнов. Тогда и выяснится максимальное
 кол-во спрайтов. Точнее даже не спрайтов а в целом пикселей.
 
 Итак, у нас всего пока что занято 12 байтов единичными значениями, все остальное - массивы. Остально состоит из следующего:
 22 * (sizeof(short) + 2) - все сайзинги. = 22*4 = 88
 spritesCount * (sizeof(int) + sizeof(int) + sizeof(short) + sizeof(short)) - битовые и байтовые сдвиги спрайтов (int), а также их ширина и высота (short) =  12 * spritesCount
 spritesCount * 22 * sizeof(int) - сдвиги карты пустот. = 88 * spritesCount
-Итого, как ни странно уравнение для неизвестного получилось 100 * spritesCount = 64кб - 100б. Решив его мы получаем spritesCount = 654.36. Мда, маловато. Наверное придется исключать карты пустот. Тогда spritesCount получится 
+Итого, как ни странно уравнение для неизвестного получилось 100 * spritesCount = 64кб - 100б. Решив его мы получаем spritesCount = 654.36. Мда, маловато. Наверное придется исключать карты пустот. Тогда spritesCount получится
 равным 5453. Уже более-менее. На самом деле можно сделать отдельные версии кернела для разного кол-ва спрайтов, с теми или иными ограничениями и трейдофами.
 */
 
@@ -339,6 +339,8 @@ __global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsign
 		ourGFlags[byteAddress] = rgbaFlags[BitLineLength + SpriteBitOffsets[blockIdx.x] + byteAddress];
 	}
 
+	//if (blockIdx.x == 7 && blockIdx.y == 7 && blockIdx.z == 18) //Так мы обойдемся без повторов, только 1 блок будет логировать
+	//	printf("rgbaFlags[%d] = %d\n", threadIdx.x, rgbaFlags[threadIdx.x]);
 	//printf("BitLineLength = %d, ByteLineLength = %d, SpritesCount = %d, SizingsCount = %d\n", BitLineLength, ByteLineLength, SpritesCount, SizingsCount);
 
 	for (size_t i = 0; i < numberOfTimesWeNeedToLoadCandidate; i++)
@@ -357,7 +359,7 @@ __global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsign
 	//	{
 	//		int x = threadIdx.x / BLOCK_SIZE;
 	//		int y = threadIdx.x % BLOCK_SIZE;
-	//		printf("for pixel #%d (%d, %d) the flags of r and g are (%d, %d) == (%d, %d)\n", threadIdx.x, x, y, ourRFlags[threadIdx.x / 8] >> threadIdx.x % 8 & 1, ourGFlags[threadIdx.x / 8] >> threadIdx.x % 8 & 1, candidateRFlags[threadIdx.x / 8] >> threadIdx.x % 8 & 1, candidateGFlags[threadIdx.x / 8] >> threadIdx.x % 8 & 1);
+	//		printf("for pixel #%d (%d, %d) the flags of r and g are (%d, %d) == (%d, %d)\n", threadIdx.x, x, y, (ourRFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1, (ourGFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1, (candidateRFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1, (candidateGFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1);
 	//	}
 	//} //Проверил, работает
 
@@ -376,20 +378,15 @@ __global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsign
 	{
 		//printf("voids[%d] = %d\n", threadIdx.x, voids[threadIdx.x]);
 		/*
-			Ок, здесь у нас есть оффсет нашей войдмапы, она размером candidateWidthMinusSizing х candidateHeightMinusSizing, и мы хотим проверить первые 1024 значения. Допустим мы начали цикл и первые 1024 
+			Ок, здесь у нас есть оффсет нашей войдмапы, она размером candidateWidthMinusSizing х candidateHeightMinusSizing, и мы хотим проверить первые 1024 значения. Допустим мы начали цикл и первые 1024
 			потока начали работать. Они знают свой сайзинг, спрайт, и область и теперь они обходят кандидатскую область, порядковый номер которой в данном случае совпадает с их собственным.
 		*/
 
-		//printf("candidateVoidMapOffset = %d\n", candidateVoidMapOffset);
-		//printf("candidateVoidAreaSquare = %d\n", candidateVoidAreaSquare);
 		if (threadIdx.x < candidateVoidAreaSquare)
 		{
-			printf("void byte at %d = %d\n", threadIdx.x, candidateVoidMapGlobal[threadIdx.x]);
 			int candidateX = threadIdx.x / candidateHeightMinusSizing;
 			int candidateY = threadIdx.x % candidateHeightMinusSizing;
-			printf("	void (%d, %d): %d\n", candidateX, candidateY, candidateVoidMapGlobal[threadIdx.x / 8] << threadIdx.x % 8 & 1);
-			//printf("Hello World! threadIdx.x = %d, candidateWidth = %d, candidateHeight = %d, sizingWidth = %d, sizingHeight = %d, candidateWidthMinusSizing = %d, candidateHeightMinusSizing = %d\n", threadIdx.x, candidateWidth, candidateHeight, sizingWidth, sizingHeight, candidateWidthMinusSizing, candidateHeightMinusSizing);
-			//printf("candidateX = %d,candidateY = %d\n", candidateX, candidateY);
+			printf("	void (%d, %d): %d\n", candidateX, candidateY, candidateVoidMapGlobal[threadIdx.x / 8] >> threadIdx.x % 8 & 1);
 		}
 		return;
 
@@ -497,7 +494,7 @@ int main()
 	cudaMemcpyToSymbol(SizingWidths, sizingsBlob, sizingsLineLength);
 	cudaMemcpyToSymbol(SizingHeights, sizingsBlob + sizingsLineLength, sizingsLineLength);
 
-	
+
 	char* registryBlob = sizingsBlob + sizingsBlobLenght;
 	int registryBlobLength = spritesCount * REGISTRY_STRUCTURE_LENGTH; //регистр на данный момент состоит из 2 шортов и 2 интов, длина структуры задается через REGISTRY_STRUCTURE_LENGTH
 	//Записываем регистр на девайс. Они там идут последовательно, сначала байтовые оффсеты потом битовые, потом иксы, потом игрики

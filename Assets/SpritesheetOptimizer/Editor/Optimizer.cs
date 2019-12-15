@@ -257,22 +257,23 @@ public class Optimizer : EditorWindow
              * Надо будет потом проверить правильность войд-мап...
              */
 
-            var voidMaps = new List<List<byte>>();
+            var voidMaps = new List<List<List<byte>>>();
             var voidMapsOffsets = new List<List<int>>();
             var voidMapsLength = 0;
             var currentVoidOffset = 0;
             for (int i = 0; i < spritesCount; i++)
             {
-                var newSpriteVoidMaps = new List<byte>();
+                var newSpriteVoidMaps = new List<List<byte>>();
                 var newSpriteVoidMapsOffsets = new List<int>();
-                var bitsCounter = (long)0;
 
                 var currentSpriteBytes = colorsResults.bytes[i];
                 var width = currentSpriteBytes.Length;
                 var height = currentSpriteBytes[0].Length;
                 for (int j = 0; j < sizingsDeconstructed.Length; j++)
                 {
-                    newSpriteVoidMapsOffsets.Add(currentVoidOffset + newSpriteVoidMaps.Count);
+                    newSpriteVoidMapsOffsets.Add(currentVoidOffset);
+                    var newSpriteSizingVoidMap = new List<byte>();
+                    var bitsCounter = (long)0;
 
                     var sizing = sizingsDeconstructed[j];
                     var sizingWidth = sizing[0];
@@ -297,12 +298,16 @@ public class Optimizer : EditorWindow
                                 if (!isVoid)
                                     break;
                             }
-                            writeBit(newSpriteVoidMaps, bitsCounter++, isVoid ? 0 : 1);
+                            writeBit(newSpriteSizingVoidMap, bitsCounter++, isVoid ? 0 : 1);
 
                             if (i == 7 && j == 18)
-                                Debug.Log($"	{currentVoidOffset + newSpriteVoidMaps.Count}: void ({x}, {y}): {(isVoid ? 0 : 1)} - {newSpriteVoidMaps[newSpriteVoidMaps.Count - 1]}");
+                                Debug.Log($"	{currentVoidOffset + newSpriteSizingVoidMap.Count}: void ({x}, {y}): {(isVoid ? 0 : 1)} - {newSpriteSizingVoidMap[newSpriteSizingVoidMap.Count - 1]}");
                         }
                     }
+
+                    currentVoidOffset += newSpriteSizingVoidMap.Count;
+                    voidMapsLength += newSpriteSizingVoidMap.Count;
+                    newSpriteVoidMaps.Add(newSpriteSizingVoidMap);
 
                     //newSpriteVoidMapsOffsets.Add(currentVoidOffset + newSpriteVoidMaps.Count);
                     if (i == 7 && j == 18)
@@ -311,8 +316,6 @@ public class Optimizer : EditorWindow
 
                 voidMaps.Add(newSpriteVoidMaps);
                 voidMapsOffsets.Add(newSpriteVoidMapsOffsets);
-                currentVoidOffset += newSpriteVoidMaps.Count;
-                voidMapsLength += newSpriteVoidMaps.Count;
             }
 
             var rFlags = new List<List<byte>>();
@@ -344,8 +347,8 @@ public class Optimizer : EditorWindow
                         writeBit(newBFlagsList, bitsCounter, b > 127 ? 1 : 0);
                         writeBit(newAFlagsList, bitsCounter, a > 127 ? 1 : 0);
 
-                        //if (i == 7)
-                        //    Debug.Log($"for pixel {bitsCounter} ({x}, {y}) the flags of r and g are ({(r > 127 ? 1 : 0)}, {(g > 127 ? 1 : 0)})");
+                        if (i == 7)
+                            Debug.Log($"for pixel {bitsCounter} ({x}, {y}) the flags of r and g are ({(r > 127 ? 1 : 0)}, {(g > 127 ? 1 : 0)})");
                         bitsCounter++;
                     }
                 }
@@ -386,7 +389,7 @@ public class Optimizer : EditorWindow
 
                                 //Дальше вспомогательные
 
-                + sizingsCount * spritesCount * sizeof(int) //Это регистр оффсетов пустот. Там оффсеты на кажду карту пустот для каждого спрайта и каждого сайзинга.
+                + sizingsCount * spritesCount * sizeof(int) //Это регистр оффсетов пустот. Там оффсеты на каждую карту пустот для каждого спрайта и каждого сайзинга.
                 + sizeof(int) // voidMapsLength - длина всей карты пустот в байтах (на самом деле она в битах), но тут именно длина блоба
                 + voidMapsLength //Собсно она, в байтах
                 + sizeof(int) // flagsLineLength - длина 1 канала флагов для данных в байтах (на самом деле она в битах), но тут именно длина блоба
@@ -447,16 +450,19 @@ public class Optimizer : EditorWindow
             combinedData[currentOffset++] = (byte)(voidMapsLength >> 16 & 255);
             combinedData[currentOffset++] = (byte)(voidMapsLength >> 24 & 255);
 
-            var ourStartingOffset = 4295;
-            var i2 = 0;
+            //var ourStartingOffset = 4367;
+            //var i2 = 0;
             for (int i = 0; i < voidMaps.Count; i++)
             {
                 for (int j = 0; j < voidMaps[i].Count; j++)
                 {
-                    combinedData[currentOffset++] = voidMaps[i][j];
-                    if (i2 >= ourStartingOffset && i2 < ourStartingOffset + 300)
-                        Debug.Log($"void[{i2 - 1}] = {voidMaps[i][j]}");
-                    i2++;
+                    for (int m = 0; m < voidMaps[i][j].Count; m++)
+                    {
+                        combinedData[currentOffset++] = voidMaps[i][j][m];
+                        //if (i2 >= ourStartingOffset && i2 < ourStartingOffset + 300)
+                        //    Debug.Log($"void[{i2 - 1}] = {voidMaps[i][j][m]}");
+                        //i2++;
+                    }
                 }
             }
 
@@ -466,9 +472,16 @@ public class Optimizer : EditorWindow
             combinedData[currentOffset++] = (byte)(flagsLineLength >> 16 & 255);
             combinedData[currentOffset++] = (byte)(flagsLineLength >> 24 & 255);
 
+            var i2 = 0;
             for (int i = 0; i < rFlags.Count; i++)
+            {
                 for (int j = 0; j < rFlags[i].Count; j++)
+                {
                     combinedData[currentOffset++] = rFlags[i][j];
+                    if (i2++ < 1024)
+                        Debug.Log($"rgbaFlags[{i2 - 1}] = {rFlags[i][j]}");
+                }
+            }
 
             for (int i = 0; i < gFlags.Count; i++)
                 for (int j = 0; j < gFlags[i].Count; j++)
