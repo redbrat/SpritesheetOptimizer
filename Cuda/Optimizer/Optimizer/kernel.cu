@@ -280,6 +280,29 @@ spritesCount * 22 * sizeof(int) - сдвиги карты пустот. = 88 * s
 образом, чтобы туда не попали пустые области. Красота. Но сложно, конечно. Будет чудесно, если к февралю закончу.
 
 А с другой стороны первую итерацию можно делать и без ужимания. Так и быстрее получится выпустить и легче потом тестировать, наверное. Для простоты можно еще и войды пока не обновлять. В общем, фигарим МВП.
+
+
+16.12.2019
+А зачем мне проверять спрайты, стоящие до моего спрайта? Любые совпадения, найденные там будут засчитаны одинаково - как повторы. Поэтому можно просто в самом начале, еще до кеширования проверить и записать 
+везде нули в этом случае, чтобы они не влияли на конечный результат. Хотя... А как мы поймем, что этот спрайт повтор, если не будем проверять такие случаи? А нам обязателньо знать что спрайт - повтор? Я 
+думаю, нет. Потому что если он повтор, худшее что может быть - это ничья по счету с другой такой же областью, а ничья означает одинаковый результат во всех отношениях, поэтому какую из этих областей взять - 
+неважно. А если у повтора будет меньший счет он просто не выиграет. А так мы просто уменьшим кол-во работы почти в 2 раза. Кроме того сама концепция повтора никуда не девается - если встретили повтор, 
+перестаем себя обсчитывать. Так что минусов тут нет.
+
+Еще, т.к. мы пока делаем МВП и без ужатия, то нам не нужна такая штука как контекст, так что временно убираем его.
+
+Ок, еще одна проблема - нет гарантий, что в ситуации гонки у нас запишутся все нужные данные. Поэтому нам нежелательна ситуация, когда одновременно выполняются блоки одного и того же
+спрайт-сайза. Лучше будет если одновременно выполняются блоки разных спрайт-сайзов. Но у нас нет инструментов для гарантирования этого. Хм... проблема...
+
+Ок, есть маза сделать последовательный запуск кернелов так чтобы каждый кернел работал только с одни спрайто-размеро-спрайтом. Это гарантирует синхронизацию между блоками. А чтобы не использовать
+цпу, будем делать это прямо с девайса. Прикольно. Это на самом деле хорошо подходит, потому что константы и глобал мемори не нужно перезагружать. Правда надо будет перезагружать шаред-мемори...
+Правда в шаред мемори у нас в основном кандидатские данные, которые и так перезагружаться должны каждую итерацию, но есть ведь и данные нашего спрайта... Ну тут я не знаю, что делать. Можно,
+конечно, убрать наши данные и загружать больше кандидатских. Хотя нет, смысла в этом 0. Лол. Вообще-то они и раньше загружались постоянно - каждый блок грузит эти данные себе и они там
+повторяются. Так что все норм в этом плане. Вообще потоки памяти будут, конечно, адовые. Там судя по всему будет память, занимаемая спрайтами, в квадрате, т.к. все сравниваются со всеми. 3000
+спрайтов должны сравниться каждый с каждым, поэтому будет всего загружено 9 миллионов а не 3 тысячи. Чето это как-то не айс. Нет, пропускная способность памяти у видюхи, конечно на завить - там
+вроде сотник гигабит/сек, т.е. теоретически 2 терабайта данных пропустить можно за несколько минут. Может это и ок...
+
+В любом слачае сейчас надо сделать контролирующих кернел для междублочной синхронизаци, т.к. без этого мы не все контролируем.
 */
 
 #define BLOCK_SIZE 1024
@@ -305,7 +328,7 @@ __constant__ short SpriteWidths[654];
 __constant__ short SpriteHeights[654];
 __constant__ int VoidOffsets[14388];
 
-__global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags)
+__global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, unsigned int* results)
 {
 	//int ourSpriteIndex = blockIdx.x;
 	//int candidateSpriteIndex = blockIdx.y;
@@ -419,39 +442,100 @@ __global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsign
 	//	int candidateX = threadIdx.x / candidateHeightMinusSizing;
 	//	int candidateY = threadIdx.x % candidateHeightMinusSizing;
 	//	printf("	void (%d, %d): %d\n", candidateX, candidateY, candidateVoidMap[threadIdx.x / 8] >> threadIdx.x % 8 & 1);
-	//} //Проверили правильность апрсинга войдмап
+	//} //Проверили правильность парсинга войдмап
 
+	int ourWorkingHeight = SpriteHeights[blockIdx.x] - sizingHeight;
+	int ourWorkingSquare = (SpriteWidths[blockIdx.x] - sizingWidth) * ourWorkingHeight;
+	int numberOfTasksPerThread = ourWorkingSquare / BLOCK_SIZE;
+	if (ourWorkingSquare % BLOCK_SIZE != 0)
+		numberOfTasksPerThread++;
 
-	__shared__ int ourAreaContexts[BLOCK_SIZE];
-	__shared__ int candidateAreaContexts[BLOCK_SIZE];
-
-	int myArea = threadIdx.x;
-	int candidateArea = threadIdx.x;
-
-	ourAreaContexts[threadIdx.x] = myArea;
-	candidateAreaContexts[threadIdx.x] = candidateArea;
-
-	int ourX = threadIdx.x / SpriteHeights[blockIdx.x];
-	int ourY = threadIdx.x % SpriteHeights[blockIdx.x];
-	int coincidences = 0;
-
-	for (size_t x = 0; x < candidateWidthMinusSizing; x++)
+	for (size_t i = 0; i < numberOfTasksPerThread; i++)
 	{
-		for (size_t y = 0; y < candidateHeightMinusSizing; y++)
+		int ourWorkingPixelIndex = i * BLOCK_SIZE + threadIdx.x;
+		if (ourWorkingPixelIndex >= ourWorkingSquare)
+			break;
+
+		int ourX = ourWorkingPixelIndex / ourWorkingHeight;
+		int ourY = ourWorkingPixelIndex % ourWorkingHeight;
+		int coincidences = 0; //Значения меньше 0 - повторы
+
+		results[workingOffsets[blockIdx.x] * sizeof(int) + ourX * ourWorkingHeight + ourY] += coincidences;
+
+
+		for (size_t x = 0; x < candidateWidthMinusSizing; x++)
 		{
-			int candidatePixelIndex = x * SpriteHeights[blockIdx.y] + y;
-			if (candidateVoidMap[x * candidateHeightMinusSizing + y] == 0) //Пустота
-				continue;
+			if (coincidences < 0)
+				break;
 
-			bool isTheSame = true;
-			for (size_t xx = 0; xx < sizingWidth; xx++)
+			for (size_t y = 0; y < candidateHeightMinusSizing; y++)
 			{
-				for (size_t yy = 0; yy < sizingHeight; yy++)
-				{
-					if (ourRFlags[(ourX + xx) * SpriteHeights[blockIdx.x] + ourY + yy] == ourRFlags[(ourX + xx) * SpriteHeights[blockIdx.x] + ourY + yy]) //Ок, я на сегодня уже не соображаю для такой работы.
-					{
+				if (coincidences < 0)
+					break;
 
+				int voidMapIndex = x * candidateHeightMinusSizing + y;
+				if ((candidateVoidMap[voidMapIndex] >> (voidMapIndex % 8)) & 1 == 0) //Пустота
+					continue;
+
+				bool isTheSame = true;
+				for (size_t xx = 0; xx < sizingWidth; xx++)
+				{
+					for (size_t yy = 0; yy < sizingHeight; yy++)
+					{
+						int ourPixelIndex = (ourX + xx) * SpriteHeights[blockIdx.x] + ourY + yy;
+						int candidatePixelIndex = (x + xx) * SpriteHeights[blockIdx.y] + y + yy;
+
+						if ((ourRFlags[ourPixelIndex / 8] >> (ourPixelIndex % 8)) & 1 != (candidateRFlags[candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1)
+						{
+							isTheSame = false;
+							break;
+						}
+
+						if ((ourGFlags[ourPixelIndex / 8] >> (ourPixelIndex % 8)) & 1 != (candidateGFlags[candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1)
+						{
+							isTheSame = false;
+							break;
+						}
+
+						if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.y] + candidatePixelIndex])
+						{
+							isTheSame = false;
+							break;
+						}
+
+						//Если у нас пиксель прозрачный нас не интересуют остальные каналы
+						if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != 0)
+						{
+							if (rgbaData[SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != rgbaData[SpriteByteOffsets[blockIdx.y] + candidatePixelIndex])
+							{
+								isTheSame = false;
+								break;
+							}
+
+							if (rgbaData[ByteLineLength + SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != rgbaData[ByteLineLength + SpriteByteOffsets[blockIdx.y] + candidatePixelIndex])
+							{
+								isTheSame = false;
+								break;
+							}
+
+							if (rgbaData[ByteLineLength * 2 + SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != rgbaData[ByteLineLength * 2 + SpriteByteOffsets[blockIdx.y] + candidatePixelIndex])
+							{
+								isTheSame = false;
+								break;
+							}
+						}
 					}
+
+					if (!isTheSame)
+						break;
+				}
+
+				if (isTheSame)
+				{
+					if (blockIdx.x == blockIdx.y && ourX * SpriteHeights[blockIdx.x] + ourY > x* SpriteHeights[blockIdx.y] + y) //Если мы обнаружили область на том же спрайте, стоящую до нас - повтор
+						coincidences = -1;
+					else
+						coincidences++;
 				}
 			}
 		}
@@ -533,18 +617,24 @@ int main()
 	int sizingsBlobLenght = sizingsCount * SIZING_STRUCTURE_LENGTH; //Сайзинги состоят из 2 шортов - х и у
 	//Записываем сайзинги на девайс. Они там идут последовательно, сначала иксы потом игрики
 	int sizingsLineLength = sizeof(short) * sizingsCount;
-	cudaMemcpyToSymbol(SizingWidths, sizingsBlob, sizingsLineLength);
-	cudaMemcpyToSymbol(SizingHeights, sizingsBlob + sizingsLineLength, sizingsLineLength);
+	short* sizingWidths = (short*)sizingsBlob;
+	short* sizingHeights = (short*)(sizingsBlob + sizingsLineLength);
+	cudaMemcpyToSymbol(SizingWidths, sizingWidths, sizingsLineLength);
+	cudaMemcpyToSymbol(SizingHeights, sizingHeights, sizingsLineLength);
 
 
 	char* registryBlob = sizingsBlob + sizingsBlobLenght;
 	int registryBlobLength = spritesCount * REGISTRY_STRUCTURE_LENGTH; //регистр на данный момент состоит из 2 шортов и 2 интов, длина структуры задается через REGISTRY_STRUCTURE_LENGTH
 	//Записываем регистр на девайс. Они там идут последовательно, сначала байтовые оффсеты потом битовые, потом иксы, потом игрики
 	int registryLineCount = spritesCount * sizingsCount;
-	cudaMemcpyToSymbol(SpriteByteOffsets, registryBlob, spritesCount * sizeof(int));
-	cudaMemcpyToSymbol(SpriteBitOffsets, registryBlob + spritesCount * sizeof(int), spritesCount * sizeof(int));
-	cudaMemcpyToSymbol(SpriteWidths, registryBlob + spritesCount * sizeof(int) * 2, spritesCount * sizeof(short));
-	cudaMemcpyToSymbol(SpriteHeights, registryBlob + spritesCount * (sizeof(int) * 2 + sizeof(short)), spritesCount * sizeof(short));
+	int* spriteByteOffsets = (int*)registryBlob;
+	int* spriteBitOffsets = (int*)(registryBlob + spritesCount * sizeof(int));
+	int* spriteWidths = (int*)(registryBlob + spritesCount * sizeof(int) * 2);
+	int* spriteHeights = (int*)(registryBlob + spritesCount * (sizeof(int) * 2 + sizeof(short)));
+	cudaMemcpyToSymbol(SpriteByteOffsets, spriteByteOffsets, spritesCount * sizeof(int));
+	cudaMemcpyToSymbol(SpriteBitOffsets, spriteBitOffsets, spritesCount * sizeof(int));
+	cudaMemcpyToSymbol(SpriteWidths, spriteWidths, spritesCount * sizeof(short));
+	cudaMemcpyToSymbol(SpriteHeights, spriteHeights, spritesCount * sizeof(short));
 
 	//Дальше идет длина 1 канала цвета
 	int byteLineLength = bit_converter::GetInt(registryBlob + registryBlobLength, 0);
@@ -587,16 +677,56 @@ int main()
 	cudaMalloc((void**)&deviceRgbaFlagsPtr, rgbaFlagsLength);
 	cudaMemcpy(deviceRgbaFlagsPtr, rgbaFlags, rgbaFlagsLength, cudaMemcpyHostToDevice);
 
+	/*
+		Ок, нам нужны области памяти для хранения промежуточных результатов. Первый промежуточный результат - это счет спрайто-размеро-спрайта. Второй - общий счет спрайто-размера. Первый получается довольно 
+		огромным. Допустим, у нас 3000 спрайтов 256х256, тогда размер структуры для первого промежуточного результата нужен будет такой: 256х256х3000х22х3000х4 байт, то есть... всего лишь 2 терабайта памяти.
+		Прикольно. Ок. Я посчитал, если не брать в расчет первую промежуточную структуру, а сразу писать во вторую - максимальное кол-во спрайтов размера 256х256, которое мы сможем взять - 1733. Т.е. где-то 
+		113 мегапикселей за раз. Ну, это, конечно, не мало само по себе, но с другой - это всего лишь 7 4к-текстур. Конечно, можно будет как-то выкручиваться - свопом, уменьшением кол-ва сайзингов, но вообще 
+		в будущем, конечно, стоит придумать нормальное решение для этой проблемы. Может обсчитывать в несколько проходов с выгрузкой промежуточных результатов в оперативку. В принципе не так сложно должно 
+		быть сделать. А на первое время, я думаю, такого кол-ва хватит. А стратегию подсчета конечно же надо будет поменять на подсчет сразу в итоговый результат. Т.е. пропускаем первую промежуточную стадию.
+	*/
+
+	//Размерность матриц результатов у нас не совпадает с размерностью спрайтов из-за сайзингов.
+	//Еще нам нужны байтовые оффсеты рабочих областей спрайтов, раз мы хотим экономить место. Битовые войд-оффсеты не подходят, т.к. там округляются значения до кратных 8.
+	//В будущем вот это вот всё надо будет перенести на клиента.
+	unsigned int resultsCount = 0;
+	unsigned int* workingSpriteOffsets = (unsigned int*)malloc(sizingsCount * spritesCount * sizeof(int));
+	unsigned int currentOffset = 0;
+	for (size_t i = 0; i < spritesCount; i++)
+	{
+		int spriteWidth = spriteWidths[i];
+		int spriteHeight = spriteHeights[i];
+		for (size_t j = 0; j < sizingsCount; j++)
+		{
+			int sizingWidth = sizingWidths[j];
+			int sizingHeight = sizingHeights[j];
+
+			unsigned int currentWorkingSpriteLength = (spriteWidth - sizingWidth) * (spriteHeight - sizingHeight);
+			resultsCount += currentWorkingSpriteLength;
+			workingSpriteOffsets[i * sizingsCount + j] = currentOffset;
+			currentOffset += currentWorkingSpriteLength;
+		}
+	}
+	char* deviceResultsPtr;
+	cudaMalloc((void**)&deviceResultsPtr, resultsCount * sizeof(int));
+	cudaMemset(deviceResultsPtr, 0, resultsCount * sizeof(int));
+	int* deviceWorkingSpriteOffsetsPtr;
+	cudaMalloc((void**)&deviceWorkingSpriteOffsetsPtr, sizingsCount * spritesCount * sizeof(unsigned int));
+	cudaMemcpy(deviceWorkingSpriteOffsetsPtr, workingSpriteOffsets, sizingsCount * spritesCount * sizeof(unsigned int), cudaMemcpyHostToDevice);
+
 	dim3 block(BLOCK_SIZE);
 	dim3 grid(spritesCount, spritesCount, sizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
-	mainKernel << <grid, block >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr);
+	mainKernel << <grid, block >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceResultsPtr);
 
 	cudaDeviceSynchronize();
 
 	cudaFree(deviceRgbaDataPtr);
 	cudaFree(deviceVoidsPtr);
 	cudaFree(deviceRgbaFlagsPtr);
+	cudaFree(deviceResultsPtr);
+	cudaFree(deviceWorkingSpriteOffsetsPtr);
 
+	free(workingSpriteOffsets);
 	free(blob);
 
 	return 0;
