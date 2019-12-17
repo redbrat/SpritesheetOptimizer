@@ -300,7 +300,7 @@ public class Optimizer : EditorWindow
                             }
                             writeBit(newSpriteSizingVoidMap, bitsCounter++, isVoid ? 0 : 1);
 
-                            if (i == 7 && j == 18)
+                            if (i == 0 && j == 18)
                                 Debug.Log($"	{currentVoidOffset + newSpriteSizingVoidMap.Count}: void ({x}, {y}): {(isVoid ? 0 : 1)} - {newSpriteSizingVoidMap[newSpriteSizingVoidMap.Count - 1]}");
                         }
                     }

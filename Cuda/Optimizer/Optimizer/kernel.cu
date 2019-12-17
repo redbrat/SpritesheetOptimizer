@@ -302,7 +302,15 @@ spritesCount * 22 * sizeof(int) - сдвиги карты пустот. = 88 * s
 спрайтов должны сравниться каждый с каждым, поэтому будет всего загружено 9 миллионов а не 3 тысячи. Чето это как-то не айс. Нет, пропускная способность памяти у видюхи, конечно на завить - там
 вроде сотник гигабит/сек, т.е. теоретически 2 терабайта данных пропустить можно за несколько минут. Может это и ок...
 
-В любом слачае сейчас надо сделать контролирующих кернел для междублочной синхронизаци, т.к. без этого мы не все контролируем.
+В любом слачае сейчас надо сделать контролирующий кернел для междублочной синхронизаци, т.к. без этого мы не все контролируем.
+
+17.12.2019
+Поразбирался слегка в этом динамическом параллелизме и, кажись, это не обязательно, можно сделать по-другому, проще, и по результату даже быстрее. Кол-во блоков будет равно кол-ву спрайто-сайзов, т.е. в 
+принципе немало, даже для нашего тест-кейса (40 х 22 = 880 блоков), а обычные реальные задачи будут занимать десятки, если не сотни, тысяч блоков, таким образом обеспечивая хорошую оккупацию. Так вот. Каждый 
+блок обрабатывает всех кандидатов последовательно. Это по сути то же самое, как если бы мы сделали с кернелами - там тоже не было бы параллелизма в этом плане. Я как-то не нашел решения, чтобы обеспечить 
+параллелизм обсчетов спрайто-размеро-спрайтов, но при этом синхронизировать запись их результатов. Хотя... Да нет, никак. Может как-то и можно, но оставим эти попытки на будущее - уж слишком геморройные 
+пути я вижу. Пока что просто последовательный обсчет всех кандидатов в одном и том же блоке будет и быстрее (из-за того, что не надо каждый раз снова кешировать свой спрайт в шаред-мемори и менеджить 
+переходы из кернела в кернел) и легче технически.
 */
 
 #define BLOCK_SIZE 1024
@@ -331,7 +339,7 @@ __constant__ int VoidOffsets[14388];
 __global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, unsigned int* results)
 {
 	//int ourSpriteIndex = blockIdx.x;
-	//int candidateSpriteIndex = blockIdx.y;
+	//int candidateSpriteIndex = candidateIndex;
 	//int sizingIndex = blockIdx.z;
 
 	//int ourByteOffset = SpriteByteOffsets[blockIdx.x];
@@ -343,22 +351,12 @@ __global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsign
 	if (ourSquare % 8 != 0)
 		ourBitsSquare++;
 
-	/*int candidateByteOffset = SpriteByteOffsets[blockIdx.y];
-	int candidateBitOffset = SpriteBitOffsets[blockIdx.y];*/
-	//int candidateWidth = SpriteWidths[blockIdx.y];
-	//int candidateHeight = SpriteHeights[blockIdx.y];
-	int candidateSquare = SpriteWidths[blockIdx.y] * SpriteHeights[blockIdx.y];
-	int candidateBitsSquare = candidateSquare / 8;
-	if (candidateSquare % 8 != 0)
-		candidateBitsSquare++;
-
 	short sizingWidth = SizingWidths[blockIdx.z];
 	short sizingHeight = SizingHeights[blockIdx.z];
 
-
 	__shared__ char ourRFlags[MAX_FLAGS_LENGTH_FOR_SPRITE];
-	__shared__ char candidateRFlags[MAX_FLAGS_LENGTH_FOR_SPRITE];
 	__shared__ char ourGFlags[MAX_FLAGS_LENGTH_FOR_SPRITE];
+	__shared__ char candidateRFlags[MAX_FLAGS_LENGTH_FOR_SPRITE];
 	__shared__ char candidateGFlags[MAX_FLAGS_LENGTH_FOR_SPRITE];
 	__shared__ char candidateVoidMap[MAX_FLAGS_LENGTH_FOR_SPRITE];//Экономим регистры
 	//__shared__ char cachedFlags[MAX_FLAGS_LENGTH_FOR_SPRITE * 5];
@@ -366,10 +364,6 @@ __global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsign
 	int numberOfTimesWeNeedToLoadSelf = ourBitsSquare / BLOCK_SIZE;
 	if (ourBitsSquare % BLOCK_SIZE != 0)
 		numberOfTimesWeNeedToLoadSelf++;
-
-	int numberOfTimesWeNeedToLoadCandidate = candidateBitsSquare / BLOCK_SIZE;
-	if (candidateBitsSquare % BLOCK_SIZE != 0)
-		numberOfTimesWeNeedToLoadCandidate++;
 
 	for (size_t i = 0; i < numberOfTimesWeNeedToLoadSelf; i++)
 	{
@@ -380,162 +374,179 @@ __global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsign
 		ourGFlags[byteAddress] = rgbaFlags[BitLineLength + SpriteBitOffsets[blockIdx.x] + byteAddress];
 	}
 
-	//if (blockIdx.x == 7 && blockIdx.y == 7 && blockIdx.z == 18) //Так мы обойдемся без повторов, только 1 блок будет логировать
-	//	printf("rgbaFlags[%d] = %d\n", threadIdx.x, rgbaFlags[threadIdx.x]);
-	//printf("BitLineLength = %d, ByteLineLength = %d, SpritesCount = %d, SizingsCount = %d\n", BitLineLength, ByteLineLength, SpritesCount, SizingsCount);
-
-	for (size_t i = 0; i < numberOfTimesWeNeedToLoadCandidate; i++)
-	{
-		int byteAddress = i * BLOCK_SIZE + threadIdx.x;
-		if (byteAddress >= candidateBitsSquare)
-			continue;
-		candidateRFlags[byteAddress] = rgbaFlags[SpriteBitOffsets[blockIdx.y] + byteAddress];
-		candidateGFlags[byteAddress] = rgbaFlags[BitLineLength + SpriteBitOffsets[blockIdx.y] + byteAddress];
-	}
-
-	int candidateWidthMinusSizing = SpriteWidths[blockIdx.y] - sizingWidth;
-	int candidateHeightMinusSizing = SpriteHeights[blockIdx.y] - sizingHeight;
-	int candidateVoidAreaSquare = candidateWidthMinusSizing * candidateHeightMinusSizing;
-	int candidateVoidAreaBitSquare = candidateVoidAreaSquare / 8;
-	if (candidateVoidAreaSquare % 8 != 0)
-		candidateVoidAreaBitSquare++;
-
-	int numberOfTimesWeNeedToLoadVoid = candidateVoidAreaBitSquare / BLOCK_SIZE;
-	if (candidateVoidAreaBitSquare % BLOCK_SIZE != 0)
-		numberOfTimesWeNeedToLoadVoid++;
-
-	int candidateVoidMapOffset = VoidOffsets[blockIdx.y * SizingsCount + blockIdx.z];
-	unsigned char* candidateVoidMapGlobal = voids + candidateVoidMapOffset;
-	//if (blockIdx.x == 7 && blockIdx.y == 7 && blockIdx.z == 18 && threadIdx.x < candidateVoidAreaSquare)
-	//{
-	//	int candidateX = threadIdx.x / candidateHeightMinusSizing;
-	//	int candidateY = threadIdx.x % candidateHeightMinusSizing;
-	//	printf("	void (%d, %d): %d\n", candidateX, candidateY, candidateVoidMapGlobal[threadIdx.x / 8] >> threadIdx.x % 8 & 1);
-	//} //Проверили правильность апрсинга войдмап
-
-
-	for (size_t i = 0; i < numberOfTimesWeNeedToLoadVoid; i++)
-	{
-		int voidByteAddress = i * BLOCK_SIZE + threadIdx.x;
-		if (voidByteAddress >= candidateVoidAreaBitSquare)
-			continue;
-		candidateVoidMap[voidByteAddress] = candidateVoidMapGlobal[voidByteAddress];
-		//candidateVoidMap[voidByteAddress] = voids[SpriteBitOffsets[blockIdx.y]];
-	}
-
-	__syncthreads(); //Обязательна синхронизация для того, чтобы потоки, которые не выполняли загрузку в шаред-память, не начали с этой шаред памятью работать, пока другие в нее еще не все загрузили, ибо результат - непредсказуем.
-
-	////Проверяем, что все скопировалось правильно. Для этого выбираем случайный спрайт и логируем его флаги. Пускай будет спрайт №7
-	//if (blockIdx.x == 7 && blockIdx.y == 7 && blockIdx.z == 18) //Так мы обойдемся без повторов, только 1 блок будет логировать
-	//{
-	//	if (threadIdx.x < ourSquare)
-	//	{
-	//		int x = threadIdx.x / BLOCK_SIZE;
-	//		int y = threadIdx.x % BLOCK_SIZE;
-	//		printf("for pixel #%d (%d, %d) the flags of r and g are (%d, %d) == (%d, %d)\n", threadIdx.x, x, y, (ourRFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1, (ourGFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1, (candidateRFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1, (candidateGFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1);
-	//	}
-	//} //Проверил, работает
-
-
-	//if (blockIdx.x == 7 && blockIdx.y == 7 && blockIdx.z == 18 && threadIdx.x < candidateVoidAreaSquare)
-	//{
-	//	int candidateX = threadIdx.x / candidateHeightMinusSizing;
-	//	int candidateY = threadIdx.x % candidateHeightMinusSizing;
-	//	printf("	void (%d, %d): %d\n", candidateX, candidateY, candidateVoidMap[threadIdx.x / 8] >> threadIdx.x % 8 & 1);
-	//} //Проверили правильность парсинга войдмап
-
 	int ourWorkingHeight = SpriteHeights[blockIdx.x] - sizingHeight;
 	int ourWorkingSquare = (SpriteWidths[blockIdx.x] - sizingWidth) * ourWorkingHeight;
 	int numberOfTasksPerThread = ourWorkingSquare / BLOCK_SIZE;
 	if (ourWorkingSquare % BLOCK_SIZE != 0)
 		numberOfTasksPerThread++;
 
-	for (size_t i = 0; i < numberOfTasksPerThread; i++)
+	for (size_t candidateIndex = 0; candidateIndex < SpritesCount; candidateIndex++)
 	{
-		int ourWorkingPixelIndex = i * BLOCK_SIZE + threadIdx.x;
-		if (ourWorkingPixelIndex >= ourWorkingSquare)
-			break;
+		/*int candidateByteOffset = SpriteByteOffsets[candidateIndex];
+		int candidateBitOffset = SpriteBitOffsets[candidateIndex];*/
+		//int candidateWidth = SpriteWidths[candidateIndex];
+		//int candidateHeight = SpriteHeights[candidateIndex];
+		int candidateSquare = SpriteWidths[candidateIndex] * SpriteHeights[candidateIndex];
+		int candidateBitsSquare = candidateSquare / 8;
+		if (candidateSquare % 8 != 0)
+			candidateBitsSquare++;
 
-		int ourX = ourWorkingPixelIndex / ourWorkingHeight;
-		int ourY = ourWorkingPixelIndex % ourWorkingHeight;
-		int coincidences = 0; //Значения меньше 0 - повторы
+		int numberOfTimesWeNeedToLoadCandidate = candidateBitsSquare / BLOCK_SIZE;
+		if (candidateBitsSquare % BLOCK_SIZE != 0)
+			numberOfTimesWeNeedToLoadCandidate++;
 
-		results[workingOffsets[blockIdx.x] * sizeof(int) + ourX * ourWorkingHeight + ourY] += coincidences;
+		//if (blockIdx.x == 7 && candidateIndex == 7 && blockIdx.z == 18) //Так мы обойдемся без повторов, только 1 блок будет логировать
+		//	printf("rgbaFlags[%d] = %d\n", threadIdx.x, rgbaFlags[threadIdx.x]);
+		//printf("BitLineLength = %d, ByteLineLength = %d, SpritesCount = %d, SizingsCount = %d\n", BitLineLength, ByteLineLength, SpritesCount, SizingsCount);
 
-
-		for (size_t x = 0; x < candidateWidthMinusSizing; x++)
+		for (size_t i = 0; i < numberOfTimesWeNeedToLoadCandidate; i++)
 		{
-			if (coincidences < 0)
+			int byteAddress = i * BLOCK_SIZE + threadIdx.x;
+			if (byteAddress >= candidateBitsSquare)
+				continue;
+			candidateRFlags[byteAddress] = rgbaFlags[SpriteBitOffsets[candidateIndex] + byteAddress];
+			candidateGFlags[byteAddress] = rgbaFlags[BitLineLength + SpriteBitOffsets[candidateIndex] + byteAddress];
+		}
+
+		int candidateWidthMinusSizing = SpriteWidths[candidateIndex] - sizingWidth;
+		int candidateHeightMinusSizing = SpriteHeights[candidateIndex] - sizingHeight;
+		int candidateVoidAreaSquare = candidateWidthMinusSizing * candidateHeightMinusSizing;
+		int candidateVoidAreaBitSquare = candidateVoidAreaSquare / 8;
+		if (candidateVoidAreaSquare % 8 != 0)
+			candidateVoidAreaBitSquare++;
+
+		int numberOfTimesWeNeedToLoadVoid = candidateVoidAreaBitSquare / BLOCK_SIZE;
+		if (candidateVoidAreaBitSquare % BLOCK_SIZE != 0)
+			numberOfTimesWeNeedToLoadVoid++;
+
+		int candidateVoidMapOffset = VoidOffsets[candidateIndex * SizingsCount + blockIdx.z];
+		unsigned char* candidateVoidMapGlobal = voids + candidateVoidMapOffset;
+		//if (blockIdx.x == 7 && candidateIndex == 7 && blockIdx.z == 18 && threadIdx.x < candidateVoidAreaSquare)
+		//{
+		//	int candidateX = threadIdx.x / candidateHeightMinusSizing;
+		//	int candidateY = threadIdx.x % candidateHeightMinusSizing;
+		//	printf("	void (%d, %d): %d\n", candidateX, candidateY, candidateVoidMapGlobal[threadIdx.x / 8] >> threadIdx.x % 8 & 1);
+		//} //Проверили правильность апрсинга войдмап
+
+
+		for (size_t i = 0; i < numberOfTimesWeNeedToLoadVoid; i++)
+		{
+			int voidByteAddress = i * BLOCK_SIZE + threadIdx.x;
+			if (voidByteAddress >= candidateVoidAreaBitSquare)
+				continue;
+			candidateVoidMap[voidByteAddress] = candidateVoidMapGlobal[voidByteAddress];
+			//candidateVoidMap[voidByteAddress] = voids[SpriteBitOffsets[candidateIndex]];
+		}
+
+		__syncthreads(); //Обязательна синхронизация для того, чтобы потоки, которые не выполняли загрузку в шаред-память, не начали с этой шаред памятью работать, пока другие в нее еще не все загрузили, ибо результат - непредсказуем.
+
+		//printf("Hello World!\n");
+		////Проверяем, что все скопировалось правильно. Для этого выбираем случайный спрайт и логируем его флаги. Пускай будет спрайт №7
+		//if (blockIdx.x == 7 && blockIdx.z == 18) //Так мы обойдемся без повторов, только 1 блок будет логировать
+		//{
+		//	if (threadIdx.x < ourSquare)
+		//	{
+		//		int x = threadIdx.x / BLOCK_SIZE;
+		//		int y = threadIdx.x % BLOCK_SIZE;
+		//		printf("for pixel #%d (%d, %d) the flags of r and g are (%d, %d) == (%d, %d)\n", threadIdx.x, x, y, (ourRFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1, (ourGFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1, (candidateRFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1, (candidateGFlags[threadIdx.x / 8] >> (threadIdx.x % 8)) & 1);
+		//	}
+		//} //Проверил, работает
+
+
+		//if (blockIdx.x == 7 && blockIdx.z == 18 && threadIdx.x < candidateVoidAreaSquare)
+		//{
+		//	int candidateX = threadIdx.x / candidateHeightMinusSizing;
+		//	int candidateY = threadIdx.x % candidateHeightMinusSizing;
+		//	printf("	void (%d, %d): %d\n", candidateX, candidateY, candidateVoidMap[threadIdx.x / 8] >> threadIdx.x % 8 & 1);
+		//} //Проверили правильность парсинга войдмап
+
+		for (size_t taskIndex = 0; taskIndex < numberOfTasksPerThread; taskIndex++)
+		{
+			int ourWorkingPixelIndex = taskIndex * BLOCK_SIZE + threadIdx.x;
+			if (ourWorkingPixelIndex >= ourWorkingSquare)
 				break;
 
-			for (size_t y = 0; y < candidateHeightMinusSizing; y++)
+			int ourX = ourWorkingPixelIndex / ourWorkingHeight;
+			int ourY = ourWorkingPixelIndex % ourWorkingHeight;
+			int coincidences = 0; //Значения меньше 0 - повторы
+
+			results[workingOffsets[blockIdx.x] * sizeof(int) + ourX * ourWorkingHeight + ourY] += coincidences;
+
+
+			for (size_t x = 0; x < candidateWidthMinusSizing; x++)
 			{
 				if (coincidences < 0)
 					break;
 
-				int voidMapIndex = x * candidateHeightMinusSizing + y;
-				if ((candidateVoidMap[voidMapIndex] >> (voidMapIndex % 8)) & 1 == 0) //Пустота
-					continue;
-
-				bool isTheSame = true;
-				for (size_t xx = 0; xx < sizingWidth; xx++)
+				for (size_t y = 0; y < candidateHeightMinusSizing; y++)
 				{
-					for (size_t yy = 0; yy < sizingHeight; yy++)
+					if (coincidences < 0)
+						break;
+
+					int voidMapIndex = x * candidateHeightMinusSizing + y;
+					if ((candidateVoidMap[voidMapIndex] >> (voidMapIndex % 8)) & 1 == 0) //Пустота
+						continue;
+
+					bool isTheSame = true;
+					for (size_t xx = 0; xx < sizingWidth; xx++)
 					{
-						int ourPixelIndex = (ourX + xx) * SpriteHeights[blockIdx.x] + ourY + yy;
-						int candidatePixelIndex = (x + xx) * SpriteHeights[blockIdx.y] + y + yy;
-
-						if ((ourRFlags[ourPixelIndex / 8] >> (ourPixelIndex % 8)) & 1 != (candidateRFlags[candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1)
+						for (size_t yy = 0; yy < sizingHeight; yy++)
 						{
-							isTheSame = false;
-							break;
-						}
+							int ourPixelIndex = (ourX + xx) * SpriteHeights[blockIdx.x] + ourY + yy;
+							int candidatePixelIndex = (x + xx) * SpriteHeights[candidateIndex] + y + yy;
 
-						if ((ourGFlags[ourPixelIndex / 8] >> (ourPixelIndex % 8)) & 1 != (candidateGFlags[candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1)
-						{
-							isTheSame = false;
-							break;
-						}
-
-						if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.y] + candidatePixelIndex])
-						{
-							isTheSame = false;
-							break;
-						}
-
-						//Если у нас пиксель прозрачный нас не интересуют остальные каналы
-						if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != 0)
-						{
-							if (rgbaData[SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != rgbaData[SpriteByteOffsets[blockIdx.y] + candidatePixelIndex])
+							if ((ourRFlags[ourPixelIndex / 8] >> (ourPixelIndex % 8)) & 1 != (candidateRFlags[candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1)
 							{
 								isTheSame = false;
 								break;
 							}
 
-							if (rgbaData[ByteLineLength + SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != rgbaData[ByteLineLength + SpriteByteOffsets[blockIdx.y] + candidatePixelIndex])
+							if ((ourGFlags[ourPixelIndex / 8] >> (ourPixelIndex % 8)) & 1 != (candidateGFlags[candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1)
 							{
 								isTheSame = false;
 								break;
 							}
 
-							if (rgbaData[ByteLineLength * 2 + SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != rgbaData[ByteLineLength * 2 + SpriteByteOffsets[blockIdx.y] + candidatePixelIndex])
+							if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != rgbaData[ByteLineLength * 3 + SpriteByteOffsets[candidateIndex] + candidatePixelIndex])
 							{
 								isTheSame = false;
 								break;
 							}
+
+							//Если у нас пиксель прозрачный нас не интересуют остальные каналы
+							if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != 0)
+							{
+								if (rgbaData[SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != rgbaData[SpriteByteOffsets[candidateIndex] + candidatePixelIndex])
+								{
+									isTheSame = false;
+									break;
+								}
+
+								if (rgbaData[ByteLineLength + SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != rgbaData[ByteLineLength + SpriteByteOffsets[candidateIndex] + candidatePixelIndex])
+								{
+									isTheSame = false;
+									break;
+								}
+
+								if (rgbaData[ByteLineLength * 2 + SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != rgbaData[ByteLineLength * 2 + SpriteByteOffsets[candidateIndex] + candidatePixelIndex])
+								{
+									isTheSame = false;
+									break;
+								}
+							}
 						}
+
+						if (!isTheSame)
+							break;
 					}
 
-					if (!isTheSame)
-						break;
-				}
-
-				if (isTheSame)
-				{
-					if (blockIdx.x == blockIdx.y && ourX * SpriteHeights[blockIdx.x] + ourY > x* SpriteHeights[blockIdx.y] + y) //Если мы обнаружили область на том же спрайте, стоящую до нас - повтор
-						coincidences = -1;
-					else
-						coincidences++;
+					if (isTheSame)
+					{
+						if (blockIdx.x == candidateIndex && ourX * SpriteHeights[blockIdx.x] + ourY > x* SpriteHeights[candidateIndex] + y) //Если мы обнаружили область на том же спрайте, стоящую до нас - повтор
+							coincidences = -1;
+						else
+							coincidences++;
+					}
 				}
 			}
 		}
@@ -551,7 +562,7 @@ __global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsign
 //		return;
 //	}
 //	int ourSpriteIndex = blockIdx.x;
-//	int candidateSpriteIndex = blockIdx.y;
+//	int candidateSpriteIndex = candidateIndex;
 //	int sizingIndex = blockIdx.z;
 //
 //	int ourOffset = offsets[ourSpriteIndex];
@@ -710,12 +721,12 @@ int main()
 	char* deviceResultsPtr;
 	cudaMalloc((void**)&deviceResultsPtr, resultsCount * sizeof(int));
 	cudaMemset(deviceResultsPtr, 0, resultsCount * sizeof(int));
-	int* deviceWorkingSpriteOffsetsPtr;
+	unsigned int* deviceWorkingSpriteOffsetsPtr;
 	cudaMalloc((void**)&deviceWorkingSpriteOffsetsPtr, sizingsCount * spritesCount * sizeof(unsigned int));
 	cudaMemcpy(deviceWorkingSpriteOffsetsPtr, workingSpriteOffsets, sizingsCount * spritesCount * sizeof(unsigned int), cudaMemcpyHostToDevice);
 
 	dim3 block(BLOCK_SIZE);
-	dim3 grid(spritesCount, spritesCount, sizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
+	dim3 grid(spritesCount, 1, sizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
 	mainKernel << <grid, block >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceResultsPtr);
 
 	cudaDeviceSynchronize();
