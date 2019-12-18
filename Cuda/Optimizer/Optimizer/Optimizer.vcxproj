@@ -11,7 +11,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{497B40FF-B8DE-4150-BF7D-A387EE1D23DC}</ProjectGuid>
+    <ProjectGuid>{EF523ECE-55A9-4AFC-B018-34756793E1B4}</ProjectGuid>
     <RootNamespace>Optimizer</RootNamespace>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />

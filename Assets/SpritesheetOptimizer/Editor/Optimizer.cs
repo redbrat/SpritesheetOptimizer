@@ -347,8 +347,8 @@ public class Optimizer : EditorWindow
                         writeBit(newBFlagsList, bitsCounter, b > 127 ? 1 : 0);
                         writeBit(newAFlagsList, bitsCounter, a > 127 ? 1 : 0);
 
-                        if (i == 7)
-                            Debug.Log($"for pixel {bitsCounter} ({x}, {y}) the flags of r and g are ({(r > 127 ? 1 : 0)}, {(g > 127 ? 1 : 0)})");
+                        //if (i == 7)
+                        //    Debug.Log($"for pixel {bitsCounter} ({x}, {y}) the flags of r and g are ({(r > 127 ? 1 : 0)}, {(g > 127 ? 1 : 0)})");
                         bitsCounter++;
                     }
                 }
