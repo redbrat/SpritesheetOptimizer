@@ -147,6 +147,7 @@ public class Optimizer : EditorWindow
             var colorsResults = getColors(_sprite);
             var sizings = default(IEnumerable<MyVector2>);
             sizings = new PickySizingConfigurator(_pickinessLevel).ConfigureSizings(sizings, colorsResults.colors.Length, _resolution.x, _resolution.y, default);
+            var sizingsList = sizings.ToList();
             var sizingsDeconstructed = sizings.Select(s => new short[] { (short)s.X, (short)s.Y }).ToArray();
 
 
@@ -199,10 +200,13 @@ public class Optimizer : EditorWindow
 
                 byteLineLength += width * height;
 
+                //var aopjkfop = 0;
                 for (int x = 0; x < width; x++)
                     for (int y = 0; y < height; y++)
                     {
                         var val = currentSpriteBytes[x][y][0];
+                        //if (aopjkfop < 240)
+                        //    Debug.Log($"_r({aopjkfop++}): {val}");
                         dataList.Add(val);
                     }
             }
@@ -300,8 +304,8 @@ public class Optimizer : EditorWindow
                             }
                             writeBit(newSpriteSizingVoidMap, bitsCounter++, isVoid ? 0 : 1);
 
-                            if (i == 0 && j == 18)
-                                Debug.Log($"	{currentVoidOffset + newSpriteSizingVoidMap.Count}: void ({x}, {y}): {(isVoid ? 0 : 1)} - {newSpriteSizingVoidMap[newSpriteSizingVoidMap.Count - 1]}");
+                            //if (i == 0 && j == 18)
+                            //    Debug.Log($"	{currentVoidOffset + newSpriteSizingVoidMap.Count}: void ({x}, {y}): {(isVoid ? 0 : 1)} - {newSpriteSizingVoidMap[newSpriteSizingVoidMap.Count - 1]}");
                         }
                     }
 
@@ -387,7 +391,7 @@ public class Optimizer : EditorWindow
                 + sizeof(int) //byteLineLength - длина канала данных в байтах
                 + byteLineLength * 4 //Дальше идут собственно данные - 4 канала (r, g, b, a)
 
-                                //Дальше вспомогательные
+                //Дальше вспомогательные
 
                 + sizingsCount * spritesCount * sizeof(int) //Это регистр оффсетов пустот. Там оффсеты на каждую карту пустот для каждого спрайта и каждого сайзинга.
                 + sizeof(int) // voidMapsLength - длина всей карты пустот в байтах (на самом деле она в битах), но тут именно длина блоба
@@ -426,7 +430,7 @@ public class Optimizer : EditorWindow
             currentOffset += dataList.Count;
 
 
-            
+
             //Вспомогательные данные.
 
             for (int i = 0; i < voidMapsOffsets.Count; i++)
@@ -478,8 +482,8 @@ public class Optimizer : EditorWindow
                 for (int j = 0; j < rFlags[i].Count; j++)
                 {
                     combinedData[currentOffset++] = rFlags[i][j];
-                    if (i2++ < 1024)
-                        Debug.Log($"rgbaFlags[{i2 - 1}] = {rFlags[i][j]}");
+                    //if (i2++ < 1024)
+                    //    Debug.Log($"rgbaFlags[{i2 - 1}] = {rFlags[i][j]}");
                 }
             }
 
@@ -570,6 +574,99 @@ public class Optimizer : EditorWindow
             //{
             //    Debug.LogError($"for registry {i} (offset: {registryOffset + i}): {blob[registryOffset + i]}");
             //}
+
+            //Тестируем подсчет очков.
+            var workingOffsets = new int[spritesCount * sizingsCount];
+            var workingArrayLength = 0;
+            for (int i = 0; i < spritesCount; i++)
+            {
+                var spriteWidth = colorsResults.colors[i].Length;
+                var spriteHeight = colorsResults.colors[i][0].Length;
+                for (int j = 0; j < sizingsCount; j++)
+                {
+                    var sizingWidth = sizingsList[j].X;
+                    var sizingHeight = sizingsList[j].Y;
+
+                    workingOffsets[i * sizingsCount + j] = workingArrayLength;
+                    workingArrayLength += (spriteWidth - sizingWidth) * (spriteHeight - sizingHeight);
+                }
+            }
+
+            //var i3 = 0;
+            var coincidents = new int[workingArrayLength];
+            for (int i = 0; i < colorsResults.colors.Length; i++)
+            {
+                var ourColors = colorsResults.colors[i];
+                for (int s = 0; s < sizingsCount; s++)
+                {
+                    var sizing = sizings.ToList()[s];
+                    for (int j = 0; j < colorsResults.colors.Length; j++)
+                    {
+                        var candidateColors = colorsResults.colors[j];
+                        for (int ourX = 0; ourX < ourColors.Length - sizing.X; ourX++)
+                        {
+                            for (int ourY = 0; ourY < ourColors[ourX].Length - sizing.Y; ourY++)
+                            {
+                                //if (i == 0 && s == 0)
+                                //if (i3++ < 240)
+                                    //Debug.Log($"r({i3++}): {ourColors[ourX][ourY].R}");
+                                var currentCoincidents = 0;
+                                for (int candidateX = 0; candidateX < candidateColors.Length - sizing.X; candidateX++)
+                                {
+                                    for (int candidateY = 0; candidateY < candidateColors[candidateX].Length - sizing.Y; candidateY++)
+                                    {
+                                        var theSame = true;
+                                        for (int x = 0; x < sizing.X; x++)
+                                        {
+                                            for (int y = 0; y < sizing.Y; y++)
+                                            {
+                                                var ourPixelX = ourX + x;
+                                                var ourPixelY = ourY + y;
+                                                var candidatePixelX = candidateX + x;
+                                                var candidatePixelY = candidateY + y;
+
+                                                var ourPixel = ourColors[ourPixelX][ourPixelY];
+                                                var candidatePixel = candidateColors[candidatePixelX][candidatePixelY];
+
+                                                if (ourPixel.R != candidatePixel.R)
+                                                {
+                                                    theSame = false;
+                                                    break;
+                                                }
+                                                //if (ourPixel.G != candidatePixel.G)
+                                                //{
+                                                //    theSame = false;
+                                                //    break;
+                                                //}
+                                                //if (ourPixel.B != candidatePixel.B)
+                                                //{
+                                                //    theSame = false;
+                                                //    break;
+                                                //}
+                                                //if (ourPixel.A != candidatePixel.A)
+                                                //{
+                                                //    theSame = false;
+                                                //    break;
+                                                //}
+                                            }
+
+                                            if (!theSame)
+                                                break;
+                                        }
+                                        if (theSame)
+                                            currentCoincidents++;
+                                    }
+                                }
+                                coincidents[workingOffsets[i * sizingsCount + s] + ourX * (ourColors[ourX].Length - sizing.Y) + ourY] += currentCoincidents;
+                            }
+                        }
+                    }
+                }
+            }
+            for (int i = 0; i < 240; i++)
+            {
+                Debug.Log($"coincidents[{i}] = {coincidents[i]}");
+            }
         }
         if (_cts != null)
         {
