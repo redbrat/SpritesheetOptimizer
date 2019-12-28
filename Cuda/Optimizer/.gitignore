@@ -7,3 +7,4 @@
 !/Optimizer/**
 !Optimizer.sln
 Debug
+*.pdb

@@ -633,21 +633,21 @@ public class Optimizer : EditorWindow
                                                     theSame = false;
                                                     break;
                                                 }
-                                                //if (ourPixel.G != candidatePixel.G)
-                                                //{
-                                                //    theSame = false;
-                                                //    break;
-                                                //}
-                                                //if (ourPixel.B != candidatePixel.B)
-                                                //{
-                                                //    theSame = false;
-                                                //    break;
-                                                //}
-                                                //if (ourPixel.A != candidatePixel.A)
-                                                //{
-                                                //    theSame = false;
-                                                //    break;
-                                                //}
+                                                if (ourPixel.G != candidatePixel.G)
+                                                {
+                                                    theSame = false;
+                                                    break;
+                                                }
+                                                if (ourPixel.B != candidatePixel.B)
+                                                {
+                                                    theSame = false;
+                                                    break;
+                                                }
+                                                if (ourPixel.A != candidatePixel.A)
+                                                {
+                                                    theSame = false;
+                                                    break;
+                                                }
                                             }
 
                                             if (!theSame)
@@ -663,10 +663,25 @@ public class Optimizer : EditorWindow
                     }
                 }
             }
-            for (int i = 0; i < 240; i++)
+            for (int i = 0; i < 100; i++)
             {
                 Debug.Log($"coincidents[{i}] = {coincidents[i]}");
             }
+            for (int i = coincidents.Length - 100; i < coincidents.Length; i++)
+            {
+                Debug.Log($"coincidents[{i}] = {coincidents[i]}");
+            }
+            var largestScore = 0;
+            var largestScoreIndex = -1;
+            for (int i = 0; i < coincidents.Length; i++)
+            {
+                if (coincidents[i] > largestScore)
+                {
+                    largestScore = coincidents[i];
+                    largestScoreIndex = i;
+                }
+            }
+            Debug.Log($"The Winner is: {largestScoreIndex} with the total score of {largestScore}");
         }
         if (_cts != null)
         {
