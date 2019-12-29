@@ -6,6 +6,7 @@
 #include "file_reader.h"
 #include "bit_converter.h"
 #include <iostream>
+#include <assert.h>
 
 using namespace std;
 
@@ -351,6 +352,16 @@ spritesCount получится равным 5453. Уже более-менее.
 
 #define MAX_FLAGS_LENGTH_FOR_SPRITE 8192 //Для 256х256 спрайта он именно такой
 
+#define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true)
+{
+	if (code != cudaSuccess)
+	{
+		fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+		if (abort) exit(code);
+	}
+}
+
 __constant__ short SizingsCount;
 __constant__ short SpritesCount;
 __constant__ int ByteLineLength;
@@ -413,22 +424,24 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 	//if (ceilToInt(SpriteWidths[blockIdx.x] * SpriteHeights[blockIdx.x], 8) % BLOCK_SIZE != 0)
 	//	numberOfTimesWeNeedToLoadSelf++;
 
-	int byteAddress;
+	int temp;
 	size_t i;
-	for (i = 0; i < ceilToInt(ceilToInt(SpriteWidths[blockIdx.x] * SpriteHeights[blockIdx.x], 8), BLOCK_SIZE); i++)
+	/*for (i = 0; i < ceilToInt(ceilToInt(SpriteWidths[blockIdx.x] * SpriteHeights[blockIdx.x], 8), BLOCK_SIZE); i++) - КЭШ
 	{
-		byteAddress = i * BLOCK_SIZE + threadIdx.x;
-		if (byteAddress >= ceilToInt(SpriteWidths[blockIdx.x] * SpriteHeights[blockIdx.x], 8))
+		temp = i * BLOCK_SIZE + threadIdx.x;
+		if (temp >= ceilToInt(SpriteWidths[blockIdx.x] * SpriteHeights[blockIdx.x], 8))
 			continue;
-		cachedBits[byteAddress] = rgbaFlags[SpriteBitOffsets[blockIdx.x] + byteAddress];
-		cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE + byteAddress] = rgbaFlags[BitLineLength + SpriteBitOffsets[blockIdx.x] + byteAddress];
-	}
+		cachedBits[temp] = rgbaFlags[SpriteBitOffsets[blockIdx.x] + temp];
+		cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE + temp] = rgbaFlags[BitLineLength + SpriteBitOffsets[blockIdx.x] + temp];
+	}*/
 
 	int ourWorkingHeight = SpriteHeights[blockIdx.x] - SizingHeights[blockIdx.z];
 	//int ourWorkingSquare = (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight;
 	int numberOfTasksPerThread = (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight / BLOCK_SIZE; // ceilToInt((SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight, BLOCK_SIZE)
 	if ((SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight % BLOCK_SIZE != 0)
 		numberOfTasksPerThread++;
+
+	//int sizingSquare = SizingWidths[blockIdx.z] * SizingHeights[blockIdx.z];
 
 	for (size_t candidateIndex = 0; candidateIndex < SpritesCount; candidateIndex++)
 	{
@@ -451,14 +464,14 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 
 		//__syncthreads();
 
-		for (i = 0; i < numberOfTimesWeNeedToLoadCandidate; i++)
+		/*for (i = 0; i < numberOfTimesWeNeedToLoadCandidate; i++) - КЭШ
 		{
-			byteAddress = i * BLOCK_SIZE + threadIdx.x;
-			if (byteAddress >= candidateBitsSquare)
+			temp = i * BLOCK_SIZE + threadIdx.x;
+			if (temp >= candidateBitsSquare)
 				continue;
-			cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + byteAddress] = rgbaFlags[SpriteBitOffsets[candidateIndex] + byteAddress];
-			cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 3 + byteAddress] = rgbaFlags[BitLineLength + SpriteBitOffsets[candidateIndex] + byteAddress];
-		}
+			cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + temp] = rgbaFlags[SpriteBitOffsets[candidateIndex] + temp];
+			cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 3 + temp] = rgbaFlags[BitLineLength + SpriteBitOffsets[candidateIndex] + temp];
+		}*/
 
 		//int candidateWidthMinusSizing = SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z];
 		//int candidateHeightMinusSizing = SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z];
@@ -471,8 +484,8 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 		if (candidateVoidAreaBitSquare % BLOCK_SIZE != 0)
 			numberOfTimesWeNeedToLoadVoid++;
 
-		int candidateVoidMapOffset = VoidOffsets[candidateIndex * SizingsCount + blockIdx.z];
-		unsigned char* candidateVoidMapGlobal = voids + candidateVoidMapOffset;
+		temp = VoidOffsets[candidateIndex * SizingsCount + blockIdx.z];
+		unsigned char* candidateVoidMapGlobal = voids + temp;
 		//if (blockIdx.x == 7 && candidateIndex == 7 && blockIdx.z == 18 && threadIdx.x < candidateVoidAreaSquare)
 		//{
 		//	int candidateX = threadIdx.x / (SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z]);
@@ -481,14 +494,14 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 		//} //Проверили правильность апрсинга войдмап
 
 
-		for (i = 0; i < numberOfTimesWeNeedToLoadVoid; i++)
-		{
-			byteAddress = i * BLOCK_SIZE + threadIdx.x;
-			if (byteAddress >= candidateVoidAreaBitSquare)
-				continue;
-			cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + byteAddress] = candidateVoidMapGlobal[byteAddress];
-			//candidateVoidMap[voidByteAddress] = voids[SpriteBitOffsets[candidateIndex]];
-		}
+		//for (i = 0; i < numberOfTimesWeNeedToLoadVoid; i++) - КЭШ
+		//{
+		//	temp = i * BLOCK_SIZE + threadIdx.x;
+		//	if (temp >= candidateVoidAreaBitSquare)
+		//		continue;
+		//	cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + temp] = candidateVoidMapGlobal[temp];
+		//	//candidateVoidMap[voidByteAddress] = voids[SpriteBitOffsets[candidateIndex]];
+		//}
 
 		__syncthreads(); //Обязательна синхронизация для того, чтобы потоки, которые не выполняли загрузку в шаред-память, не начали с этой шаред памятью работать, пока другие в нее еще не все загрузили, ибо результат - непредсказуем.
 
@@ -521,13 +534,39 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 
 		for (size_t taskIndex = 0; taskIndex < numberOfTasksPerThread; taskIndex++)
 		{
-			int ourWorkingPixelIndex = taskIndex * BLOCK_SIZE + threadIdx.x;
-			if (ourWorkingPixelIndex >= (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight)
+			temp = taskIndex * BLOCK_SIZE + threadIdx.x;
+			if (temp >= (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight)
 				break;
 
-			int ourWorkingX = ourWorkingPixelIndex / ourWorkingHeight;
-			int ourWorkingY = ourWorkingPixelIndex % ourWorkingHeight;
+			int ourWorkingX = temp / ourWorkingHeight;
+			int ourWorkingY = temp % ourWorkingHeight;
 			//int coincidences = 0; //Значения меньше 0 - повторы
+
+			//int score = 1;
+			temp = 0;
+			size_t x;
+			size_t y;
+			for (x = 0; x < SizingWidths[blockIdx.z]; x++)
+			{
+				for (y = 0; y < SizingHeights[blockIdx.z]; y++)
+				{
+					i = (ourWorkingX + x) * SpriteHeights[blockIdx.x] + ourWorkingY + y;
+					if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + i] > 0)
+						temp++;
+					/*if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + (ourWorkingX + x) * SpriteHeights[blockIdx.x] + ourWorkingY + y] != 0)
+						byteAddress++;*/
+				}
+			}
+			i = (SizingWidths[blockIdx.z] * SizingHeights[blockIdx.z]);
+			temp = temp * temp * temp;
+			temp = temp * i;
+			/*if (temp % i != 0)
+				temp = temp / i + 1;
+			else
+				temp = temp / i;*/
+
+			/*printf("score = %d\n", byteAddress);
+			return;*/
 
 			/*
 				Ок, тут мы имеем доступ к ourX/ourY координатам нашего спрайта и как бы предполагается, что мы будем работать с текущим кандидатом (candidateIndex).
@@ -573,29 +612,29 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 				for (size_t candidateWorkingY = 0; candidateWorkingY < SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z]; candidateWorkingY++)
 				{
 					bool isTheSame = true;
-					for (size_t x = 0; x < SizingWidths[blockIdx.z]; x++)
+					for (x = 0; x < SizingWidths[blockIdx.z]; x++)
 					{
-						for (size_t y = 0; y < SizingHeights[blockIdx.z]; y++)
+						for (y = 0; y < SizingHeights[blockIdx.z]; y++)
 						{
-							int ourPixelIndex = (ourWorkingX + x) * SpriteHeights[blockIdx.x] + ourWorkingY + y;
+							i = (ourWorkingX + x) * SpriteHeights[blockIdx.x] + ourWorkingY + y;
 							int candidatePixelIndex = (candidateWorkingX + x) * SpriteHeights[candidateIndex] + candidateWorkingY + y;
 
-							if (rgbaData[SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != rgbaData[SpriteByteOffsets[candidateIndex] + candidatePixelIndex])
+							if (rgbaData[SpriteByteOffsets[blockIdx.x] + i] != rgbaData[SpriteByteOffsets[candidateIndex] + candidatePixelIndex])
 							{
 								isTheSame = false;
 								break;
 							}
-							if (rgbaData[ByteLineLength + SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != rgbaData[ByteLineLength + SpriteByteOffsets[candidateIndex] + candidatePixelIndex])
+							if (rgbaData[ByteLineLength + SpriteByteOffsets[blockIdx.x] + i] != rgbaData[ByteLineLength + SpriteByteOffsets[candidateIndex] + candidatePixelIndex])
 							{
 								isTheSame = false;
 								break;
 							}
-							if (rgbaData[ByteLineLength * 2 + SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != rgbaData[ByteLineLength * 2 + SpriteByteOffsets[candidateIndex] + candidatePixelIndex])
+							if (rgbaData[ByteLineLength * 2 + SpriteByteOffsets[blockIdx.x] + i] != rgbaData[ByteLineLength * 2 + SpriteByteOffsets[candidateIndex] + candidatePixelIndex])
 							{
 								isTheSame = false;
 								break;
 							}
-							if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != rgbaData[ByteLineLength * 3 + SpriteByteOffsets[candidateIndex] + candidatePixelIndex])
+							if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + i] != rgbaData[ByteLineLength * 3 + SpriteByteOffsets[candidateIndex] + candidatePixelIndex])
 							{
 								isTheSame = false;
 								break;
@@ -611,7 +650,7 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 				}
 			}
 
-			results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] += coincidences;
+			results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] += coincidences * temp;
 			//return;
 		}
 
@@ -822,7 +861,15 @@ __global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsign
 	return;*/
 	dim3 scoresCountingBlock(BLOCK_SIZE);
 	dim3 scoresCountingGrid(SpritesCount, 1, SizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
+	printf("%d,%d,%d\n", BLOCK_SIZE, SpritesCount, SizingsCount);
 	countScores << <scoresCountingGrid, scoresCountingBlock >> > (rgbaData, voids, rgbaFlags, workingOffsets, scoresResults);
+	cudaError_t scoreCountingError = cudaPeekAtLastError();
+	if (scoreCountingError != cudaSuccess)
+	{
+		printf("scoreCountingError = %d, %s\n", scoreCountingError, cudaGetErrorString(scoreCountingError));
+		return;
+	}
+	//gpuErrchk(cudaPeekAtLastError());
 	cudaDeviceSynchronize();
 	dim3 bestScoreFindingBlock(BLOCK_SIZE);
 	int currentBestScoresLength = workingScoresLength;
@@ -972,8 +1019,17 @@ int main()
 	//mainKernel << <grid, block >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceResultsPtr);
 	printf("resultsCount = %d\n", resultsCount);
 	mainKernel << <1, 1 >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceResultsPtr, (unsigned int*)deviceHelperResultsSizePtr, resultsCount);
-
+	gpuErrchk(cudaPeekAtLastError());
 	cudaDeviceSynchronize();
+	gpuErrchk(cudaPeekAtLastError());
+
+	cudaError_t code = cudaGetLastError();
+	printf("code = %d", code);
+	if (code != cudaSuccess)
+	{
+		const char* errorMessage = cudaGetErrorString(code);
+		printf("CUDA error returned from Error code: %d (%s)\n", code, errorMessage);
+	}
 
 	//testing...
 	int* gpuResults = (int*)malloc(resultsCount * sizeof(int));
@@ -993,7 +1049,7 @@ int main()
 	short workingHeight = testSpriteHeight - testSizingHeight;
 
 	int testCount = resultsCount;
-	std::cout << "First " << testCount << " voids:\n";
+	/*std::cout << "First " << testCount << " voids:\n";
 	for (size_t i = 0; i < 100; i++)
 	{
 		int x = i / workingHeight;
@@ -1005,7 +1061,7 @@ int main()
 		int x = i / workingHeight;
 		int y = i % workingHeight;
 		std::cout << i << " (" << x << "," << y << ") : voidsBlob = " << ((voidsBlob[voidOffset + i / 8] >> (i % 8)) & 1) << ", results = " << gpuResults[resultOffset + i] << "\n";
-	}
+	}*/
 
 
 	int* cpuResults = (int*)malloc(resultsCount * sizeof(int));
@@ -1025,7 +1081,7 @@ int main()
 	free(blob);
 
 
-	printf("ok\n");
+	//printf("ok\n");
 
 	return 0;
 }

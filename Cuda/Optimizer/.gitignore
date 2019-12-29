@@ -8,3 +8,5 @@
 !Optimizer.sln
 Debug
 *.pdb
+*.lib
+*.exp
