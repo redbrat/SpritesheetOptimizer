@@ -375,7 +375,17 @@ __constant__ short SpriteWidths[650];
 __constant__ short SpriteHeights[650];
 __constant__ int VoidOffsets[14300];
 
-__device__ int ceilToInt(int value, int divider)
+__device__ unsigned int ceilToIntConst(int value, int const divider)
+{
+	unsigned int quotent = __umulhi(value, divider);
+	unsigned int modulo = value - quotent * divider;
+	if (modulo == 0)
+		return quotent;
+	else
+		return quotent + 1;
+}
+
+__device__ unsigned int ceilToInt(int value, int const divider)
 {
 	if (value % divider == 0)
 		return value / divider;
@@ -559,7 +569,7 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 			}
 			i = (SizingWidths[blockIdx.z] * SizingHeights[blockIdx.z]);
 			temp = temp * temp * temp;
-			temp = temp * i;
+			temp = __fdividef(temp, i);
 			/*if (temp % i != 0)
 				temp = temp / i + 1;
 			else

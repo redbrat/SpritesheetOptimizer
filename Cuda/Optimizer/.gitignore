@@ -10,3 +10,5 @@ Debug
 *.pdb
 *.lib
 *.exp
+*.out
+*.obj
