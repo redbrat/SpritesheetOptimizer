@@ -375,22 +375,21 @@ __constant__ short SpriteWidths[650];
 __constant__ short SpriteHeights[650];
 __constant__ int VoidOffsets[14300];
 
-__device__ unsigned int ceilToIntConst(int value, int const divider)
+__device__ unsigned int getRemainder(int value, int divider)
 {
-	unsigned int quotent = __umulhi(value, divider);
-	unsigned int modulo = value - quotent * divider;
-	if (modulo == 0)
-		return quotent;
-	else
-		return quotent + 1;
+	return value % divider;
+	/*int quotent = __fdividef(value, divider);
+	return value - (divider * quotent);*/
 }
 
 __device__ unsigned int ceilToInt(int value, int const divider)
 {
-	if (value % divider == 0)
-		return value / divider;
+	int quotent = value / divider;
+	int remainder = value - (divider * quotent);
+	if (remainder == 0)
+		return quotent;
 	else
-		return value / divider + 1;
+		return quotent + 1;
 }
 
 int hostCeilToInt(int value, int divider)
@@ -447,7 +446,7 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 
 	int ourWorkingHeight = SpriteHeights[blockIdx.x] - SizingHeights[blockIdx.z];
 	//int ourWorkingSquare = (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight;
-	int numberOfTasksPerThread = (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight / BLOCK_SIZE; // ceilToInt((SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight, BLOCK_SIZE)
+	int numberOfTasksPerThread = (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * (ourWorkingHeight / BLOCK_SIZE); // ceilToInt((SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight, BLOCK_SIZE)
 	if ((SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight % BLOCK_SIZE != 0)
 		numberOfTasksPerThread++;
 
@@ -460,11 +459,11 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 		//int candidateWidth = SpriteWidths[candidateIndex];
 		//int candidateHeight = SpriteHeights[candidateIndex];
 		//int candidateSquare = SpriteWidths[candidateIndex] * SpriteHeights[candidateIndex];
-		int candidateBitsSquare = (SpriteWidths[candidateIndex] * SpriteHeights[candidateIndex]) / 8;
+		int candidateBitsSquare = (SpriteWidths[candidateIndex] * (SpriteHeights[candidateIndex] / 8));
 		if ((SpriteWidths[candidateIndex] * SpriteHeights[candidateIndex]) % 8 != 0)
 			candidateBitsSquare++;
 
-		int numberOfTimesWeNeedToLoadCandidate = candidateBitsSquare / BLOCK_SIZE;
+		int numberOfTimesWeNeedToLoadCandidate = (candidateBitsSquare / BLOCK_SIZE);
 		if (candidateBitsSquare % BLOCK_SIZE != 0)
 			numberOfTimesWeNeedToLoadCandidate++;
 
@@ -486,11 +485,11 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 		//int candidateWidthMinusSizing = SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z];
 		//int candidateHeightMinusSizing = SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z];
 		//int candidateVoidAreaSquare = (SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z]) * (SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z]);
-		int candidateVoidAreaBitSquare = (SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z]) * (SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z]) / 8;
+		int candidateVoidAreaBitSquare = (SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z]) * ((SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z]) / 8);
 		if ((SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z]) * (SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z]) % 8 != 0)
 			candidateVoidAreaBitSquare++;
 
-		int numberOfTimesWeNeedToLoadVoid = candidateVoidAreaBitSquare / BLOCK_SIZE;
+		int numberOfTimesWeNeedToLoadVoid = (candidateVoidAreaBitSquare / BLOCK_SIZE);
 		if (candidateVoidAreaBitSquare % BLOCK_SIZE != 0)
 			numberOfTimesWeNeedToLoadVoid++;
 
@@ -548,7 +547,7 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 			if (temp >= (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight)
 				break;
 
-			int ourWorkingX = temp / ourWorkingHeight;
+			int ourWorkingX = (temp / ourWorkingHeight);
 			int ourWorkingY = temp % ourWorkingHeight;
 			//int coincidences = 0; //Значения меньше 0 - повторы
 
@@ -799,7 +798,7 @@ __global__ void findTheBestScore(unsigned int* scores, unsigned int* indecies, i
 	if (depth > 0)
 		ourIndex = indecies[scoreId];
 
-	if (blockIdx.x == 0 && threadIdx.x / 32 == 0)
+	if (blockIdx.x == 0 && (threadIdx.x / 32) == 0)
 	{
 		printf("%d: ourIndex = %d, ourScore = %d\n", threadIdx.x, ourIndex, ourScore);
 	}
