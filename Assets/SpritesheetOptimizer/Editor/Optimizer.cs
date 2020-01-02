@@ -592,7 +592,7 @@ public class Optimizer : EditorWindow
                 }
             }
 
-            //var i3 = 0;
+            var i3 = 0;
             var coincidents = new int[workingArrayLength];
             for (int i = 0; i < colorsResults.colors.Length; i++)
             {
@@ -609,7 +609,24 @@ public class Optimizer : EditorWindow
                             {
                                 //if (i == 0 && s == 0)
                                 //if (i3++ < 240)
-                                    //Debug.Log($"r({i3++}): {ourColors[ourX][ourY].R}");
+                                //Debug.Log($"r({i3++}): {ourColors[ourX][ourY].R}");
+
+                                var score = 0;
+
+                                for (int x = 0; x < sizing.X; x++)
+                                {
+                                    for (int y = 0; y < sizing.Y; y++)
+                                    {
+                                        var ourPixelX = ourX + x;
+                                        var ourPixelY = ourY + y;
+                                        var ourPixel = ourColors[ourPixelX][ourPixelY];
+                                        if (ourPixel.A != 0)
+                                            score++;
+                                    }
+                                }
+                                //if (i3++ < 100)
+                                //    Debug.LogError($"score = {score}");
+
                                 var currentCoincidents = 0;
                                 for (int candidateX = 0; candidateX < candidateColors.Length - sizing.X; candidateX++)
                                 {
@@ -657,7 +674,13 @@ public class Optimizer : EditorWindow
                                             currentCoincidents++;
                                     }
                                 }
-                                coincidents[workingOffsets[i * sizingsCount + s] + ourX * (ourColors[ourX].Length - sizing.Y) + ourY] += currentCoincidents;
+
+                                //if (currentCoincidents > 1 && i3++ < 100)
+                                //    Debug.LogError($"score = {score}, currentCoincidents = {currentCoincidents}, asokd = {currentCoincidents * score}");
+                                var coincidentsIndex = workingOffsets[i * sizingsCount + s] + ourX * (ourColors[ourX].Length - sizing.Y) + ourY;
+                                //if (coincidentsIndex == 4690)
+                                //    Debug.LogError($"WINNER score = {score}, currentCoincidents = {currentCoincidents}, asokd = {currentCoincidents * score}");
+                                coincidents[coincidentsIndex] += currentCoincidents * (score * score * score / (sizing.X * sizing.Y));
                             }
                         }
                     }
