@@ -435,18 +435,18 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 
 	int temp;
 	size_t i;
-	/*for (i = 0; i < ceilToInt(ceilToInt(SpriteWidths[blockIdx.x] * SpriteHeights[blockIdx.x], 8), BLOCK_SIZE); i++) - КЭШ
-	{
-		temp = i * BLOCK_SIZE + threadIdx.x;
-		if (temp >= ceilToInt(SpriteWidths[blockIdx.x] * SpriteHeights[blockIdx.x], 8))
-			continue;
-		cachedBits[temp] = rgbaFlags[SpriteBitOffsets[blockIdx.x] + temp];
-		cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE + temp] = rgbaFlags[BitLineLength + SpriteBitOffsets[blockIdx.x] + temp];
-	}*/
+	//for (i = 0; i < ceilToInt(ceilToInt(SpriteWidths[blockIdx.x] * SpriteHeights[blockIdx.x], 8), BLOCK_SIZE); i++)// - КЭШ
+	//{
+	//	temp = i * BLOCK_SIZE + threadIdx.x;
+	//	if (temp >= ceilToInt(SpriteWidths[blockIdx.x] * SpriteHeights[blockIdx.x], 8))
+	//		continue;
+	//	cachedBits[temp] = rgbaFlags[SpriteBitOffsets[blockIdx.x] + temp];
+	//	cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE + temp] = rgbaFlags[BitLineLength + SpriteBitOffsets[blockIdx.x] + temp];
+	//}
 
 	int ourWorkingHeight = SpriteHeights[blockIdx.x] - SizingHeights[blockIdx.z];
 	//int ourWorkingSquare = (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight;
-	int numberOfTasksPerThread = (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * (ourWorkingHeight / BLOCK_SIZE); // ceilToInt((SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight, BLOCK_SIZE)
+	int numberOfTasksPerThread = (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight / BLOCK_SIZE; // ceilToInt((SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight, BLOCK_SIZE)
 	if ((SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight % BLOCK_SIZE != 0)
 		numberOfTasksPerThread++;
 
@@ -454,6 +454,9 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 
 	for (size_t candidateIndex = 0; candidateIndex < SpritesCount; candidateIndex++)
 	{
+		int candidateWorkingWidth = SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z];
+		int candidateWorkingHeight = SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z];
+
 		/*int candidateByteOffset = SpriteByteOffsets[candidateIndex];
 		int candidateBitOffset = SpriteBitOffsets[candidateIndex];*/
 		//int candidateWidth = SpriteWidths[candidateIndex];
@@ -473,20 +476,20 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 
 		//__syncthreads();
 
-		/*for (i = 0; i < numberOfTimesWeNeedToLoadCandidate; i++) - КЭШ
-		{
-			temp = i * BLOCK_SIZE + threadIdx.x;
-			if (temp >= candidateBitsSquare)
-				continue;
-			cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + temp] = rgbaFlags[SpriteBitOffsets[candidateIndex] + temp];
-			cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 3 + temp] = rgbaFlags[BitLineLength + SpriteBitOffsets[candidateIndex] + temp];
-		}*/
+		//for (i = 0; i < numberOfTimesWeNeedToLoadCandidate; i++)// - КЭШ
+		//{
+		//	temp = i * BLOCK_SIZE + threadIdx.x;
+		//	if (temp >= candidateBitsSquare)
+		//		continue;
+		//	cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + temp] = rgbaFlags[SpriteBitOffsets[candidateIndex] + temp];
+		//	cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 3 + temp] = rgbaFlags[BitLineLength + SpriteBitOffsets[candidateIndex] + temp];
+		//}
 
 		//int candidateWidthMinusSizing = SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z];
 		//int candidateHeightMinusSizing = SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z];
 		//int candidateVoidAreaSquare = (SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z]) * (SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z]);
-		int candidateVoidAreaBitSquare = (SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z]) * ((SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z]) / 8);
-		if ((SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z]) * (SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z]) % 8 != 0)
+		int candidateVoidAreaBitSquare = candidateWorkingWidth * (candidateWorkingHeight / 8);
+		if (candidateWorkingWidth * candidateWorkingHeight % 8 != 0)
 			candidateVoidAreaBitSquare++;
 
 		int numberOfTimesWeNeedToLoadVoid = (candidateVoidAreaBitSquare / BLOCK_SIZE);
@@ -503,7 +506,7 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 		//} //Проверили правильность апрсинга войдмап
 
 
-		//for (i = 0; i < numberOfTimesWeNeedToLoadVoid; i++) - КЭШ
+		//for (i = 0; i < numberOfTimesWeNeedToLoadVoid; i++)// - КЭШ
 		//{
 		//	temp = i * BLOCK_SIZE + threadIdx.x;
 		//	if (temp >= candidateVoidAreaBitSquare)
@@ -543,12 +546,12 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 
 		for (size_t taskIndex = 0; taskIndex < numberOfTasksPerThread; taskIndex++)
 		{
-			temp = taskIndex * BLOCK_SIZE + threadIdx.x;
-			if (temp >= (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight)
+			int ourWorkingPixelIndex = taskIndex * BLOCK_SIZE + threadIdx.x;
+			if (ourWorkingPixelIndex >= (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight)
 				break;
 
-			int ourWorkingX = (temp / ourWorkingHeight);
-			int ourWorkingY = temp % ourWorkingHeight;
+			int ourWorkingX = (ourWorkingPixelIndex / ourWorkingHeight);
+			int ourWorkingY = ourWorkingPixelIndex % ourWorkingHeight;
 			//int coincidences = 0; //Значения меньше 0 - повторы
 
 			//int score = 1;
@@ -574,39 +577,39 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 			else
 				temp = temp / i;*/
 
-			/*printf("score = %d\n", byteAddress);
-			return;*/
+				/*printf("score = %d\n", byteAddress);
+				return;*/
 
-			/*
-				Ок, тут мы имеем доступ к ourX/ourY координатам нашего спрайта и как бы предполагается, что мы будем работать с текущим кандидатом (candidateIndex).
-				Предполагается, что мы пройдемся по кандидату и посчитаем общий счет для ourX/ourY/sizing-области на данном кандидате.
-				Самое минимальное, что мы можем сделать - например сложить ourX/ourY/sizing с каждым первым пикселем кандидата.
-				Нет, наверное еще минимальнее - посчитать сейчас войдмапы и вернуться после первой итерации. Будет легко проверить.
-			*/
+				/*
+					Ок, тут мы имеем доступ к ourX/ourY координатам нашего спрайта и как бы предполагается, что мы будем работать с текущим кандидатом (candidateIndex).
+					Предполагается, что мы пройдемся по кандидату и посчитаем общий счет для ourX/ourY/sizing-области на данном кандидате.
+					Самое минимальное, что мы можем сделать - например сложить ourX/ourY/sizing с каждым первым пикселем кандидата.
+					Нет, наверное еще минимальнее - посчитать сейчас войдмапы и вернуться после первой итерации. Будет легко проверить.
+				*/
 
-			//Считаем войдмапы.
-			//unsigned int voidness = 0;
-			//for (size_t x = 0; x < SizingWidths[blockIdx.z]; x++)
-			//{
-			//	for (size_t y = 0; y < SizingHeights[blockIdx.z]; y++)
-			//	{
-			//		int ourPixelIndex = (ourX + x) * SpriteHeights[blockIdx.x] + ourY + y;
-			//		if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != 0)
-			//		{
-			//			voidness = 1;
-			//			break;
-			//		}
-			//	}
-			//	if (voidness != 0)
-			//		break;
-			//}
-			//results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourX * ourWorkingHeight + ourY)/* * sizeof(int)*/] = voidness; //правильно.
+				//Считаем войдмапы.
+				//unsigned int voidness = 0;
+				//for (size_t x = 0; x < SizingWidths[blockIdx.z]; x++)
+				//{
+				//	for (size_t y = 0; y < SizingHeights[blockIdx.z]; y++)
+				//	{
+				//		int ourPixelIndex = (ourX + x) * SpriteHeights[blockIdx.x] + ourY + y;
+				//		if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + ourPixelIndex] != 0)
+				//		{
+				//			voidness = 1;
+				//			break;
+				//		}
+				//	}
+				//	if (voidness != 0)
+				//		break;
+				//}
+				//results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourX * ourWorkingHeight + ourY)/* * sizeof(int)*/] = voidness; //правильно.
 
-			/*
-				Ок, войдмапы посчитали правильно, что дальше? Для подсчета войдмап нам не нужно было задействовать кандидатские спрайты. Сейчас надо сделать минимальный тест-кейс с кандидатскими спрайтами.
-				Я думаю пора сделать подсчет кол-ва совпадений на гпу и цпу.
-				Ок, мы уже в кандидате и нам не надо возвращаться теперь после первой итерации. Нам надо проходиться по всем рабочим пикселям кандидата.
-			*/
+				/*
+					Ок, войдмапы посчитали правильно, что дальше? Для подсчета войдмап нам не нужно было задействовать кандидатские спрайты. Сейчас надо сделать минимальный тест-кейс с кандидатскими спрайтами.
+					Я думаю пора сделать подсчет кол-ва совпадений на гпу и цпу.
+					Ок, мы уже в кандидате и нам не надо возвращаться теперь после первой итерации. Нам надо проходиться по всем рабочим пикселям кандидата.
+				*/
 
 			int coincidences = 0;
 			//results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourX * ourWorkingHeight + ourY)] = 155;
@@ -616,10 +619,15 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 				printf("r(%d) = %d\n", ourWorkingPixelIndex, rgbaData[SpriteByteOffsets[blockIdx.x] + ourWorkingX * SpriteHeights[blockIdx.x] + ourWorkingY]);
 			return;*/
 
-			for (size_t candidateWorkingX = 0; candidateWorkingX < SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z]; candidateWorkingX++)
+			for (size_t candidateWorkingX = 0; candidateWorkingX < candidateWorkingWidth; candidateWorkingX++)
 			{
-				for (size_t candidateWorkingY = 0; candidateWorkingY < SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z]; candidateWorkingY++)
+				for (size_t candidateWorkingY = 0; candidateWorkingY < candidateWorkingHeight; candidateWorkingY++)
 				{
+					int candidatePixelIndex = candidateWorkingX * candidateWorkingHeight + candidateWorkingY;
+					//int candidatePixelIndex = fmaf(candidateWorkingX, candidateWorkingHeight, candidateWorkingY);
+					/*if (cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + candidatePixelIndex / 8] >> candidatePixelIndex % 8 & 1 == 0)
+						break;*/
+
 					bool isTheSame = true;
 					for (x = 0; x < SizingWidths[blockIdx.z]; x++)
 					{
@@ -627,6 +635,18 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 						{
 							i = (ourWorkingX + x) * SpriteHeights[blockIdx.x] + ourWorkingY + y;
 							int candidatePixelIndex = (candidateWorkingX + x) * SpriteHeights[candidateIndex] + candidateWorkingY + y;
+
+							/*if ((cachedBits[ourWorkingPixelIndex / 8] >> (ourWorkingPixelIndex % 8)) & 1 != (cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1)
+							{
+								isTheSame = false;
+								break;
+							}
+
+							if ((cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE + ourWorkingPixelIndex / 8] >> (ourWorkingPixelIndex % 8)) & 1 != (cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 3 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1)
+							{
+								isTheSame = false;
+								break;
+							}*/
 
 							if (rgbaData[SpriteByteOffsets[blockIdx.x] + i] != rgbaData[SpriteByteOffsets[candidateIndex] + candidatePixelIndex])
 							{
