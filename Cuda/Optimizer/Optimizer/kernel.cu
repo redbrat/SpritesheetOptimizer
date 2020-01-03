@@ -338,6 +338,31 @@ spritesCount получится равным 5453. Уже более-менее.
 
 А есть смысл использовать 1 блок? Да нет. Кол-во результатов будет огромным. Надо просто на уровне блока выявлять победителей, как-то дожидаться окончания работы всех блоков и... Я что-то единственный
 приемлемый вариант вижу - запускать кернелы последовательно и заполнять вспомогательные промежуточные массивы с промежуточными победителями.
+
+
+2.1.2020
+Ок, сделал нахождение победителя, проверил на цпу, немножко пооптимизировал, чтобы запускалось как надо. Теперь надо сделать удаление области со спрайта и запись удаленных областей в какую-нибудь структуру. 
+И после можно будет перезапускать цикл до победного. Хм, а как же нам динамически записать все области? Полюбому нужен буффер. Только вот размер будет полюбому неопределенным заранее.
+
+Думаю, надо сделать такой формат. Сначала идет номер спрайта, затем координаты области, затем ширина и высота. Далее идут структуры вида: номер спрайта - координаты. А вообще-то у меня же вроде это уже 
+где-то выполнено...
+
+Позже...
+Ок, это уже где-то выполнено, но сначала надо хотя бы в произвольном формате все это записать.
+
+Ок, для обозначения области нужно 5 интов - index, x, y, width, height
+Дальше на каждую область надо сохранять 3 инта - index, x, y
+
+Ок, нужен общий буффер для записей вида (index, x, y, width, height) -> coincidents count -> (index, x, y)[]
+И нужен какой-то буффер для временных записей. Хм.... хм, хм, хм. А может сделать матрицу, размером с дату, и ее хватит на любую конфигурацию областей, даже на "все области по 1 пикселю"-конфигурацию. В 
+каждой entry матрицы будем хранить просто индекс области из атласа. Ширину-высоту хранить не надо - хранится в атласе, смещение хранить не надо - хранится прямо в координатах матрицы, таким образом нам 
+нужна область памяти размером с rgbaData'у, и еще область для хранения атласа. А для хранения атласа нам потенциально нужна область размерм с rgbaData'у х3. Посчитал - для 65к спрайтов по 255х255 
+понадобится 32 гб оперативной памяти. Вообще-то такую инфу можно и свопать. Тем более, что это максимум, что может нам понадобиться. Надо как-то сделать так, чтобы динамически запрашивать память, иначе это 
+пипец. Вообще это кол-во спрайтов такого размера означает 4096 мегапикселей информации. Или 256 4к-текстур. Это сразу месячная зп если что, так что может и ладно, пусть свопается. А не будет свопаться 
+только где-то 21к текстур 256х256.
+
+Ок тогда значит имеем два буффера - один для атласа, другой для координат. Выделяем на них место сразу. В буффер атласа записываем области по порядку значит. В координаты записываем их индекс. После 
+окончания ужмем это все, конечно.
 */
 
 
@@ -349,6 +374,7 @@ spritesCount получится равным 5453. Уже более-менее.
 #define SIZING_STRUCTURE_LENGTH 4
 #define DATA_STRUCTURE_LENGTH 4
 #define RESERVED_DATA_LENGHT 2
+#define INDECIES_INFO_LENGHT 9
 
 #define MAX_FLAGS_LENGTH_FOR_SPRITE 8192 //Для 256х256 спрайта он именно такой
 
@@ -400,7 +426,7 @@ int hostCeilToInt(int value, int divider)
 		return value / divider + 1;
 }
 
-__global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, unsigned int* results)
+__global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, unsigned int* results, char* indeciesInfo)
 {
 	/*if (threadIdx.x == 0)
 		printf("x = %d, z = %d\n", blockIdx.x, blockIdx.z);
@@ -679,7 +705,24 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 				}
 			}
 
-			results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] += coincidences * temp;
+			i = (workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY);
+			results[i] += coincidences * temp;
+			if (taskIndex == 0)
+			{
+				temp = blockIdx.x;
+				char* charArr = (char*)&temp;
+				indeciesInfo[i * INDECIES_INFO_LENGHT] = charArr[0];
+				indeciesInfo[i * INDECIES_INFO_LENGHT + 1] = charArr[1];
+				indeciesInfo[i * INDECIES_INFO_LENGHT + 2] = charArr[2];
+				indeciesInfo[i * INDECIES_INFO_LENGHT + 3] = charArr[3];
+				charArr = (char*)(short)ourWorkingX;
+				indeciesInfo[i * INDECIES_INFO_LENGHT + 4] = charArr[0];
+				indeciesInfo[i * INDECIES_INFO_LENGHT + 5] = charArr[1];
+				charArr = (char*)(short)ourWorkingY;
+				indeciesInfo[i * INDECIES_INFO_LENGHT + 6] = charArr[0];
+				indeciesInfo[i * INDECIES_INFO_LENGHT + 7] = charArr[1];
+				indeciesInfo[i * INDECIES_INFO_LENGHT + 8] = (char)blockIdx.z;
+			}
 			//return;
 		}
 
@@ -884,14 +927,23 @@ __global__ void findTheBestScore(unsigned int* scores, unsigned int* indecies, i
 	indecies[scoreId] = ourIndex;
 }
 
-__global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, unsigned int* scoresResults, unsigned int* helperResultsSizeArray, unsigned int workingScoresLength)
+/*
+Ок, для удаления области из данных нам надо всего лишь пройтись по всем данным 1 раз - тривиально.
+*/
+
+__global__ void stripTheWinnerAreaFromData(unsigned char* rgbaData, unsigned int* workingOffsets, unsigned int* scoresResults, int winnerIndex, char* atlas, char* offsets)
+{
+
+}
+
+__global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, unsigned int* scoresResults, unsigned int* indecies, char* indeciesInfo, unsigned int workingScoresLength, char* atlas, char* offsets)
 {
 	/*printf("main threadx = %d, blockx = %d", threadIdx.x, blockIdx.x);
 	return;*/
 	dim3 scoresCountingBlock(BLOCK_SIZE);
 	dim3 scoresCountingGrid(SpritesCount, 1, SizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
 	printf("%d,%d,%d\n", BLOCK_SIZE, SpritesCount, SizingsCount);
-	countScores << <scoresCountingGrid, scoresCountingBlock >> > (rgbaData, voids, rgbaFlags, workingOffsets, scoresResults);
+	countScores << <scoresCountingGrid, scoresCountingBlock >> > (rgbaData, voids, rgbaFlags, workingOffsets, scoresResults, indeciesInfo);
 	cudaError_t scoreCountingError = cudaPeekAtLastError();
 	if (scoreCountingError != cudaSuccess)
 	{
@@ -908,7 +960,7 @@ __global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsign
 		int gridLength = ceilToInt(currentBestScoresLength, BLOCK_SIZE);
 		dim3 bestScoreFindingGrid(gridLength);
 		//printf("ASJISjdkskjmalkdjasid\n");
-		findTheBestScore << <bestScoreFindingGrid, bestScoreFindingBlock >> > (scoresResults, helperResultsSizeArray, depth, currentBestScoresLength, workingScoresLength);
+		findTheBestScore << <bestScoreFindingGrid, bestScoreFindingBlock >> > (scoresResults, indecies, depth, currentBestScoresLength, workingScoresLength);
 		cudaDeviceSynchronize();
 		if (currentBestScoresLength <= WARP_SIZE) //Если на входе к findTheBestScore было 32 значения или меньше, значит на выходе осталось 1 значение - победитель.
 			break;
@@ -916,7 +968,11 @@ __global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsign
 		depth++;
 	}
 
-	printf("AAAaaaaaaaaaannd the WINNER is %d with the ASTONISHING score of %d!!!!!!!!!!!! !!! !! !!!!! ! !!11   ... . .  .\n", helperResultsSizeArray[0], scoresResults[0]);
+	dim3 bestAreaStrippingBlock(BLOCK_SIZE);
+	//dim3 bestScoreFindingGrid(gridLength);
+
+
+	printf("AAAaaaaaaaaaannd the WINNER is %d with the ASTONISHING score of %d!!!!!!!!!!!! !!! !! !!!!! ! !!11   ... . .  .\n", indecies[0], scoresResults[0]);
 }
 
 int main()
@@ -1014,7 +1070,7 @@ int main()
 	//Размерность матриц результатов у нас не совпадает с размерностью спрайтов из-за сайзингов.
 	//Еще нам нужны байтовые оффсеты рабочих областей спрайтов, раз мы хотим экономить место. Битовые войд-оффсеты не подходят, т.к. там округляются значения до кратных 8.
 	//В будущем вот это вот всё надо будет перенести на клиента.
-	unsigned int resultsCount = 0;
+	unsigned int scoresCount = 0;
 	unsigned int* workingSpriteOffsets = (unsigned int*)malloc(sizingsCount * spritesCount * sizeof(int));
 	unsigned int currentOffset = 0;
 	for (size_t i = 0; i < spritesCount; i++)
@@ -1027,18 +1083,24 @@ int main()
 			short sizingHeight = sizingHeights[j];
 
 			unsigned int currentWorkingSpriteLength = (spriteWidth - sizingWidth) * (spriteHeight - sizingHeight);
-			resultsCount += currentWorkingSpriteLength;
+			scoresCount += currentWorkingSpriteLength;
 			//std::cout << "spriteWidth = " << spriteWidth << " sizingWidth = " << sizingWidth << " spriteHeight = " << spriteHeight << " sizingHeight = " << sizingHeight << "\n";
 			workingSpriteOffsets[i * sizingsCount + j] = currentOffset;
 			currentOffset += currentWorkingSpriteLength;
 		}
 	}
-	char* deviceResultsPtr;
-	char* deviceHelperResultsSizePtr;
-	int resultsOptimizedSize = hostCeilToInt(resultsCount, BLOCK_SIZE) * BLOCK_SIZE; //Делаем кол-во результатов кратным BLOCK_SIZE, чтобы потом было легче высчитывать победителя
-	cudaMalloc((void**)&deviceResultsPtr, resultsOptimizedSize * sizeof(int));
-	cudaMalloc((void**)&deviceHelperResultsSizePtr, resultsOptimizedSize * sizeof(int));
-	cudaMemset(deviceResultsPtr, 0, resultsOptimizedSize * sizeof(int));
+	char* deviceScoresPtr;
+	char* deviceIndeciesPtr;
+	char* deviceIndeciesInfoPtr;
+	char* deviceAtlasPtr;
+	char* deviceOffsetsPtr;
+	int optimizedScoresCount = hostCeilToInt(scoresCount, BLOCK_SIZE) * BLOCK_SIZE; //Делаем кол-во результатов кратным BLOCK_SIZE, чтобы потом было легче высчитывать победителя
+	cudaMalloc((void**)&deviceScoresPtr, optimizedScoresCount * sizeof(int));
+	cudaMalloc((void**)&deviceIndeciesPtr, optimizedScoresCount * sizeof(int));
+	cudaMalloc((void**)&deviceIndeciesInfoPtr, optimizedScoresCount * INDECIES_INFO_LENGHT); //int - для индекса спрайта, 2 short - для координат, 1 byte - для индекса области
+	cudaMalloc((void**)&deviceAtlasPtr, byteLineLength * sizeof(int) * 3);
+	cudaMalloc((void**)&deviceOffsetsPtr, byteLineLength * sizeof(int));
+	cudaMemset(deviceScoresPtr, 0, optimizedScoresCount * sizeof(int));
 	unsigned int* deviceWorkingSpriteOffsetsPtr;
 	cudaMalloc((void**)&deviceWorkingSpriteOffsetsPtr, sizingsCount * spritesCount * sizeof(unsigned int));
 	cudaMemcpy(deviceWorkingSpriteOffsetsPtr, workingSpriteOffsets, sizingsCount * spritesCount * sizeof(unsigned int), cudaMemcpyHostToDevice);
@@ -1046,8 +1108,8 @@ int main()
 	//dim3 block(BLOCK_SIZE);
 	//dim3 grid(spritesCount, 1, sizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
 	//mainKernel << <grid, block >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceResultsPtr);
-	printf("resultsCount = %d\n", resultsCount);
-	mainKernel << <1, 1 >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceResultsPtr, (unsigned int*)deviceHelperResultsSizePtr, resultsCount);
+	printf("scoresCount = %d\n", scoresCount);
+	mainKernel << <1, 1 >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceScoresPtr, (unsigned int*)deviceIndeciesPtr, deviceIndeciesInfoPtr, scoresCount, deviceAtlasPtr, deviceOffsetsPtr);
 	gpuErrchk(cudaPeekAtLastError());
 	cudaDeviceSynchronize();
 	gpuErrchk(cudaPeekAtLastError());
@@ -1061,8 +1123,8 @@ int main()
 	}
 
 	//testing...
-	int* gpuResults = (int*)malloc(resultsCount * sizeof(int));
-	cudaMemcpy(gpuResults, deviceResultsPtr, resultsCount * sizeof(int), cudaMemcpyDeviceToHost);
+	int* gpuResults = (int*)malloc(scoresCount * sizeof(int));
+	cudaMemcpy(gpuResults, deviceScoresPtr, scoresCount * sizeof(int), cudaMemcpyDeviceToHost);
 	int spriteTestIndex = 0;
 	int sizingTestIndex = 0;
 
@@ -1077,7 +1139,7 @@ int main()
 	short workingWidth = testSpriteWidth - testSizingWidth;
 	short workingHeight = testSpriteHeight - testSizingHeight;
 
-	int testCount = resultsCount;
+	int testCount = scoresCount;
 	/*std::cout << "First " << testCount << " voids:\n";
 	for (size_t i = 0; i < 100; i++)
 	{
@@ -1093,7 +1155,7 @@ int main()
 	}*/
 
 
-	int* cpuResults = (int*)malloc(resultsCount * sizeof(int));
+	int* cpuResults = (int*)malloc(scoresCount * sizeof(int));
 
 
 	//testing...
@@ -1101,8 +1163,12 @@ int main()
 	cudaFree(deviceRgbaDataPtr);
 	cudaFree(deviceVoidsPtr);
 	cudaFree(deviceRgbaFlagsPtr);
-	cudaFree(deviceResultsPtr);
+	cudaFree(deviceScoresPtr);
 	cudaFree(deviceWorkingSpriteOffsetsPtr);
+	cudaFree(deviceIndeciesPtr);
+	cudaFree(deviceAtlasPtr);
+	cudaFree(deviceOffsetsPtr);
+	cudaFree(deviceIndeciesInfoPtr);
 
 	free(workingSpriteOffsets);
 	free(gpuResults);
