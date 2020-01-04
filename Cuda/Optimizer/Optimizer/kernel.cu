@@ -374,7 +374,7 @@ spritesCount получится равным 5453. Уже более-менее.
 #define SIZING_STRUCTURE_LENGTH 4
 #define DATA_STRUCTURE_LENGTH 4
 #define RESERVED_DATA_LENGHT 2
-//#define INDECIES_INFO_LENGHT 8
+#define INDECIES_INFO_LENGHT 8
 
 #define MAX_FLAGS_LENGTH_FOR_SPRITE 8192 //Для 256х256 спрайта он именно такой
 
@@ -392,7 +392,7 @@ __constant__ short SizingsCount;
 __constant__ short SpritesCount;
 __constant__ int ByteLineLength;
 __constant__ int BitLineLength;
-//__constant__ int OptimizedScoresCount;
+__constant__ int OptimizedScoresCount;
 
 __constant__ short SizingWidths[22];
 __constant__ short SizingHeights[22];
@@ -427,7 +427,7 @@ int hostCeilToInt(int value, int divider)
 		return value / divider + 1;
 }
 
-__global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, unsigned int* results/*, unsigned int* indeciesInfo*/)
+__global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, unsigned int* results, unsigned int* indeciesInfo)
 {
 	/*if (threadIdx.x == 0)
 		printf("x = %d, z = %d\n", blockIdx.x, blockIdx.z);
@@ -707,11 +707,11 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 			}
 
 			results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] += coincidences * temp;
-			/*if (taskIndex == 0)
+			if (taskIndex == 0)
 			{
 				indeciesInfo[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] = blockIdx.x;
 				indeciesInfo[OptimizedScoresCount + (workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] = blockIdx.z;
-			}*/
+			}
 			//return;
 		}
 
@@ -818,7 +818,7 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 	}
 }
 
-__global__ void findTheBestScore(unsigned int* scores, unsigned int* indecies, int depth, int currentScoresLength, int allScoresLength)
+__global__ void findTheBestScore(unsigned int* scores, unsigned int* indecies, unsigned int* indeciesInfo, int depth, int currentScoresLength, int allScoresLength)
 {
 	if (blockIdx.x == 0 && threadIdx.x == 0)
 		printf("depth = %d, currentScoresLength = %d\n", depth, currentScoresLength);
@@ -845,7 +845,13 @@ __global__ void findTheBestScore(unsigned int* scores, unsigned int* indecies, i
 	int scoreId = blockOffset + threadOffset;
 	if (scoreId > allScoresLength)
 		return;
+
+	/*if (scoreId % 7863 < 1024 && depth == 0)
+		printf("indeciesInfo[%d] = %d, indeciesInfo[%d] = %d\n", scoreId, indeciesInfo[scoreId], OptimizedScoresCount + scoreId, indeciesInfo[OptimizedScoresCount + scoreId]);*/
+
 	int ourScore = scores[scoreId];
+	int ourScoreBlockIdX = indeciesInfo[scoreId];
+	int ourScoreBlockIdZ = indeciesInfo[OptimizedScoresCount + scoreId];
 	int ourIndex = scoreId;
 	if (depth > 0)
 		ourIndex = indecies[scoreId];
@@ -859,61 +865,83 @@ __global__ void findTheBestScore(unsigned int* scores, unsigned int* indecies, i
 
 	int candidateScore = __shfl_down_sync(0xff, ourScore, 1, 2);
 	int candidateIndex = __shfl_down_sync(0xff, ourIndex, 1, 2);
+	int candidateBlockIdX = __shfl_down_sync(0xff, ourScoreBlockIdX, 1, 2);
+	int candidateBlockIdZ = __shfl_down_sync(0xff, ourScoreBlockIdZ, 1, 2);
 	if (threadIdx.x % 2 == 0)
 	{
 		if (candidateScore > ourScore)
 		{
 			ourScore = candidateScore;
 			ourIndex = candidateIndex;
+			ourScoreBlockIdX = candidateBlockIdX;
+			ourScoreBlockIdZ = candidateBlockIdZ;
 		}
 	}
 
 	candidateScore = __shfl_down_sync(0xff, ourScore, 2, 4);
 	candidateIndex = __shfl_down_sync(0xff, ourIndex, 2, 4);
+	candidateBlockIdX = __shfl_down_sync(0xff, ourScoreBlockIdX, 2, 4);
+	candidateBlockIdZ = __shfl_down_sync(0xff, ourScoreBlockIdZ, 2, 4);
 	if (threadIdx.x % 4 == 0)
 	{
 		if (candidateScore > ourScore)
 		{
 			ourScore = candidateScore;
 			ourIndex = candidateIndex;
+			ourScoreBlockIdX = candidateBlockIdX;
+			ourScoreBlockIdZ = candidateBlockIdZ;
 		}
 	}
 
 	candidateScore = __shfl_down_sync(0xff, ourScore, 4, 8);
 	candidateIndex = __shfl_down_sync(0xff, ourIndex, 4, 8);
+	candidateBlockIdX = __shfl_down_sync(0xff, ourScoreBlockIdX, 4, 8);
+	candidateBlockIdZ = __shfl_down_sync(0xff, ourScoreBlockIdZ, 4, 8);
 	if (threadIdx.x % 8 == 0)
 	{
 		if (candidateScore > ourScore)
 		{
 			ourScore = candidateScore;
 			ourIndex = candidateIndex;
+			ourScoreBlockIdX = candidateBlockIdX;
+			ourScoreBlockIdZ = candidateBlockIdZ;
 		}
 	}
 
 	candidateScore = __shfl_down_sync(0xff, ourScore, 8, 16);
 	candidateIndex = __shfl_down_sync(0xff, ourIndex, 8, 16);
+	candidateBlockIdX = __shfl_down_sync(0xff, ourScoreBlockIdX, 8, 16);
+	candidateBlockIdZ = __shfl_down_sync(0xff, ourScoreBlockIdZ, 8, 16);
 	if (threadIdx.x % 16 == 0)
 	{
 		if (candidateScore > ourScore)
 		{
 			ourScore = candidateScore;
 			ourIndex = candidateIndex;
+			ourScoreBlockIdX = candidateBlockIdX;
+			ourScoreBlockIdZ = candidateBlockIdZ;
 		}
 	}
 
 	candidateScore = __shfl_down_sync(0xff, ourScore, 16);
 	candidateIndex = __shfl_down_sync(0xff, ourIndex, 16);
+	candidateBlockIdX = __shfl_down_sync(0xff, ourScoreBlockIdX, 16);
+	candidateBlockIdZ = __shfl_down_sync(0xff, ourScoreBlockIdZ, 16);
 	if (threadIdx.x % 16 == 0)
 	{
 		if (candidateScore > ourScore)
 		{
 			ourScore = candidateScore;
 			ourIndex = candidateIndex;
+			ourScoreBlockIdX = candidateBlockIdX;
+			ourScoreBlockIdZ = candidateBlockIdZ;
 		}
 	}
 
 	scores[scoreId] = ourScore;
 	indecies[scoreId] = ourIndex;
+	indeciesInfo[scoreId] = ourScoreBlockIdX;
+	indeciesInfo[OptimizedScoresCount + scoreId] = ourScoreBlockIdZ;
 }
 
 /*
@@ -925,14 +953,14 @@ __global__ void findTheBestScore(unsigned int* scores, unsigned int* indecies, i
 //
 //}
 
-__global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, unsigned int* scoresResults, unsigned int* indecies/*, unsigned int* indeciesInfo*/, unsigned int workingScoresLength, char* atlas, char* offsets)
+__global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, unsigned int* scoresResults, unsigned int* indecies, unsigned int* indeciesInfo, unsigned int workingScoresLength, char* atlas, char* offsets)
 {
 	/*printf("main threadx = %d, blockx = %d", threadIdx.x, blockIdx.x);
 	return;*/
 	dim3 scoresCountingBlock(BLOCK_SIZE);
 	dim3 scoresCountingGrid(SpritesCount, 1, SizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
 	printf("%d,%d,%d\n", BLOCK_SIZE, SpritesCount, SizingsCount);
-	countScores << <scoresCountingGrid, scoresCountingBlock >> > (rgbaData, voids, rgbaFlags, workingOffsets, scoresResults/*, indeciesInfo*/);
+	countScores << <scoresCountingGrid, scoresCountingBlock >> > (rgbaData, voids, rgbaFlags, workingOffsets, scoresResults, indeciesInfo);
 	cudaError_t scoreCountingError = cudaPeekAtLastError();
 	if (scoreCountingError != cudaSuccess)
 	{
@@ -949,7 +977,7 @@ __global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsign
 		int gridLength = ceilToInt(currentBestScoresLength, BLOCK_SIZE);
 		dim3 bestScoreFindingGrid(gridLength);
 		//printf("ASJISjdkskjmalkdjasid\n");
-		findTheBestScore << <bestScoreFindingGrid, bestScoreFindingBlock >> > (scoresResults, indecies, depth, currentBestScoresLength, workingScoresLength);
+		findTheBestScore << <bestScoreFindingGrid, bestScoreFindingBlock >> > (scoresResults, indecies, indeciesInfo, depth, currentBestScoresLength, workingScoresLength);
 		cudaDeviceSynchronize();
 		if (currentBestScoresLength <= WARP_SIZE) //Если на входе к findTheBestScore было 32 значения или меньше, значит на выходе осталось 1 значение - победитель.
 			break;
@@ -962,6 +990,15 @@ __global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsign
 
 
 	printf("AAAaaaaaaaaaannd the WINNER is %d with the ASTONISHING score of %d!!!!!!!!!!!! !!! !! !!!!! ! !!11   ... . .  .\n", indecies[0], scoresResults[0]);
+	printf("Aaaaannd the sprite id of the winner is %d. And the sizing is %d.\n", indeciesInfo[0], indeciesInfo[OptimizedScoresCount]);
+	int workingOffsetOfTheWinner = workingOffsets[indeciesInfo[0] * SizingsCount + indeciesInfo[OptimizedScoresCount]];
+	int sizingWidth = SizingWidths[indeciesInfo[OptimizedScoresCount]];
+	int sizingHeight = SizingHeights[indeciesInfo[OptimizedScoresCount]]; //Крутой -> петушки -> владимир
+	int workingHeight = SpriteHeights[indeciesInfo[0]] - sizingHeight;
+	int indexOfPixelOfTheWinner = indecies[0] - workingOffsetOfTheWinner;
+	int winnerAreaX = indexOfPixelOfTheWinner / workingHeight;
+	int winnerAreaY = indexOfPixelOfTheWinner % workingHeight;
+	printf("Winner area: Sprite %d, x %d, y %d, width %d, height %d\n", indeciesInfo[0], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight);
 }
 
 int main()
@@ -1080,14 +1117,14 @@ int main()
 	}
 	char* deviceScoresPtr;
 	char* deviceIndeciesPtr;
-	//int* deviceIndeciesInfoPtr;
+	int* deviceIndeciesInfoPtr;
 	char* deviceAtlasPtr;
 	char* deviceOffsetsPtr;
 	int optimizedScoresCount = hostCeilToInt(scoresCount, BLOCK_SIZE) * BLOCK_SIZE; //Делаем кол-во результатов кратным BLOCK_SIZE, чтобы потом было легче высчитывать победителя
-	//cudaMemcpyToSymbol(OptimizedScoresCount, &optimizedScoresCount, sizeof(int)); // Сразу записываем его
+	cudaMemcpyToSymbol(OptimizedScoresCount, &optimizedScoresCount, sizeof(int)); // Сразу записываем его
 	cudaMalloc((void**)&deviceScoresPtr, optimizedScoresCount * sizeof(int));
 	cudaMalloc((void**)&deviceIndeciesPtr, optimizedScoresCount * sizeof(int));
-	//cudaMalloc((void**)&deviceIndeciesInfoPtr, optimizedScoresCount * INDECIES_INFO_LENGHT); //int - для индекса спрайта, 2 short - для координат, 1 byte - для индекса области
+	cudaMalloc((void**)&deviceIndeciesInfoPtr, optimizedScoresCount * INDECIES_INFO_LENGHT); //int - для индекса спрайта, 2 short - для координат, 1 byte - для индекса области
 	cudaMalloc((void**)&deviceAtlasPtr, byteLineLength * sizeof(int) * 3);
 	cudaMalloc((void**)&deviceOffsetsPtr, byteLineLength * sizeof(int));
 	cudaMemset(deviceScoresPtr, 0, optimizedScoresCount * sizeof(int));
@@ -1099,7 +1136,7 @@ int main()
 	//dim3 grid(spritesCount, 1, sizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
 	//mainKernel << <grid, block >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceResultsPtr);
 	printf("scoresCount = %d\n", scoresCount);
-	mainKernel << <1, 1 >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceScoresPtr, (unsigned int*)deviceIndeciesPtr/*, (unsigned int*)deviceIndeciesInfoPtr*/, scoresCount, deviceAtlasPtr, deviceOffsetsPtr);
+	mainKernel << <1, 1 >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceScoresPtr, (unsigned int*)deviceIndeciesPtr, (unsigned int*)deviceIndeciesInfoPtr, scoresCount, deviceAtlasPtr, deviceOffsetsPtr);
 	gpuErrchk(cudaPeekAtLastError());
 	cudaDeviceSynchronize();
 	gpuErrchk(cudaPeekAtLastError());
@@ -1158,7 +1195,7 @@ int main()
 	cudaFree(deviceIndeciesPtr);
 	cudaFree(deviceAtlasPtr);
 	cudaFree(deviceOffsetsPtr);
-	//cudaFree(deviceIndeciesInfoPtr);
+	cudaFree(deviceIndeciesInfoPtr);
 
 	free(workingSpriteOffsets);
 	free(gpuResults);

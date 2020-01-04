@@ -594,6 +594,12 @@ public class Optimizer : EditorWindow
 
             var i3 = 0;
             var coincidents = new int[workingArrayLength];
+            var coincidentsSpriteIndexes = new int[workingArrayLength];
+            var coincidentsSpriteX = new int[workingArrayLength];
+            var coincidentsSpriteY = new int[workingArrayLength];
+            var coincidentsSpriteWidth = new int[workingArrayLength];
+            var coincidentsSpriteHeight = new int[workingArrayLength];
+
             for (int i = 0; i < colorsResults.colors.Length; i++)
             {
                 var ourColors = colorsResults.colors[i];
@@ -681,6 +687,11 @@ public class Optimizer : EditorWindow
                                 //if (coincidentsIndex == 4690)
                                 //    Debug.LogError($"WINNER score = {score}, currentCoincidents = {currentCoincidents}, asokd = {currentCoincidents * score}");
                                 coincidents[coincidentsIndex] += currentCoincidents * (score * score * score / (sizing.X * sizing.Y));
+                                coincidentsSpriteIndexes[coincidentsIndex] = i;
+                                coincidentsSpriteX[coincidentsIndex] = ourX;
+                                coincidentsSpriteY[coincidentsIndex] = ourY;
+                                coincidentsSpriteWidth[coincidentsIndex] = sizing.X;
+                                coincidentsSpriteHeight[coincidentsIndex] = sizing.Y;
                             }
                         }
                     }
@@ -705,6 +716,7 @@ public class Optimizer : EditorWindow
                 }
             }
             Debug.Log($"The Winner is: {largestScoreIndex} with the total score of {largestScore}");
+            Debug.Log($"The Winner: sprite {coincidentsSpriteIndexes[largestScoreIndex]}, x {coincidentsSpriteX[largestScoreIndex]}, y {coincidentsSpriteY[largestScoreIndex]}, width {coincidentsSpriteWidth[largestScoreIndex]}, height {coincidentsSpriteHeight[largestScoreIndex]}");
         }
         if (_cts != null)
         {
