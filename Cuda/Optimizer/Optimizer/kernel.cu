@@ -354,9 +354,9 @@ spritesCount получится равным 5453. Уже более-менее.
 Дальше на каждую область надо сохранять 3 инта - index, x, y
 
 Ок, нужен общий буффер для записей вида (index, x, y, width, height) -> coincidents count -> (index, x, y)[]
-И нужен какой-то буффер для временных записей. Хм.... хм, хм, хм. А может сделать матрицу, размером с дату, и ее хватит на любую конфигурацию областей, даже на "все области по 1 пикселю"-конфигурацию. В
+И нужен какой-то буффер для временных записей. Хм.... хм, хм, хм. А может сделать матрицу, размером с дату, и ее хватит на любую конфигурацию областей, даже на "все области по 1 пикселю"-конфигурацию? В
 каждой entry матрицы будем хранить просто индекс области из атласа. Ширину-высоту хранить не надо - хранится в атласе, смещение хранить не надо - хранится прямо в координатах матрицы, таким образом нам
-нужна область памяти размером с rgbaData'у, и еще область для хранения атласа. А для хранения атласа нам потенциально нужна область размерм с rgbaData'у х3. Посчитал - для 65к спрайтов по 255х255
+нужна область памяти размером с rgbaData'у * int, и еще область для хранения атласа. А для хранения атласа нам потенциально нужна область размерм с rgbaData'у х3. Посчитал - для 65к спрайтов по 255х255
 понадобится 32 гб оперативной памяти. Вообще-то такую инфу можно и свопать. Тем более, что это максимум, что может нам понадобиться. Надо как-то сделать так, чтобы динамически запрашивать память, иначе это
 пипец. Вообще это кол-во спрайтов такого размера означает 4096 мегапикселей информации. Или 256 4к-текстур. Это сразу месячная зп если что, так что может и ладно, пусть свопается. А не будет свопаться
 только где-то 21к текстур 256х256.
@@ -392,6 +392,7 @@ __constant__ short SizingsCount;
 __constant__ short SpritesCount;
 __constant__ int ByteLineLength;
 __constant__ int BitLineLength;
+__constant__ unsigned int ScoresCount;
 __constant__ int OptimizedScoresCount;
 
 __constant__ short SizingWidths[22];
@@ -945,18 +946,159 @@ __global__ void findTheBestScore(unsigned int* scores, unsigned int* indecies, u
 }
 
 /*
-Ок, для удаления области из данных нам надо всего лишь пройтись по всем данным 1 раз - тривиально.
+	Ок, для удаления области из данных нам надо всего лишь пройтись по всем данным 1 раз - тривиально. И область виннера никогда не меняется. Она задана извне 1 раз, соответственно изменениям подвержены 
+	только переменные области кандидата.
 */
 
-//__global__ void stripTheWinnerAreaFromData(unsigned char* rgbaData, unsigned int* workingOffsets, unsigned int* scoresResults, int winnerIndex, char* atlas, char* offsets)
-//{
-//
-//}
+__device__ void erase(unsigned char* rgbaData, unsigned int spriteIndex, short x, short y, short sizingWidth, short sizingHeight)
+{
+	for (size_t xx = 0; xx < sizingWidth; xx++)
+	{
+		for (size_t yy = 0; yy < sizingHeight; yy++)
+		{
+			int candidatePixelIndex = (x + xx) * SpriteHeights[spriteIndex] + y + yy;
+			rgbaData[SpriteByteOffsets[spriteIndex] + candidatePixelIndex] = 0;
+			rgbaData[ByteLineLength + SpriteByteOffsets[spriteIndex] + candidatePixelIndex] = 0;
+			rgbaData[ByteLineLength * 2 + SpriteByteOffsets[spriteIndex] + candidatePixelIndex] = 0;
+			rgbaData[ByteLineLength * 3 + SpriteByteOffsets[spriteIndex] + candidatePixelIndex] = 0;
+		}
+	}
+}
 
-__global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, unsigned int* scoresResults, unsigned int* indecies, unsigned int* indeciesInfo, unsigned int workingScoresLength, char* atlas, char* offsets)
+__global__ void stripTheWinnerAreaFromData(unsigned char* rgbaData, unsigned int winnerSpriteIndex, unsigned short winnerX, unsigned short winnerY, unsigned short winnerWidth, unsigned short winnerHeight, unsigned int atlasIndex, unsigned int* offsets, unsigned int* numbersOfStrippings)
+{
+	short candidateWorkingWidth = SpriteWidths[blockIdx.x] - winnerWidth;
+	short candidateWorkingHeight = SpriteHeights[blockIdx.x] - winnerHeight;
+
+	int numberOfTasksPerThread = candidateWorkingWidth * candidateWorkingHeight / BLOCK_SIZE; // ceilToInt((SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight, BLOCK_SIZE)
+	if (candidateWorkingWidth * candidateWorkingHeight % BLOCK_SIZE != 0)
+		numberOfTasksPerThread++;
+
+	unsigned short numberOfStrippings = 0;
+	for (size_t taskIndex = 0; taskIndex < numberOfTasksPerThread; taskIndex++)
+	{
+		int candidateWorkingPixelIndex = taskIndex * BLOCK_SIZE + threadIdx.x;
+		if (candidateWorkingPixelIndex >= candidateWorkingWidth * candidateWorkingHeight)
+			break;
+
+		short candidateWorkingX = (candidateWorkingPixelIndex / candidateWorkingHeight);
+		short candidateWorkingY = candidateWorkingPixelIndex % candidateWorkingHeight;
+
+		bool isTheSame = true;
+		for (size_t x = 0; x < winnerWidth; x++)
+		{
+			for (size_t y = 0; y < winnerHeight; y++)
+			{
+				int ourWinnerPixelIndex = (winnerX + x) * SpriteHeights[winnerSpriteIndex] + winnerY + y;
+				int candidatePixelIndex = (candidateWorkingX + x) * SpriteHeights[blockIdx.x] + candidateWorkingY + y;
+
+				if (ourWinnerPixelIndex == candidatePixelIndex && blockIdx.x == winnerSpriteIndex)
+				{
+					isTheSame = false;
+					break; //Мы не можем здесь очищать исходную область, т.к. она нужна нам для сравнения с ней, если мы ее обнулим поведение будет undefined. Очищаем исходную область мы в главном кернеле.
+				}
+
+				if (rgbaData[SpriteByteOffsets[winnerSpriteIndex] + ourWinnerPixelIndex] != rgbaData[SpriteByteOffsets[blockIdx.x] + candidatePixelIndex])
+				{
+					isTheSame = false;
+					break;
+				}
+				if (rgbaData[ByteLineLength + SpriteByteOffsets[winnerSpriteIndex] + ourWinnerPixelIndex] != rgbaData[ByteLineLength + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex])
+				{
+					isTheSame = false;
+					break;
+				}
+				if (rgbaData[ByteLineLength * 2 + SpriteByteOffsets[winnerSpriteIndex] + ourWinnerPixelIndex] != rgbaData[ByteLineLength * 2 + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex])
+				{
+					isTheSame = false;
+					break;
+				}
+				if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[winnerSpriteIndex] + ourWinnerPixelIndex] != rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex])
+				{
+					isTheSame = false;
+					break;
+				}
+			}
+
+			if (!isTheSame)
+				break;
+		}
+
+		if (isTheSame)
+		{
+			erase(rgbaData, blockIdx.x, candidateWorkingX, candidateWorkingY, winnerWidth, winnerHeight);
+			/*for (size_t x = 0; x < winnerWidth; x++)
+			{
+				for (size_t y = 0; y < winnerHeight; y++)
+				{
+					int candidatePixelIndex = (candidateWorkingX + x) * SpriteHeights[blockIdx.x] + candidateWorkingY + y;
+					rgbaData[SpriteByteOffsets[blockIdx.x] + candidatePixelIndex] = 0;
+					rgbaData[ByteLineLength + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex] = 0;
+					rgbaData[ByteLineLength * 2 + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex] = 0;
+					rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex] = 0;
+				}
+			}*/
+
+			offsets[SpriteByteOffsets[blockIdx.x] + candidateWorkingX * SpriteHeights[blockIdx.x] + candidateWorkingY] = atlasIndex + 1; //+1 потому что мы хотим чтобы 0 обозначал отсутствие в этом пикселе начала области атласа, а не 0ую область атласа
+			numberOfStrippings++;
+			printf("isTheSame!!!!! numberOfStrippings = %d, blockIdx.x = %d, candidateWorkingX = %d, candidateWorkingY = %d\n", numberOfStrippings, blockIdx.x, candidateWorkingX, candidateWorkingY);
+		}
+	}
+
+	numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 16);
+	numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 8);
+	numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 4);
+	numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 2);
+	numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 1);
+	/*if (threadIdx.x % 2 == 0)
+		numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 1, 2);
+	if (threadIdx.x % 4 == 0)
+		numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 2, 4);
+	if (threadIdx.x % 8 == 0)
+		numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 4, 8);
+	if (threadIdx.x % 16 == 0)
+		numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 8, 16);*/
+
+	__shared__ unsigned short results[32];
+	if (threadIdx.x % 32 == 0)
+	{
+		//numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 16);
+		results[threadIdx.x / 32] = numberOfStrippings;
+	}
+
+	__syncthreads();
+	if (threadIdx.x < 32)
+	{
+		numberOfStrippings = results[threadIdx.x];
+
+		numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 16);
+		numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 8);
+		numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 4);
+		numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 2);
+		numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 1);
+
+		/*if (threadIdx.x % 2 == 0)
+			numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 1, 2);
+		if (threadIdx.x % 4 == 0)
+			numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 2, 4);
+		if (threadIdx.x % 8 == 0)
+			numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 4, 8);
+		if (threadIdx.x % 16 == 0)
+			numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 8, 16);*/
+		if (threadIdx.x == 0)
+		{
+			//numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 16);
+			printf("block id %d, count = %d\n", blockIdx.x, numberOfStrippings);
+			numbersOfStrippings[blockIdx.x] = numberOfStrippings;
+		}
+	}
+}
+
+__global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, unsigned int* scoresResults, unsigned int* indecies, unsigned int* indeciesInfo, unsigned int workingScoresLength, char* atlas, unsigned int* offsets, unsigned int* spritesCountSizedArray)
 {
 	/*printf("main threadx = %d, blockx = %d", threadIdx.x, blockIdx.x);
 	return;*/
+	unsigned int currentIteration = 0;
 	dim3 scoresCountingBlock(BLOCK_SIZE);
 	dim3 scoresCountingGrid(SpritesCount, 1, SizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
 	printf("%d,%d,%d\n", BLOCK_SIZE, SpritesCount, SizingsCount);
@@ -985,20 +1127,46 @@ __global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsign
 		depth++;
 	}
 
-	//dim3 bestAreaStrippingBlock(BLOCK_SIZE);
-	//dim3 bestScoreFindingGrid(gridLength);
-
-
 	printf("AAAaaaaaaaaaannd the WINNER is %d with the ASTONISHING score of %d!!!!!!!!!!!! !!! !! !!!!! ! !!11   ... . .  .\n", indecies[0], scoresResults[0]);
 	printf("Aaaaannd the sprite id of the winner is %d. And the sizing is %d.\n", indeciesInfo[0], indeciesInfo[OptimizedScoresCount]);
 	int workingOffsetOfTheWinner = workingOffsets[indeciesInfo[0] * SizingsCount + indeciesInfo[OptimizedScoresCount]];
-	int sizingWidth = SizingWidths[indeciesInfo[OptimizedScoresCount]];
-	int sizingHeight = SizingHeights[indeciesInfo[OptimizedScoresCount]]; //Крутой -> петушки -> владимир
+	short sizingWidth = SizingWidths[indeciesInfo[OptimizedScoresCount]];
+	short sizingHeight = SizingHeights[indeciesInfo[OptimizedScoresCount]];
 	int workingHeight = SpriteHeights[indeciesInfo[0]] - sizingHeight;
 	int indexOfPixelOfTheWinner = indecies[0] - workingOffsetOfTheWinner;
-	int winnerAreaX = indexOfPixelOfTheWinner / workingHeight;
-	int winnerAreaY = indexOfPixelOfTheWinner % workingHeight;
+	short winnerAreaX = indexOfPixelOfTheWinner / workingHeight;
+	short winnerAreaY = indexOfPixelOfTheWinner % workingHeight;
 	printf("Winner area: Sprite %d, x %d, y %d, width %d, height %d\n", indeciesInfo[0], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight);
+
+	memcpy(atlas + currentIteration * (sizeof(unsigned int) + sizeof(unsigned short) * 4), &indeciesInfo[0], sizeof(unsigned int));
+	memcpy(atlas + currentIteration * (sizeof(unsigned int) + sizeof(unsigned short) * 4) + sizeof(unsigned int), &winnerAreaX, sizeof(unsigned short));
+	memcpy(atlas + currentIteration * (sizeof(unsigned int) + sizeof(unsigned short) * 4) + sizeof(unsigned int) + sizeof(unsigned short), &winnerAreaY, sizeof(unsigned short));
+	memcpy(atlas + currentIteration * (sizeof(unsigned int) + sizeof(unsigned short) * 4) + sizeof(unsigned int) + sizeof(unsigned short) * 2, &sizingWidth, sizeof(unsigned short));
+	memcpy(atlas + currentIteration * (sizeof(unsigned int) + sizeof(unsigned short) * 4) + sizeof(unsigned int) + sizeof(unsigned short) * 3, &sizingHeight, sizeof(unsigned short));
+
+	short winnersOpaquePixelsCount = 0;
+	for (size_t x = 0; x < sizingWidth; x++)
+	{
+		for (size_t y = 0; y < sizingHeight; y++)
+		{
+			int index = (winnerAreaX + x) * SpriteHeights[indeciesInfo[0]] + winnerAreaY + y;
+			if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[indeciesInfo[0]] + index] != 0)
+				winnersOpaquePixelsCount++;
+		}
+	}
+
+	printf("winnersOpaquePixelsCount = %d\n", winnersOpaquePixelsCount);
+
+	dim3 bestAreaStrippingBlock(BLOCK_SIZE);
+	dim3 bestAreaStrippingGrid(SpritesCount); //Нам здесь не нужно учитывать сайзинги. А раз так, кол-во блоков будет равно просто кол-ву спрайтов.
+	stripTheWinnerAreaFromData << <bestAreaStrippingGrid, bestAreaStrippingBlock >> > (rgbaData, indeciesInfo[0], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight, currentIteration, offsets, spritesCountSizedArray);
+	cudaDeviceSynchronize();
+	unsigned int strippedPixelsCount = 0;
+	for (size_t i = 0; i < SpritesCount; i++)
+		strippedPixelsCount += spritesCountSizedArray[i];
+	erase(rgbaData, indeciesInfo[0], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight); //После того, как стерли все совпадения с победителем, стираем и самого победителя
+	offsets[SpriteByteOffsets[indeciesInfo[0]] + winnerAreaX * SpriteHeights[indeciesInfo[0]] + winnerAreaY] = currentIteration + 1;
+	printf("strippedPixelsCount = %d\n", (strippedPixelsCount + 1) * winnersOpaquePixelsCount); //+1, потому что победителя мы стираем отдельно и он тоже считается
 }
 
 int main()
@@ -1084,42 +1252,59 @@ int main()
 	cudaMalloc((void**)&deviceRgbaFlagsPtr, rgbaFlagsLength);
 	cudaMemcpy(deviceRgbaFlagsPtr, rgbaFlags, rgbaFlagsLength, cudaMemcpyHostToDevice);
 
-	/*
-		Ок, нам нужны области памяти для хранения промежуточных результатов. Первый промежуточный результат - это счет спрайто-размеро-спрайта. Второй - общий счет спрайто-размера. Первый получается довольно
-		огромным. Допустим, у нас 3000 спрайтов 256х256, тогда размер структуры для первого промежуточного результата нужен будет такой: 256х256х3000х22х3000х4 байт, то есть... всего лишь 2 терабайта памяти.
-		Прикольно. Ок. Я посчитал, если не брать в расчет первую промежуточную структуру, а сразу писать во вторую - максимальное кол-во спрайтов размера 256х256, которое мы сможем взять - 1733. Т.е. где-то
-		113 мегапикселей за раз. Ну, это, конечно, не мало само по себе, но с другой - это всего лишь 7 4к-текстур. Конечно, можно будет как-то выкручиваться - свопом, уменьшением кол-ва сайзингов, но вообще
-		в будущем, конечно, стоит придумать нормальное решение для этой проблемы. Может обсчитывать в несколько проходов с выгрузкой промежуточных результатов в оперативку. В принципе не так сложно должно
-		быть сделать. А на первое время, я думаю, такого кол-ва хватит. А стратегию подсчета конечно же надо будет поменять на подсчет сразу в итоговый результат. Т.е. пропускаем первую промежуточную стадию.
-	*/
+	//Дальше у нас scoresCount и за ним - байтовые working-оффсеты
+	unsigned int scoresCount = bit_converter::GetUnsignedInt(rgbaFlags + rgbaFlagsLength, 0);
+	cudaMemcpyToSymbol(ScoresCount, &scoresCount, sizeof(unsigned int)); // Делаем это значение константой
+	unsigned int* workingByteOffsets = (unsigned int*)(rgbaFlags + rgbaFlagsLength + sizeof(unsigned int));
+	unsigned int workingByteOffsetsLength = spritesCount * sizingsCount * sizeof(unsigned int);
+	unsigned int* deviceWorkingByteOffsetsPtr;
+	cudaMalloc((void**)&deviceWorkingByteOffsetsPtr, workingByteOffsetsLength);
+	cudaMemcpy(deviceWorkingByteOffsetsPtr, workingByteOffsets, workingByteOffsetsLength, cudaMemcpyHostToDevice);
 
-	//Размерность матриц результатов у нас не совпадает с размерностью спрайтов из-за сайзингов.
-	//Еще нам нужны байтовые оффсеты рабочих областей спрайтов, раз мы хотим экономить место. Битовые войд-оффсеты не подходят, т.к. там округляются значения до кратных 8.
-	//В будущем вот это вот всё надо будет перенести на клиента.
-	unsigned int scoresCount = 0;
-	unsigned int* workingSpriteOffsets = (unsigned int*)malloc(sizingsCount * spritesCount * sizeof(int));
-	unsigned int currentOffset = 0;
-	for (size_t i = 0; i < spritesCount; i++)
-	{
-		int spriteWidth = spriteWidths[i];
-		int spriteHeight = spriteHeights[i];
-		for (size_t j = 0; j < sizingsCount; j++)
-		{
-			short sizingWidth = sizingWidths[j];
-			short sizingHeight = sizingHeights[j];
+	//После этого у нас там наш замечательный OpaquePixelsCount
+	unsigned int opaquePixelsCount = bit_converter::GetUnsignedInt((char*)(workingByteOffsets + spritesCount * sizingsCount), 0);
 
-			unsigned int currentWorkingSpriteLength = (spriteWidth - sizingWidth) * (spriteHeight - sizingHeight);
-			scoresCount += currentWorkingSpriteLength;
-			//std::cout << "spriteWidth = " << spriteWidth << " sizingWidth = " << sizingWidth << " spriteHeight = " << spriteHeight << " sizingHeight = " << sizingHeight << "\n";
-			workingSpriteOffsets[i * sizingsCount + j] = currentOffset;
-			currentOffset += currentWorkingSpriteLength;
-		}
-	}
+	///*
+	//	Ок, нам нужны области памяти для хранения промежуточных результатов. Первый промежуточный результат - это счет спрайто-размеро-спрайта. Второй - общий счет спрайто-размера. Первый получается довольно
+	//	огромным. Допустим, у нас 3000 спрайтов 256х256, тогда размер структуры для первого промежуточного результата нужен будет такой: 256х256х3000х22х3000х4 байт, то есть... всего лишь 2 терабайта памяти.
+	//	Прикольно. Ок. Я посчитал, если не брать в расчет первую промежуточную структуру, а сразу писать во вторую - максимальное кол-во спрайтов размера 256х256, которое мы сможем взять - 1733. Т.е. где-то
+	//	113 мегапикселей за раз. Ну, это, конечно, не мало само по себе, но с другой - это всего лишь 7 4к-текстур. Конечно, можно будет как-то выкручиваться - свопом, уменьшением кол-ва сайзингов, но вообще
+	//	в будущем, конечно, стоит придумать нормальное решение для этой проблемы. Может обсчитывать в несколько проходов с выгрузкой промежуточных результатов в оперативку. В принципе не так сложно должно
+	//	быть сделать. А на первое время, я думаю, такого кол-ва хватит. А стратегию подсчета конечно же надо будет поменять на подсчет сразу в итоговый результат. Т.е. пропускаем первую промежуточную стадию.
+	//*/
+
+	////Размерность матриц результатов у нас не совпадает с размерностью спрайтов из-за сайзингов.
+	////Еще нам нужны байтовые оффсеты рабочих областей спрайтов, раз мы хотим экономить место. Битовые войд-оффсеты не подходят, т.к. там округляются значения до кратных 8.
+	////В будущем вот это вот всё надо будет перенести на клиента.
+	//unsigned int legacyScoresCount = 0;
+	//unsigned int* workingSpriteOffsets = (unsigned int*)malloc(sizingsCount * spritesCount * sizeof(int));
+	//unsigned int currentOffset = 0;
+	//for (size_t i = 0; i < spritesCount; i++)
+	//{
+	//	int spriteWidth = spriteWidths[i];
+	//	int spriteHeight = spriteHeights[i];
+	//	for (size_t j = 0; j < sizingsCount; j++)
+	//	{
+	//		short sizingWidth = sizingWidths[j];
+	//		short sizingHeight = sizingHeights[j];
+
+	//		unsigned int currentWorkingSpriteLength = (spriteWidth - sizingWidth) * (spriteHeight - sizingHeight);
+	//		legacyScoresCount += currentWorkingSpriteLength;
+	//		//std::cout << "spriteWidth = " << spriteWidth << " sizingWidth = " << sizingWidth << " spriteHeight = " << spriteHeight << " sizingHeight = " << sizingHeight << "\n";
+	//		workingSpriteOffsets[i * sizingsCount + j] = currentOffset;
+	//		currentOffset += currentWorkingSpriteLength;
+	//	}
+	//}
+
+	//printf("scoresCount = %d %d, workingSpriteOffsets[15] = %d %d, opaquePixelsCount = %d\n", legacyScoresCount, scoresCount, workingSpriteOffsets[15], workingByteOffsets[15], opaquePixelsCount);
+
+
 	char* deviceScoresPtr;
 	char* deviceIndeciesPtr;
 	int* deviceIndeciesInfoPtr;
 	char* deviceAtlasPtr;
 	char* deviceOffsetsPtr;
+	char* deviceSpritesCountSizedArrayPtr;
 	int optimizedScoresCount = hostCeilToInt(scoresCount, BLOCK_SIZE) * BLOCK_SIZE; //Делаем кол-во результатов кратным BLOCK_SIZE, чтобы потом было легче высчитывать победителя
 	cudaMemcpyToSymbol(OptimizedScoresCount, &optimizedScoresCount, sizeof(int)); // Сразу записываем его
 	cudaMalloc((void**)&deviceScoresPtr, optimizedScoresCount * sizeof(int));
@@ -1127,16 +1312,19 @@ int main()
 	cudaMalloc((void**)&deviceIndeciesInfoPtr, optimizedScoresCount * INDECIES_INFO_LENGHT); //int - для индекса спрайта, 2 short - для координат, 1 byte - для индекса области
 	cudaMalloc((void**)&deviceAtlasPtr, byteLineLength * sizeof(int) * 3);
 	cudaMalloc((void**)&deviceOffsetsPtr, byteLineLength * sizeof(int));
+	cudaMalloc((void**)&deviceSpritesCountSizedArrayPtr, spritesCount * sizeof(unsigned int));
 	cudaMemset(deviceScoresPtr, 0, optimizedScoresCount * sizeof(int));
+	cudaMemset(deviceAtlasPtr, 0, byteLineLength * sizeof(int) * 3);
+	cudaMemset(deviceOffsetsPtr, 0, byteLineLength * sizeof(int));
 	unsigned int* deviceWorkingSpriteOffsetsPtr;
 	cudaMalloc((void**)&deviceWorkingSpriteOffsetsPtr, sizingsCount * spritesCount * sizeof(unsigned int));
-	cudaMemcpy(deviceWorkingSpriteOffsetsPtr, workingSpriteOffsets, sizingsCount * spritesCount * sizeof(unsigned int), cudaMemcpyHostToDevice);
+	cudaMemcpy(deviceWorkingSpriteOffsetsPtr, workingByteOffsets, sizingsCount * spritesCount * sizeof(unsigned int), cudaMemcpyHostToDevice);
 
 	//dim3 block(BLOCK_SIZE);
 	//dim3 grid(spritesCount, 1, sizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
 	//mainKernel << <grid, block >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceResultsPtr);
 	printf("scoresCount = %d\n", scoresCount);
-	mainKernel << <1, 1 >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceScoresPtr, (unsigned int*)deviceIndeciesPtr, (unsigned int*)deviceIndeciesInfoPtr, scoresCount, deviceAtlasPtr, deviceOffsetsPtr);
+	mainKernel << <1, 1 >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceScoresPtr, (unsigned int*)deviceIndeciesPtr, (unsigned int*)deviceIndeciesInfoPtr, scoresCount, deviceAtlasPtr, (unsigned int*)deviceOffsetsPtr, (unsigned int*)deviceSpritesCountSizedArrayPtr);
 	gpuErrchk(cudaPeekAtLastError());
 	cudaDeviceSynchronize();
 	gpuErrchk(cudaPeekAtLastError());
@@ -1157,7 +1345,7 @@ int main()
 
 	int testOffsetIndex = spriteTestIndex * sizingsCount + sizingTestIndex;
 	int voidOffset = voidMapsOffsets[testOffsetIndex];
-	int resultOffset = workingSpriteOffsets[testOffsetIndex];
+	int resultOffset = workingByteOffsets[testOffsetIndex];
 
 	short testSpriteWidth = spriteWidths[spriteTestIndex];
 	short testSpriteHeight = spriteHeights[spriteTestIndex];
@@ -1197,7 +1385,6 @@ int main()
 	cudaFree(deviceOffsetsPtr);
 	cudaFree(deviceIndeciesInfoPtr);
 
-	free(workingSpriteOffsets);
 	free(gpuResults);
 	free(cpuResults);
 	free(blob);

@@ -327,6 +327,7 @@ public class Optimizer : EditorWindow
             var bFlags = new List<List<byte>>();
             var aFlags = new List<List<byte>>();
             var flagsLineLength = 0;
+            var opaquePixelsCount = (uint)0;
             for (int i = 0; i < spritesCount; i++)
             {
                 var newRFlagsList = new List<byte>();
@@ -353,6 +354,8 @@ public class Optimizer : EditorWindow
 
                         //if (i == 7)
                         //    Debug.Log($"for pixel {bitsCounter} ({x}, {y}) the flags of r and g are ({(r > 127 ? 1 : 0)}, {(g > 127 ? 1 : 0)})");
+                        if (a != 0)
+                            opaquePixelsCount++;
                         bitsCounter++;
                     }
                 }
@@ -367,6 +370,8 @@ public class Optimizer : EditorWindow
                 registry[i] = registryEntry;
                 flagsLineLength += newRFlagsList.Count;
             }
+
+            Debug.Log($"opaquePixelsCount = {opaquePixelsCount}");
 
             var registryParalellized = new List<byte>();
             for (int i = 0; i < registry.Count; i++)
@@ -398,6 +403,9 @@ public class Optimizer : EditorWindow
                 + voidMapsLength //Собсно она, в байтах
                 + sizeof(int) // flagsLineLength - длина 1 канала флагов для данных в байтах (на самом деле она в битах), но тут именно длина блоба
                 + flagsLineLength * 4 // 4 канала флагов - по одному для каждого канала данных
+                + sizeof(uint) //ScoresCount - кол-во возможных областей всего
+                + spritesCount * sizingsCount * sizeof(uint) //байтовые сдвиги рабочих областей спрайтов. Оказывается у меня их пока не было. Сдвиги войдмап не в счет, т.к. там /8
+                + sizeof(uint) //OpaquePixelsCount
                 ];
 
             combinedData[0] = 0; //Эти два байта 
@@ -499,6 +507,47 @@ public class Optimizer : EditorWindow
                 for (int j = 0; j < aFlags[i].Count; j++)
                     combinedData[currentOffset++] = aFlags[i][j];
 
+
+            var scoresCount = (uint)0;
+            var workingSpriteOffsets = new uint[spritesCount * sizingsCount];
+            for (int i = 0; i < spritesCount; i++)
+            {
+                var currentSpriteBytes = colorsResults.colors[i];
+                var spriteWidth = currentSpriteBytes.Length;
+                var spriteHeight = currentSpriteBytes[0].Length;
+
+                for (int j = 0; j < sizingsCount; j++)
+                {
+                    var sizing = sizingsDeconstructed[j];
+                    var sizingWidth = sizing[0];
+                    var sizingHeight = sizing[1];
+
+                    var currentWorkingSpriteLength = (uint)((spriteWidth - sizingWidth) * (spriteHeight - sizingHeight));
+                    workingSpriteOffsets[i * sizingsCount + j] = scoresCount;
+                    scoresCount += currentWorkingSpriteLength;
+                }
+            }
+
+
+            combinedData[currentOffset++] = (byte)(scoresCount & 255);
+            combinedData[currentOffset++] = (byte)(scoresCount >> 8 & 255);
+            combinedData[currentOffset++] = (byte)(scoresCount >> 16 & 255);
+            combinedData[currentOffset++] = (byte)(scoresCount >> 24 & 255);
+
+            for (int i = 0; i < workingSpriteOffsets.Length; i++)
+            {
+                combinedData[currentOffset++] = (byte)(workingSpriteOffsets[i] & 255);
+                combinedData[currentOffset++] = (byte)(workingSpriteOffsets[i] >> 8 & 255);
+                combinedData[currentOffset++] = (byte)(workingSpriteOffsets[i] >> 16 & 255);
+                combinedData[currentOffset++] = (byte)(workingSpriteOffsets[i] >> 24 & 255);
+            }
+
+
+            combinedData[currentOffset++] = (byte)(opaquePixelsCount & 255);
+            combinedData[currentOffset++] = (byte)(opaquePixelsCount >> 8 & 255);
+            combinedData[currentOffset++] = (byte)(opaquePixelsCount >> 16 & 255);
+            combinedData[currentOffset++] = (byte)(opaquePixelsCount >> 24 & 255);
+
             //Debug.Log($"sizings length = {parallelizedSizingsList.Count}");
             //Debug.Log($"registry length = {registryParalellized.Count}");
             //Debug.Log($"data length = {dataList.Count}");
@@ -594,6 +643,7 @@ public class Optimizer : EditorWindow
 
             var i3 = 0;
             var coincidents = new int[workingArrayLength];
+            var coincidentsCounts = new int[workingArrayLength];
             var coincidentsSpriteIndexes = new int[workingArrayLength];
             var coincidentsSpriteX = new int[workingArrayLength];
             var coincidentsSpriteY = new int[workingArrayLength];
@@ -632,6 +682,8 @@ public class Optimizer : EditorWindow
                                 }
                                 //if (i3++ < 100)
                                 //    Debug.LogError($"score = {score}");
+
+                                var coincidentsIndex = workingOffsets[i * sizingsCount + s] + ourX * (ourColors[ourX].Length - sizing.Y) + ourY;
 
                                 var currentCoincidents = 0;
                                 for (int candidateX = 0; candidateX < candidateColors.Length - sizing.X; candidateX++)
@@ -677,15 +729,23 @@ public class Optimizer : EditorWindow
                                                 break;
                                         }
                                         if (theSame)
+                                        {
                                             currentCoincidents++;
+                                            if (coincidentsIndex == 5140)
+                                                Debug.Log($"Coince: {j} ({candidateX},{candidateY})");
+                                        }
                                     }
                                 }
 
                                 //if (currentCoincidents > 1 && i3++ < 100)
                                 //    Debug.LogError($"score = {score}, currentCoincidents = {currentCoincidents}, asokd = {currentCoincidents * score}");
-                                var coincidentsIndex = workingOffsets[i * sizingsCount + s] + ourX * (ourColors[ourX].Length - sizing.Y) + ourY;
+                                if (coincidentsIndex == 5140)
+                                {
+                                    Debug.Log($"{coincidentsIndex}: {currentCoincidents} coincidents, opaque = {score}, square = {sizing.X * sizing.Y}, score = {(score * score * score / (sizing.X * sizing.Y))}");
+                                }
                                 //if (coincidentsIndex == 4690)
                                 //    Debug.LogError($"WINNER score = {score}, currentCoincidents = {currentCoincidents}, asokd = {currentCoincidents * score}");
+                                coincidentsCounts[coincidentsIndex] += currentCoincidents;
                                 coincidents[coincidentsIndex] += currentCoincidents * (score * score * score / (sizing.X * sizing.Y));
                                 coincidentsSpriteIndexes[coincidentsIndex] = i;
                                 coincidentsSpriteX[coincidentsIndex] = ourX;
@@ -716,7 +776,7 @@ public class Optimizer : EditorWindow
                 }
             }
             Debug.Log($"The Winner is: {largestScoreIndex} with the total score of {largestScore}");
-            Debug.Log($"The Winner: sprite {coincidentsSpriteIndexes[largestScoreIndex]}, x {coincidentsSpriteX[largestScoreIndex]}, y {coincidentsSpriteY[largestScoreIndex]}, width {coincidentsSpriteWidth[largestScoreIndex]}, height {coincidentsSpriteHeight[largestScoreIndex]}");
+            Debug.Log($"The Winner: sprite {coincidentsSpriteIndexes[largestScoreIndex]}, x {coincidentsSpriteX[largestScoreIndex]}, y {coincidentsSpriteY[largestScoreIndex]}, width {coincidentsSpriteWidth[largestScoreIndex]}, height {coincidentsSpriteHeight[largestScoreIndex]}. Coincidents count = {coincidentsCounts[largestScoreIndex]}");
         }
         if (_cts != null)
         {
