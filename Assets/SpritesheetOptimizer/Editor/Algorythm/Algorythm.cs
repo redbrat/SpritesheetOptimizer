@@ -130,13 +130,13 @@ public class Algorythm
     public struct registryStruct
     {
         public int SpritesByteOffset; //С какой позиции в байтовых буфферах начинается данный спрайт
-        public int SpritesBitOffset; //С какой позиции в битовыйх буфферах начинается данный спрайт
+        //public int SpritesBitOffset; //С какой позиции в битовыйх буфферах начинается данный спрайт
         public int WidthAndHeight;
 
-        public registryStruct(int spritesByteOffset, int spritesBitOffset, int widthAndHeight)
+        public registryStruct(int spritesByteOffset/*, int spritesBitOffset*/, int widthAndHeight)
         {
             SpritesByteOffset = spritesByteOffset;
-            SpritesBitOffset = spritesBitOffset;
+            //SpritesBitOffset = spritesBitOffset;
             WidthAndHeight = widthAndHeight;
         }
     }
@@ -239,7 +239,7 @@ public class Algorythm
             var width = sprite.Length;
             var height = sprite[0].Length;
 
-            registry[i] = new registryStruct(dataOffset, dataOffset / 8 + (dataOffset % 8 == 0 ? 0 : 1), width << 16 | height);
+            registry[i] = new registryStruct(dataOffset/*, dataOffset / 8 + (dataOffset % 8 == 0 ? 0 : 1)*/, width << 16 | height);
             var printsCount = 0;
             var printing = false;
             if (dataOffset == 11728)
@@ -1280,7 +1280,7 @@ public class Algorythm
             var width = sprite.Length;
             var height = sprite[0].Length;
 
-            registry[i] = new registryStruct(dataOffset, dataOffset / 8 + (dataOffset % 8 == 0 ? 0 : 1), width << 16 | height);
+            registry[i] = new registryStruct(dataOffset/*, dataOffset / 8 + (dataOffset % 8 == 0 ? 0 : 1)*/, width << 16 | height);
 
             for (int x = 0; x < width; x++)
                 for (int y = 0; y < height; y++)

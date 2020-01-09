@@ -282,9 +282,9 @@ public class Optimizer : EditorWindow
                     var sizing = sizingsDeconstructed[j];
                     var sizingWidth = sizing[0];
                     var sizingHeight = sizing[1];
-                    for (int x = 0; x < width - sizingWidth; x++)
+                    for (int x = 0; x < width - sizingWidth + 1; x++)
                     {
-                        for (int y = 0; y < height - sizingHeight; y++)
+                        for (int y = 0; y < height - sizingHeight + 1; y++)
                         {
                             var isVoid = true;
                             for (int xx = 0; xx < sizingWidth; xx++)
@@ -365,7 +365,7 @@ public class Optimizer : EditorWindow
                 bFlags.Add(newBFlagsList);
                 aFlags.Add(newAFlagsList);
                 var registryEntry = registry[i];
-                registryEntry.SpritesBitOffset = flagsLineLength;
+                //registryEntry.SpritesBitOffset = flagsLineLength;
                 //Debug.Log($"registryEntry.SpritesBitOffset = {registryEntry.SpritesBitOffset}");
                 registry[i] = registryEntry;
                 flagsLineLength += newRFlagsList.Count;
@@ -376,17 +376,15 @@ public class Optimizer : EditorWindow
             var registryParalellized = new List<byte>();
             for (int i = 0; i < registry.Count; i++)
                 registryParalellized.AddRange(BitConverter.GetBytes(registry[i].SpritesByteOffset));
-            for (int i = 0; i < registry.Count; i++)
-                registryParalellized.AddRange(BitConverter.GetBytes(registry[i].SpritesBitOffset));
+            //for (int i = 0; i < registry.Count; i++)
+            //    registryParalellized.AddRange(BitConverter.GetBytes(registry[i].SpritesBitOffset));
             for (int i = 0; i < registry.Count; i++)
                 registryParalellized.AddRange(BitConverter.GetBytes((short)(registry[i].WidthAndHeight >> 16 & 65535)));
             for (int i = 0; i < registry.Count; i++)
                 registryParalellized.AddRange(BitConverter.GetBytes((short)(registry[i].WidthAndHeight & 65535)));
 
             var sizingsCount = (short)sizingsDeconstructed.Length;
-            var voidMapsLengthsCount = spritesCount * sizings.Count();
 
-            //var combinedData = new byte[dataList.Count + registry.Count * 12 + 4 + parallelizedSizingsList.Count + 2 + 4 + 4 + voidMapsBytesCount + 4 + flagsCount * 4 + voidMapsLengthsCount * 4];
             var combinedData = new byte[
                 2 //Зарезервировано
                 + sizeof(short) //spritesCount
@@ -522,12 +520,13 @@ public class Optimizer : EditorWindow
                     var sizingWidth = sizing[0];
                     var sizingHeight = sizing[1];
 
-                    var currentWorkingSpriteLength = (uint)((spriteWidth - sizingWidth) * (spriteHeight - sizingHeight));
+                    var currentWorkingSpriteLength = (uint)((spriteWidth - sizingWidth + 1) * (spriteHeight - sizingHeight + 1));
                     workingSpriteOffsets[i * sizingsCount + j] = scoresCount;
                     scoresCount += currentWorkingSpriteLength;
                 }
             }
 
+            Debug.Log($"scoresCount = {scoresCount}");
 
             combinedData[currentOffset++] = (byte)(scoresCount & 255);
             combinedData[currentOffset++] = (byte)(scoresCount >> 8 & 255);
@@ -637,7 +636,7 @@ public class Optimizer : EditorWindow
                     var sizingHeight = sizingsList[j].Y;
 
                     workingOffsets[i * sizingsCount + j] = workingArrayLength;
-                    workingArrayLength += (spriteWidth - sizingWidth) * (spriteHeight - sizingHeight);
+                    workingArrayLength += (spriteWidth - sizingWidth + 1) * (spriteHeight - sizingHeight + 1);
                 }
             }
 
@@ -659,9 +658,9 @@ public class Optimizer : EditorWindow
                     for (int j = 0; j < colorsResults.colors.Length; j++)
                     {
                         var candidateColors = colorsResults.colors[j];
-                        for (int ourX = 0; ourX < ourColors.Length - sizing.X; ourX++)
+                        for (int ourX = 0; ourX < ourColors.Length - sizing.X + 1; ourX++)
                         {
-                            for (int ourY = 0; ourY < ourColors[ourX].Length - sizing.Y; ourY++)
+                            for (int ourY = 0; ourY < ourColors[ourX].Length - sizing.Y + 1; ourY++)
                             {
                                 //if (i == 0 && s == 0)
                                 //if (i3++ < 240)
@@ -683,12 +682,12 @@ public class Optimizer : EditorWindow
                                 //if (i3++ < 100)
                                 //    Debug.LogError($"score = {score}");
 
-                                var coincidentsIndex = workingOffsets[i * sizingsCount + s] + ourX * (ourColors[ourX].Length - sizing.Y) + ourY;
+                                var coincidentsIndex = workingOffsets[i * sizingsCount + s] + ourX * (ourColors[ourX].Length - sizing.Y + 1) + ourY;
 
                                 var currentCoincidents = 0;
-                                for (int candidateX = 0; candidateX < candidateColors.Length - sizing.X; candidateX++)
+                                for (int candidateX = 0; candidateX < candidateColors.Length - sizing.X + 1; candidateX++)
                                 {
-                                    for (int candidateY = 0; candidateY < candidateColors[candidateX].Length - sizing.Y; candidateY++)
+                                    for (int candidateY = 0; candidateY < candidateColors[candidateX].Length - sizing.Y + 1; candidateY++)
                                     {
                                         var theSame = true;
                                         for (int x = 0; x < sizing.X; x++)
@@ -805,7 +804,7 @@ public class Optimizer : EditorWindow
     private async void launch(Algorythm algorythm, Sprite[] sprites, MyColor[][][] colors, MyVector2Float[] pivots)
     {
         await algorythm.Initialize(_resolution, _cts.Token);
-        return;
+        //return;
         var correlationsAndImages = await algorythm.Run();
         var correlations = correlationsAndImages.correlations;
 

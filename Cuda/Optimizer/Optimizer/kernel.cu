@@ -370,7 +370,7 @@ spritesCount получится равным 5453. Уже более-менее.
 #define WARP_SIZE 32
 #define DIVERGENCE_CONTROL_CYCLE 128 //Через какое кол-во операций мы проверяем на необходимость ужатия, чтобы избежать дивергенции?
 #define DIVERGENCE_CONTROL_THRESHOLD 32 //Если какое число потоков простаивают надо ужимать? Думаю это значение вряд ли когда-нибудь изменится.
-#define REGISTRY_STRUCTURE_LENGTH 12
+#define REGISTRY_STRUCTURE_LENGTH 8
 #define SIZING_STRUCTURE_LENGTH 4
 #define DATA_STRUCTURE_LENGTH 4
 #define RESERVED_DATA_LENGHT 2
@@ -398,7 +398,7 @@ __constant__ int OptimizedScoresCount;
 __constant__ short SizingWidths[22];
 __constant__ short SizingHeights[22];
 __constant__ int SpriteByteOffsets[650];
-__constant__ int SpriteBitOffsets[650];
+//__constant__ int SpriteBitOffsets[650];
 __constant__ short SpriteWidths[650];
 __constant__ short SpriteHeights[650];
 __constant__ int VoidOffsets[14300];
@@ -472,25 +472,26 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 	//	cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE + temp] = rgbaFlags[BitLineLength + SpriteBitOffsets[blockIdx.x] + temp];
 	//}
 
-	int ourWorkingHeight = SpriteHeights[blockIdx.x] - SizingHeights[blockIdx.z];
+	int ourWorkingHeight = SpriteHeights[blockIdx.x] - SizingHeights[blockIdx.z] + 1;
 	//int ourWorkingSquare = (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight;
-	int numberOfTasksPerThread = (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight / BLOCK_SIZE; // ceilToInt((SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight, BLOCK_SIZE)
-	if ((SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight % BLOCK_SIZE != 0)
+	int numberOfTasksPerThread = ((SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z] + 1) * ourWorkingHeight) / BLOCK_SIZE; // ceilToInt((SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight, BLOCK_SIZE)
+	if (((SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z] + 1) * ourWorkingHeight) % BLOCK_SIZE != 0)
 		numberOfTasksPerThread++;
 
 	//int sizingSquare = SizingWidths[blockIdx.z] * SizingHeights[blockIdx.z];
 
 	for (size_t candidateIndex = 0; candidateIndex < SpritesCount; candidateIndex++)
 	{
-		int candidateWorkingWidth = SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z];
-		int candidateWorkingHeight = SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z];
+
+		int candidateWorkingWidth = SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z] + 1;
+		int candidateWorkingHeight = SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z] + 1;
 
 		/*int candidateByteOffset = SpriteByteOffsets[candidateIndex];
 		int candidateBitOffset = SpriteBitOffsets[candidateIndex];*/
 		//int candidateWidth = SpriteWidths[candidateIndex];
 		//int candidateHeight = SpriteHeights[candidateIndex];
 		//int candidateSquare = SpriteWidths[candidateIndex] * SpriteHeights[candidateIndex];
-		int candidateBitsSquare = (SpriteWidths[candidateIndex] * (SpriteHeights[candidateIndex] / 8));
+		int candidateBitsSquare = (SpriteWidths[candidateIndex] * SpriteHeights[candidateIndex]) / 8;
 		if ((SpriteWidths[candidateIndex] * SpriteHeights[candidateIndex]) % 8 != 0)
 			candidateBitsSquare++;
 
@@ -516,11 +517,11 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 		//int candidateWidthMinusSizing = SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z];
 		//int candidateHeightMinusSizing = SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z];
 		//int candidateVoidAreaSquare = (SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z]) * (SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z]);
-		int candidateVoidAreaBitSquare = candidateWorkingWidth * (candidateWorkingHeight / 8);
-		if (candidateWorkingWidth * candidateWorkingHeight % 8 != 0)
+		int candidateVoidAreaBitSquare = (candidateWorkingWidth * candidateWorkingHeight) / 8;
+		if ((candidateWorkingWidth * candidateWorkingHeight) % 8 != 0)
 			candidateVoidAreaBitSquare++;
 
-		int numberOfTimesWeNeedToLoadVoid = (candidateVoidAreaBitSquare / BLOCK_SIZE);
+		int numberOfTimesWeNeedToLoadVoid = candidateVoidAreaBitSquare / BLOCK_SIZE;
 		if (candidateVoidAreaBitSquare % BLOCK_SIZE != 0)
 			numberOfTimesWeNeedToLoadVoid++;
 
@@ -575,7 +576,7 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 		for (size_t taskIndex = 0; taskIndex < numberOfTasksPerThread; taskIndex++)
 		{
 			int ourWorkingPixelIndex = taskIndex * BLOCK_SIZE + threadIdx.x;
-			if (ourWorkingPixelIndex >= (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight)
+			if (ourWorkingPixelIndex >= (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z] + 1) * ourWorkingHeight)
 				break;
 
 			int ourWorkingX = (ourWorkingPixelIndex / ourWorkingHeight);
@@ -591,6 +592,8 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 				for (y = 0; y < SizingHeights[blockIdx.z]; y++)
 				{
 					i = (ourWorkingX + x) * SpriteHeights[blockIdx.x] + ourWorkingY + y;
+					if (i >= 54760)
+						printf("WAAARRKINNNNG! i = %d. ourWorkingX = %d, x = %d, ourWorkingY = %d, y = %d. blockIdx.x = %d, SpriteHeights[blockIdx.x] = %d\n", i, ourWorkingX, x, ourWorkingY, y, blockIdx.x, SpriteHeights[blockIdx.x]);
 					if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + i] > 0)
 						temp++;
 					/*if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + (ourWorkingX + x) * SpriteHeights[blockIdx.x] + ourWorkingY + y] != 0)
@@ -675,6 +678,9 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 								isTheSame = false;
 								break;
 							}*/
+							if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[candidateIndex] + candidatePixelIndex] == 0
+								&& rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + i] == 0)
+								continue;
 
 							if (rgbaData[SpriteByteOffsets[blockIdx.x] + i] != rgbaData[SpriteByteOffsets[candidateIndex] + candidatePixelIndex])
 							{
@@ -703,7 +709,14 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 					}
 
 					if (isTheSame)
+					{
 						coincidences++;
+						if (blockIdx.z == 0 && ourWorkingX == 1 && ourWorkingY == 0 && blockIdx.x == 1)
+							printf("   __1__   1,0,1,0 condide... Score = %d\n", temp);
+						else if (blockIdx.z == 1 && ourWorkingX == 2 && ourWorkingY == 0 && blockIdx.x == 1)
+							printf("   __2__   1,1,2,0 condide... Score = %d\n", temp);
+
+					}
 				}
 			}
 
@@ -967,10 +980,10 @@ __device__ void erase(unsigned char* rgbaData, unsigned int spriteIndex, short x
 
 __global__ void stripTheWinnerAreaFromData(unsigned char* rgbaData, unsigned int winnerSpriteIndex, unsigned short winnerX, unsigned short winnerY, unsigned short winnerWidth, unsigned short winnerHeight, unsigned int atlasIndex, unsigned int* offsets, unsigned int* numbersOfStrippings)
 {
-	short candidateWorkingWidth = SpriteWidths[blockIdx.x] - winnerWidth;
-	short candidateWorkingHeight = SpriteHeights[blockIdx.x] - winnerHeight;
+	short candidateWorkingWidth = SpriteWidths[blockIdx.x] - winnerWidth + 1;
+	short candidateWorkingHeight = SpriteHeights[blockIdx.x] - winnerHeight + 1;
 
-	int numberOfTasksPerThread = candidateWorkingWidth * candidateWorkingHeight / BLOCK_SIZE; // ceilToInt((SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight, BLOCK_SIZE)
+	int numberOfTasksPerThread = (candidateWorkingWidth * candidateWorkingHeight) / BLOCK_SIZE; // ceilToInt((SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight, BLOCK_SIZE)
 	if (candidateWorkingWidth * candidateWorkingHeight % BLOCK_SIZE != 0)
 		numberOfTasksPerThread++;
 
@@ -1132,11 +1145,11 @@ __global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsign
 	int workingOffsetOfTheWinner = workingOffsets[indeciesInfo[0] * SizingsCount + indeciesInfo[OptimizedScoresCount]];
 	short sizingWidth = SizingWidths[indeciesInfo[OptimizedScoresCount]];
 	short sizingHeight = SizingHeights[indeciesInfo[OptimizedScoresCount]];
-	int workingHeight = SpriteHeights[indeciesInfo[0]] - sizingHeight;
+	int workingHeight = SpriteHeights[indeciesInfo[0]] - sizingHeight + 1;
 	int indexOfPixelOfTheWinner = indecies[0] - workingOffsetOfTheWinner;
 	short winnerAreaX = indexOfPixelOfTheWinner / workingHeight;
 	short winnerAreaY = indexOfPixelOfTheWinner % workingHeight;
-	printf("Winner area: Sprite %d, x %d, y %d, width %d, height %d\n", indeciesInfo[0], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight);
+	printf("Winner area: Sprite %d, Sizing %d, x %d, y %d, width %d, height %d\n", indeciesInfo[0], indeciesInfo[OptimizedScoresCount], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight);
 
 	memcpy(atlas + currentIteration * (sizeof(unsigned int) + sizeof(unsigned short) * 4), &indeciesInfo[0], sizeof(unsigned int));
 	memcpy(atlas + currentIteration * (sizeof(unsigned int) + sizeof(unsigned short) * 4) + sizeof(unsigned int), &winnerAreaX, sizeof(unsigned short));
@@ -1203,13 +1216,20 @@ int main()
 	//Записываем регистр на девайс. Они там идут последовательно, сначала байтовые оффсеты потом битовые, потом иксы, потом игрики
 	int registryLineCount = spritesCount * sizingsCount;
 	int* spriteByteOffsets = (int*)registryBlob;
-	int* spriteBitOffsets = (int*)(registryBlob + spritesCount * sizeof(int));
-	short* spriteWidths = (short*)(registryBlob + spritesCount * sizeof(int) * 2);
-	short* spriteHeights = (short*)(registryBlob + spritesCount * (sizeof(int) * 2 + sizeof(short)));
+	//int* spriteBitOffsets = (int*)(registryBlob + spritesCount * sizeof(int));
+	short* spriteWidths = (short*)(registryBlob + spritesCount * sizeof(int));
+	short* spriteHeights = (short*)(registryBlob + spritesCount * (sizeof(int) + sizeof(short)));
 	cudaMemcpyToSymbol(SpriteByteOffsets, spriteByteOffsets, spritesCount * sizeof(int));
-	cudaMemcpyToSymbol(SpriteBitOffsets, spriteBitOffsets, spritesCount * sizeof(int));
+	//cudaMemcpyToSymbol(SpriteBitOffsets, spriteBitOffsets, spritesCount * sizeof(int));
 	cudaMemcpyToSymbol(SpriteWidths, spriteWidths, spritesCount * sizeof(short));
 	cudaMemcpyToSymbol(SpriteHeights, spriteHeights, spritesCount * sizeof(short));
+
+	/*for (size_t i = 0; i < spritesCount; i++)
+	{
+		printf("SpriteHeights[%d] = %d. SpriteWidths[%d] = %d\n", i, spriteHeights[i], i, spriteWidths[i]);
+	}
+
+	return;*/
 
 	//Дальше идет длина 1 канала цвета
 	int byteLineLength = bit_converter::GetInt(registryBlob + registryBlobLength, 0);
