@@ -581,6 +581,8 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 
 			int ourWorkingX = (ourWorkingPixelIndex / ourWorkingHeight);
 			int ourWorkingY = ourWorkingPixelIndex % ourWorkingHeight;
+			/*if (taskIndex == 0)
+				results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] = 0;*/
 			//int coincidences = 0; //Значения меньше 0 - повторы
 
 			//int score = 1;
@@ -592,8 +594,6 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 				for (y = 0; y < SizingHeights[blockIdx.z]; y++)
 				{
 					i = (ourWorkingX + x) * SpriteHeights[blockIdx.x] + ourWorkingY + y;
-					if (i >= 54760)
-						printf("WAAARRKINNNNG! i = %d. ourWorkingX = %d, x = %d, ourWorkingY = %d, y = %d. blockIdx.x = %d, SpriteHeights[blockIdx.x] = %d\n", i, ourWorkingX, x, ourWorkingY, y, blockIdx.x, SpriteHeights[blockIdx.x]);
 					if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + i] > 0)
 						temp++;
 					/*if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + (ourWorkingX + x) * SpriteHeights[blockIdx.x] + ourWorkingY + y] != 0)
@@ -711,10 +711,10 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 					if (isTheSame)
 					{
 						coincidences++;
-						if (blockIdx.z == 0 && ourWorkingX == 1 && ourWorkingY == 0 && blockIdx.x == 1)
+						/*if (blockIdx.z == 0 && ourWorkingX == 1 && ourWorkingY == 0 && blockIdx.x == 1)
 							printf("   __1__   1,0,1,0 condide... Score = %d\n", temp);
 						else if (blockIdx.z == 1 && ourWorkingX == 2 && ourWorkingY == 0 && blockIdx.x == 1)
-							printf("   __2__   1,1,2,0 condide... Score = %d\n", temp);
+							printf("   __2__   1,1,2,0 condide... Score = %d\n", temp);*/
 
 					}
 				}
@@ -834,19 +834,19 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 
 __global__ void findTheBestScore(unsigned int* scores, unsigned int* indecies, unsigned int* indeciesInfo, int depth, int currentScoresLength, int allScoresLength)
 {
-	if (blockIdx.x == 0 && threadIdx.x == 0)
-		printf("depth = %d, currentScoresLength = %d\n", depth, currentScoresLength);
-	/*
-		Сначала надо всегда искать победителя в варпе. Потом, когда в каждом варпе останется по 1 победителю - синхронизируются и 1й варп блока копирует себе все 31 значений других варпов и повторяет трюк.
-	*/
+	/*if (blockIdx.x == 0 && threadIdx.x == 0)
+		printf("depth = %d, currentScoresLength = %d\n", depth, currentScoresLength);*/
+		/*
+			Сначала надо всегда искать победителя в варпе. Потом, когда в каждом варпе останется по 1 победителю - синхронизируются и 1й варп блока копирует себе все 31 значений других варпов и повторяет трюк.
+		*/
 
-	//printf("findTheBestScore!\n");
-	///*if (blockIdx.x == 0 && threadIdx.x / 32 == 0)
-	//{
-	//	printf("findTheBestScore! It's %d-th thread talking\n", threadIdx.x);
-	//}*/
+		//printf("findTheBestScore!\n");
+		///*if (blockIdx.x == 0 && threadIdx.x / 32 == 0)
+		//{
+		//	printf("findTheBestScore! It's %d-th thread talking\n", threadIdx.x);
+		//}*/
 
-	//return;
+		//return;
 
 	int blockOffset = blockIdx.x * BLOCK_SIZE;
 	int threadOffset = threadIdx.x;
@@ -870,10 +870,10 @@ __global__ void findTheBestScore(unsigned int* scores, unsigned int* indecies, u
 	if (depth > 0)
 		ourIndex = indecies[scoreId];
 
-	if (blockIdx.x == 0 && (threadIdx.x / 32) == 0)
+	/*if (blockIdx.x == 0 && (threadIdx.x / 32) == 0)
 	{
 		printf("%d: ourIndex = %d, ourScore = %d\n", threadIdx.x, ourIndex, ourScore);
-	}
+	}*/
 
 	//return;
 
@@ -959,7 +959,7 @@ __global__ void findTheBestScore(unsigned int* scores, unsigned int* indecies, u
 }
 
 /*
-	Ок, для удаления области из данных нам надо всего лишь пройтись по всем данным 1 раз - тривиально. И область виннера никогда не меняется. Она задана извне 1 раз, соответственно изменениям подвержены 
+	Ок, для удаления области из данных нам надо всего лишь пройтись по всем данным 1 раз - тривиально. И область виннера никогда не меняется. Она задана извне 1 раз, соответственно изменениям подвержены
 	только переменные области кандидата.
 */
 
@@ -1054,7 +1054,7 @@ __global__ void stripTheWinnerAreaFromData(unsigned char* rgbaData, unsigned int
 
 			offsets[SpriteByteOffsets[blockIdx.x] + candidateWorkingX * SpriteHeights[blockIdx.x] + candidateWorkingY] = atlasIndex + 1; //+1 потому что мы хотим чтобы 0 обозначал отсутствие в этом пикселе начала области атласа, а не 0ую область атласа
 			numberOfStrippings++;
-			printf("isTheSame!!!!! numberOfStrippings = %d, blockIdx.x = %d, candidateWorkingX = %d, candidateWorkingY = %d\n", numberOfStrippings, blockIdx.x, candidateWorkingX, candidateWorkingY);
+			//printf("isTheSame!!!!! numberOfStrippings = %d, blockIdx.x = %d, candidateWorkingX = %d, candidateWorkingY = %d\n", numberOfStrippings, blockIdx.x, candidateWorkingX, candidateWorkingY);
 		}
 	}
 
@@ -1101,85 +1101,99 @@ __global__ void stripTheWinnerAreaFromData(unsigned char* rgbaData, unsigned int
 		if (threadIdx.x == 0)
 		{
 			//numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 16);
-			printf("block id %d, count = %d\n", blockIdx.x, numberOfStrippings);
+			//printf("block id %d, count = %d\n", blockIdx.x, numberOfStrippings);
 			numbersOfStrippings[blockIdx.x] = numberOfStrippings;
 		}
 	}
 }
 
-__global__ void mainKernel(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, unsigned int* scoresResults, unsigned int* indecies, unsigned int* indeciesInfo, unsigned int workingScoresLength, char* atlas, unsigned int* offsets, unsigned int* spritesCountSizedArray)
+__global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, unsigned int* scoresResults, unsigned int* indecies, unsigned int* indeciesInfo, unsigned int workingScoresLength, unsigned int optimizedWorkingScoresLength, char* atlas, unsigned int* offsets, unsigned int* spritesCountSizedArray)
 {
 	/*printf("main threadx = %d, blockx = %d", threadIdx.x, blockIdx.x);
 	return;*/
 	unsigned int currentIteration = 0;
-	dim3 scoresCountingBlock(BLOCK_SIZE);
-	dim3 scoresCountingGrid(SpritesCount, 1, SizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
-	printf("%d,%d,%d\n", BLOCK_SIZE, SpritesCount, SizingsCount);
-	countScores << <scoresCountingGrid, scoresCountingBlock >> > (rgbaData, voids, rgbaFlags, workingOffsets, scoresResults, indeciesInfo);
-	cudaError_t scoreCountingError = cudaPeekAtLastError();
-	if (scoreCountingError != cudaSuccess)
+	while (opaquePixelsCount > 0/* && currentIteration < 4*/)
 	{
-		printf("scoreCountingError = %d, %s\n", scoreCountingError, cudaGetErrorString(scoreCountingError));
-		return;
-	}
-	//gpuErrchk(cudaPeekAtLastError());
-	cudaDeviceSynchronize();
-	dim3 bestScoreFindingBlock(BLOCK_SIZE);
-	int currentBestScoresLength = workingScoresLength;
-	int depth = 0;
-	while (true)
-	{
-		int gridLength = ceilToInt(currentBestScoresLength, BLOCK_SIZE);
-		dim3 bestScoreFindingGrid(gridLength);
-		//printf("ASJISjdkskjmalkdjasid\n");
-		findTheBestScore << <bestScoreFindingGrid, bestScoreFindingBlock >> > (scoresResults, indecies, indeciesInfo, depth, currentBestScoresLength, workingScoresLength);
-		cudaDeviceSynchronize();
-		if (currentBestScoresLength <= WARP_SIZE) //Если на входе к findTheBestScore было 32 значения или меньше, значит на выходе осталось 1 значение - победитель.
-			break;
-		currentBestScoresLength = gridLength * WARP_SIZE;
-		depth++;
-	}
-
-	printf("AAAaaaaaaaaaannd the WINNER is %d with the ASTONISHING score of %d!!!!!!!!!!!! !!! !! !!!!! ! !!11   ... . .  .\n", indecies[0], scoresResults[0]);
-	printf("Aaaaannd the sprite id of the winner is %d. And the sizing is %d.\n", indeciesInfo[0], indeciesInfo[OptimizedScoresCount]);
-	int workingOffsetOfTheWinner = workingOffsets[indeciesInfo[0] * SizingsCount + indeciesInfo[OptimizedScoresCount]];
-	short sizingWidth = SizingWidths[indeciesInfo[OptimizedScoresCount]];
-	short sizingHeight = SizingHeights[indeciesInfo[OptimizedScoresCount]];
-	int workingHeight = SpriteHeights[indeciesInfo[0]] - sizingHeight + 1;
-	int indexOfPixelOfTheWinner = indecies[0] - workingOffsetOfTheWinner;
-	short winnerAreaX = indexOfPixelOfTheWinner / workingHeight;
-	short winnerAreaY = indexOfPixelOfTheWinner % workingHeight;
-	printf("Winner area: Sprite %d, Sizing %d, x %d, y %d, width %d, height %d\n", indeciesInfo[0], indeciesInfo[OptimizedScoresCount], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight);
-
-	memcpy(atlas + currentIteration * (sizeof(unsigned int) + sizeof(unsigned short) * 4), &indeciesInfo[0], sizeof(unsigned int));
-	memcpy(atlas + currentIteration * (sizeof(unsigned int) + sizeof(unsigned short) * 4) + sizeof(unsigned int), &winnerAreaX, sizeof(unsigned short));
-	memcpy(atlas + currentIteration * (sizeof(unsigned int) + sizeof(unsigned short) * 4) + sizeof(unsigned int) + sizeof(unsigned short), &winnerAreaY, sizeof(unsigned short));
-	memcpy(atlas + currentIteration * (sizeof(unsigned int) + sizeof(unsigned short) * 4) + sizeof(unsigned int) + sizeof(unsigned short) * 2, &sizingWidth, sizeof(unsigned short));
-	memcpy(atlas + currentIteration * (sizeof(unsigned int) + sizeof(unsigned short) * 4) + sizeof(unsigned int) + sizeof(unsigned short) * 3, &sizingHeight, sizeof(unsigned short));
-
-	short winnersOpaquePixelsCount = 0;
-	for (size_t x = 0; x < sizingWidth; x++)
-	{
-		for (size_t y = 0; y < sizingHeight; y++)
+		printf("Iteration %d:\n", currentIteration);
+		dim3 scoresCountingBlock(BLOCK_SIZE);
+		dim3 scoresCountingGrid(SpritesCount, 1, SizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
+		//printf("%d,%d,%d\n", BLOCK_SIZE, SpritesCount, SizingsCount);
+		countScores << <scoresCountingGrid, scoresCountingBlock >> > (rgbaData, voids, rgbaFlags, workingOffsets, scoresResults, indeciesInfo);
+		cudaError_t scoreCountingError = cudaPeekAtLastError();
+		if (scoreCountingError != cudaSuccess)
 		{
-			int index = (winnerAreaX + x) * SpriteHeights[indeciesInfo[0]] + winnerAreaY + y;
-			if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[indeciesInfo[0]] + index] != 0)
-				winnersOpaquePixelsCount++;
+			printf("scoreCountingError = %d, %s\n", scoreCountingError, cudaGetErrorString(scoreCountingError));
+			return;
 		}
+		//gpuErrchk(cudaPeekAtLastError());
+		cudaDeviceSynchronize();
+		dim3 bestScoreFindingBlock(BLOCK_SIZE);
+		int currentBestScoresLength = workingScoresLength;
+		int depth = 0;
+		while (true)
+		{
+			int gridLength = ceilToInt(currentBestScoresLength, BLOCK_SIZE);
+			dim3 bestScoreFindingGrid(gridLength);
+			//printf("ASJISjdkskjmalkdjasid\n");
+			findTheBestScore << <bestScoreFindingGrid, bestScoreFindingBlock >> > (scoresResults, indecies, indeciesInfo, depth, currentBestScoresLength, workingScoresLength);
+			cudaDeviceSynchronize();
+			if (currentBestScoresLength <= WARP_SIZE) //Если на входе к findTheBestScore было 32 значения или меньше, значит на выходе осталось 1 значение - победитель.
+				break;
+			currentBestScoresLength = gridLength * WARP_SIZE;
+			depth++;
+		}
+
+		printf("AAAaaaaaaaaaannd the WINNER is %d with the ASTONISHING score of %d!!!!!!!!!!!! !!! !! !!!!! ! !!11   ... . .  .\n", indecies[0], scoresResults[0]);
+		printf("Aaaaannd the sprite id of the winner is %d. And the sizing is %d.\n", indeciesInfo[0], indeciesInfo[OptimizedScoresCount]);
+		int workingOffsetOfTheWinner = workingOffsets[indeciesInfo[0] * SizingsCount + indeciesInfo[OptimizedScoresCount]];
+		short sizingWidth = SizingWidths[indeciesInfo[OptimizedScoresCount]];
+		short sizingHeight = SizingHeights[indeciesInfo[OptimizedScoresCount]];
+		int workingHeight = SpriteHeights[indeciesInfo[0]] - sizingHeight + 1;
+		int indexOfPixelOfTheWinner = indecies[0] - workingOffsetOfTheWinner;
+		short winnerAreaX = indexOfPixelOfTheWinner / workingHeight;
+		short winnerAreaY = indexOfPixelOfTheWinner % workingHeight;
+		printf("Winner area: Sprite %d, Sizing %d, x %d, y %d, width %d, height %d\n", indeciesInfo[0], indeciesInfo[OptimizedScoresCount], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight);
+
+		memcpy(atlas + currentIteration * (sizeof(unsigned int) + sizeof(unsigned short) * 4), &indeciesInfo[0], sizeof(unsigned int));
+		memcpy(atlas + currentIteration * (sizeof(unsigned int) + sizeof(unsigned short) * 4) + sizeof(unsigned int), &winnerAreaX, sizeof(unsigned short));
+		memcpy(atlas + currentIteration * (sizeof(unsigned int) + sizeof(unsigned short) * 4) + sizeof(unsigned int) + sizeof(unsigned short), &winnerAreaY, sizeof(unsigned short));
+		memcpy(atlas + currentIteration * (sizeof(unsigned int) + sizeof(unsigned short) * 4) + sizeof(unsigned int) + sizeof(unsigned short) * 2, &sizingWidth, sizeof(unsigned short));
+		memcpy(atlas + currentIteration * (sizeof(unsigned int) + sizeof(unsigned short) * 4) + sizeof(unsigned int) + sizeof(unsigned short) * 3, &sizingHeight, sizeof(unsigned short));
+
+		short winnersOpaquePixelsCount = 0;
+		for (size_t x = 0; x < sizingWidth; x++)
+		{
+			for (size_t y = 0; y < sizingHeight; y++)
+			{
+				int index = (winnerAreaX + x) * SpriteHeights[indeciesInfo[0]] + winnerAreaY + y;
+				if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[indeciesInfo[0]] + index] != 0)
+					winnersOpaquePixelsCount++;
+			}
+		}
+
+		printf("winnersOpaquePixelsCount = %d\n", winnersOpaquePixelsCount);
+
+		dim3 bestAreaStrippingBlock(BLOCK_SIZE);
+		dim3 bestAreaStrippingGrid(SpritesCount); //Нам здесь не нужно учитывать сайзинги. А раз так, кол-во блоков будет равно просто кол-ву спрайтов.
+		stripTheWinnerAreaFromData << <bestAreaStrippingGrid, bestAreaStrippingBlock >> > (rgbaData, indeciesInfo[0], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight, currentIteration, offsets, spritesCountSizedArray);
+		cudaDeviceSynchronize();
+		unsigned int strippedAreasCount = 0;
+		for (size_t i = 0; i < SpritesCount; i++)
+			strippedAreasCount += spritesCountSizedArray[i];
+		erase(rgbaData, indeciesInfo[0], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight); //После того, как стерли все совпадения с победителем, стираем и самого победителя
+		offsets[SpriteByteOffsets[indeciesInfo[0]] + winnerAreaX * SpriteHeights[indeciesInfo[0]] + winnerAreaY] = currentIteration + 1;
+		printf("strippedAreasCount = %d\n", (strippedAreasCount + 1) * winnersOpaquePixelsCount); //+1, потому что победителя мы стираем отдельно и он тоже считается
+
+
+		memset(scoresResults, 0, optimizedWorkingScoresLength * sizeof(unsigned int));
+
+		opaquePixelsCount -= (strippedAreasCount + 1) * winnersOpaquePixelsCount;
+		printf("Opaque Pixels Left: %d\n", opaquePixelsCount);
+		currentIteration++;
+		/*if (opaquePixelsCount <= 0)
+			break;*/
 	}
-
-	printf("winnersOpaquePixelsCount = %d\n", winnersOpaquePixelsCount);
-
-	dim3 bestAreaStrippingBlock(BLOCK_SIZE);
-	dim3 bestAreaStrippingGrid(SpritesCount); //Нам здесь не нужно учитывать сайзинги. А раз так, кол-во блоков будет равно просто кол-ву спрайтов.
-	stripTheWinnerAreaFromData << <bestAreaStrippingGrid, bestAreaStrippingBlock >> > (rgbaData, indeciesInfo[0], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight, currentIteration, offsets, spritesCountSizedArray);
-	cudaDeviceSynchronize();
-	unsigned int strippedPixelsCount = 0;
-	for (size_t i = 0; i < SpritesCount; i++)
-		strippedPixelsCount += spritesCountSizedArray[i];
-	erase(rgbaData, indeciesInfo[0], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight); //После того, как стерли все совпадения с победителем, стираем и самого победителя
-	offsets[SpriteByteOffsets[indeciesInfo[0]] + winnerAreaX * SpriteHeights[indeciesInfo[0]] + winnerAreaY] = currentIteration + 1;
-	printf("strippedPixelsCount = %d\n", (strippedPixelsCount + 1) * winnersOpaquePixelsCount); //+1, потому что победителя мы стираем отдельно и он тоже считается
+	printf("The End! opaquePixelsCount = %d.\n", opaquePixelsCount);
 }
 
 int main()
@@ -1344,7 +1358,7 @@ int main()
 	//dim3 grid(spritesCount, 1, sizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
 	//mainKernel << <grid, block >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceResultsPtr);
 	printf("scoresCount = %d\n", scoresCount);
-	mainKernel << <1, 1 >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceScoresPtr, (unsigned int*)deviceIndeciesPtr, (unsigned int*)deviceIndeciesInfoPtr, scoresCount, deviceAtlasPtr, (unsigned int*)deviceOffsetsPtr, (unsigned int*)deviceSpritesCountSizedArrayPtr);
+	mainKernel << <1, 1 >> > (opaquePixelsCount, (unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceScoresPtr, (unsigned int*)deviceIndeciesPtr, (unsigned int*)deviceIndeciesInfoPtr, scoresCount, optimizedScoresCount, deviceAtlasPtr, (unsigned int*)deviceOffsetsPtr, (unsigned int*)deviceSpritesCountSizedArrayPtr);
 	gpuErrchk(cudaPeekAtLastError());
 	cudaDeviceSynchronize();
 	gpuErrchk(cudaPeekAtLastError());
