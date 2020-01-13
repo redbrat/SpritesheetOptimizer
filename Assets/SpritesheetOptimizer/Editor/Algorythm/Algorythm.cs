@@ -591,6 +591,7 @@ public class Algorythm
                 var maxTotalScore = int.MinValue;
                 var maxTotalScoreIndex = -1;
                 var maxTotalScorePos = 0;
+                //var minSpriteIndex = 0;
 
                 //for (int i = 0; i < scores.Length; i++)
                 //{
@@ -603,13 +604,16 @@ public class Algorythm
                     var totalScore = totalCounts[i] * scores[i];
                     if (totalScore > maxTotalScore)
                     {
+                        //minSpriteIndex = areasOfThatSize[i].MetaAndSpriteIndex & 16_777_215;
                         maxTotalScore = totalScore;
                         maxTotalScoreIndex = i;
                         maxTotalScorePos = areasOfThatSize[i].XAndY;
                     }
                     else if (totalScore == maxTotalScore)
                     {
-                        if (areasOfThatSize[i].XAndY > maxTotalScorePos)
+                        //if (areasOfThatSize[i].XAndY > maxTotalScorePos)
+                        //var spriteIndex = areasOfThatSize[i].MetaAndSpriteIndex & 16_777_215;
+                        if (i < maxTotalScoreIndex)
                         {
                             maxTotalScore = totalScore;
                             maxTotalScoreIndex = i;
