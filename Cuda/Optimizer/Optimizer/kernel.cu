@@ -373,6 +373,17 @@ spritesCount получится равным 5453. Уже более-менее.
 идеальной. Не оптимально будет только в случае мелких наборов. Но просто иначе никак. Любое деление на части меньше спрайта будет рвать граф пикселей, а вся логика этого алгоритма построена на связанности 
 этого графа. Разве что разделить граф, но потом еще пройтись дополнительно по району границ. Но это слишком сложно, оставим для неближайшего будушего. !!!ДАЛЬНЕЕ БУДУЩЕЕ!!! (буду помечать так, чтобы потом 
 было легко найти).
+
+...чуть позже
+Так, ок, еще одна важная деталь, которая вообще не очевидна. Нам надо не только запрещать стирать исхоюную область, но и "повреждать" ее! Т.е. такое вполне может быть, что другая область находится внутри 
+исходиной и стирая ее мы повредим исходную и не сможем больше валидно проверять. Вот блин!
+
+...еще попозже
+Ок, починил конечно, но все равно в самом конце несовпадение - вместо двух областей по 1 пикселю у меня 1 область 2х2. Общая сумма у этих двух вариантов одинаковая, поэтому я даже дальше не стал 
+разбираться, почему не совпадает - упорядочивание я на шарповой стороне не контролирую. Поэтому, думаю, можно принять это за успех, а исправить это потом с помобщью более совершенного подсчета очков - 
+сейчас, конечно, там наиболее простой вариант, в котором многое не учитывается.
+
+Следующий этап - надо сделать отсылаемый обратно клиенту пакет.
 */
 
 
@@ -973,19 +984,49 @@ __global__ void findTheBestScore(unsigned int* scores, unsigned int* indecies, u
 	только переменные области кандидата.
 */
 
-__device__ void erase(unsigned char* rgbaData, unsigned int spriteIndex, short x, short y, short sizingWidth, short sizingHeight)
+__device__ void erase(unsigned char* rgbaData, unsigned int spriteIndex, short x, short y, short sizingWidth, short sizingHeight, bool verbose)
 {
 	for (size_t xx = 0; xx < sizingWidth; xx++)
 	{
 		for (size_t yy = 0; yy < sizingHeight; yy++)
 		{
-			int candidatePixelIndex = (x + xx) * SpriteHeights[spriteIndex] + y + yy;
-			rgbaData[SpriteByteOffsets[spriteIndex] + candidatePixelIndex] = 0;
-			rgbaData[ByteLineLength + SpriteByteOffsets[spriteIndex] + candidatePixelIndex] = 0;
-			rgbaData[ByteLineLength * 2 + SpriteByteOffsets[spriteIndex] + candidatePixelIndex] = 0;
-			rgbaData[ByteLineLength * 3 + SpriteByteOffsets[spriteIndex] + candidatePixelIndex] = 0;
+			int pixelIndex = (x + xx) * SpriteHeights[spriteIndex] + y + yy;
+			if (verbose)
+			{
+				printf("%d\n", x + xx);
+				printf("%d\n", y + yy);
+				printf("%d\n", rgbaData[SpriteByteOffsets[spriteIndex] + pixelIndex]);
+				printf("%d\n", rgbaData[ByteLineLength + SpriteByteOffsets[spriteIndex] + pixelIndex]);
+				printf("%d\n", rgbaData[ByteLineLength * 2 + SpriteByteOffsets[spriteIndex] + pixelIndex]);
+				printf("%d\n", rgbaData[ByteLineLength * 3 + SpriteByteOffsets[spriteIndex] + pixelIndex]);
+				printf("\n");
+				//printf("Verbose erasing: (%d, %d) = (%d, %d, %d, %d), test = %d\n", x + xx, y + yy, rgbaData[SpriteByteOffsets[spriteIndex] + pixelIndex], rgbaData[ByteLineLength + SpriteByteOffsets[spriteIndex] + pixelIndex], rgbaData[ByteLineLength * 2 + SpriteByteOffsets[spriteIndex] + pixelIndex], rgbaData[ByteLineLength * 3 + SpriteByteOffsets[spriteIndex] + pixelIndex], 121212);
+			}
+			rgbaData[SpriteByteOffsets[spriteIndex] + pixelIndex] = 0;
+			rgbaData[ByteLineLength + SpriteByteOffsets[spriteIndex] + pixelIndex] = 0;
+			rgbaData[ByteLineLength * 2 + SpriteByteOffsets[spriteIndex] + pixelIndex] = 0;
+			rgbaData[ByteLineLength * 3 + SpriteByteOffsets[spriteIndex] + pixelIndex] = 0;
 		}
 	}
+}
+
+__device__ bool doOverlap(short x1, short y1, short w1, short h1, short x2, short y2, short w2, short h2)
+{
+	if (x1 >= x2 + w2 || x2 >= x1 + w1)
+		return false;
+	if (y1 >= y2 + h2 || y2 >= y1 + h1)
+		return false;
+	return true;
+	
+	//// If one rectangle is on left side of other 
+	//if (l1.x > r2.x || l2.x > r1.x)
+	//	return false;
+
+	//// If one rectangle is above other 
+	//if (l1.y < r2.y || l2.y < r1.y)
+	//	return false;
+
+	//return true;
 }
 
 __global__ void stripTheWinnerAreaFromData(unsigned char* rgbaData, unsigned int winnerSpriteIndex, unsigned short winnerX, unsigned short winnerY, unsigned short winnerWidth, unsigned short winnerHeight, unsigned int atlasIndex, unsigned int* offsets, unsigned int* numbersOfStrippings)
@@ -993,128 +1034,187 @@ __global__ void stripTheWinnerAreaFromData(unsigned char* rgbaData, unsigned int
 	short candidateWorkingWidth = SpriteWidths[blockIdx.x] - winnerWidth + 1;
 	short candidateWorkingHeight = SpriteHeights[blockIdx.x] - winnerHeight + 1;
 
-	int numberOfTasksPerThread = (candidateWorkingWidth * candidateWorkingHeight) / BLOCK_SIZE; // ceilToInt((SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight, BLOCK_SIZE)
-	if (candidateWorkingWidth * candidateWorkingHeight % BLOCK_SIZE != 0)
-		numberOfTasksPerThread++;
+	//int candidateWorkingSquare = (SpriteWidths[blockIdx.x] - winnerWidth + 1) * candidateWorkingHeight;
+	//int numberOfTasksPerThread = (candidateWorkingWidth * candidateWorkingHeight) / BLOCK_SIZE; // ceilToInt((SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight, BLOCK_SIZE)
+	//if (candidateWorkingWidth * candidateWorkingHeight % BLOCK_SIZE != 0)
+	//	numberOfTasksPerThread++;
 
-	unsigned short numberOfStrippings = 0;
-	for (size_t taskIndex = 0; taskIndex < numberOfTasksPerThread; taskIndex++)
+	//printf("This is %dth blockx. My sprites square = %d (%d * %d)\n", blockIdx.x, candidateWorkingSquare, (SpriteWidths[blockIdx.x] - winnerWidth + 1), candidateWorkingHeight);
+	//return;
+
+	unsigned int numberOfStrippings = 0;
+	unsigned int numberOfPixelsChecked = 0;
+	for (size_t candidateWorkingX = 0; candidateWorkingX < candidateWorkingWidth; candidateWorkingX++)
 	{
-		int candidateWorkingPixelIndex = taskIndex * BLOCK_SIZE + threadIdx.x;
-		if (candidateWorkingPixelIndex >= candidateWorkingWidth * candidateWorkingHeight)
-			break;
-
-		short candidateWorkingX = (candidateWorkingPixelIndex / candidateWorkingHeight);
-		short candidateWorkingY = candidateWorkingPixelIndex % candidateWorkingHeight;
-
-		bool isTheSame = true;
-		for (size_t x = 0; x < winnerWidth; x++)
+		for (size_t candidateWorkingY = 0; candidateWorkingY < candidateWorkingHeight; candidateWorkingY++)
 		{
-			for (size_t y = 0; y < winnerHeight; y++)
-			{
-				int ourWinnerPixelIndex = (winnerX + x) * SpriteHeights[winnerSpriteIndex] + winnerY + y;
-				int candidatePixelIndex = (candidateWorkingX + x) * SpriteHeights[blockIdx.x] + candidateWorkingY + y;
-
-				if (ourWinnerPixelIndex == candidatePixelIndex && blockIdx.x == winnerSpriteIndex)
-				{
-					isTheSame = false;
-					break; //Мы не можем здесь очищать исходную область, т.к. она нужна нам для сравнения с ней, если мы ее обнулим поведение будет undefined. Очищаем исходную область мы в главном кернеле.
-				}
-
-				if (rgbaData[SpriteByteOffsets[winnerSpriteIndex] + ourWinnerPixelIndex] != rgbaData[SpriteByteOffsets[blockIdx.x] + candidatePixelIndex])
-				{
-					isTheSame = false;
-					break;
-				}
-				if (rgbaData[ByteLineLength + SpriteByteOffsets[winnerSpriteIndex] + ourWinnerPixelIndex] != rgbaData[ByteLineLength + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex])
-				{
-					isTheSame = false;
-					break;
-				}
-				if (rgbaData[ByteLineLength * 2 + SpriteByteOffsets[winnerSpriteIndex] + ourWinnerPixelIndex] != rgbaData[ByteLineLength * 2 + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex])
-				{
-					isTheSame = false;
-					break;
-				}
-				if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[winnerSpriteIndex] + ourWinnerPixelIndex] != rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex])
-				{
-					isTheSame = false;
-					break;
-				}
-			}
-
-			if (!isTheSame)
-				break;
-		}
-
-		if (isTheSame)
-		{
-			erase(rgbaData, blockIdx.x, candidateWorkingX, candidateWorkingY, winnerWidth, winnerHeight);
-			/*for (size_t x = 0; x < winnerWidth; x++)
+			numberOfPixelsChecked++;
+			bool isTheSame = true;
+			for (size_t x = 0; x < winnerWidth; x++)
 			{
 				for (size_t y = 0; y < winnerHeight; y++)
 				{
+					int ourWinnerPixelIndex = (winnerX + x) * SpriteHeights[winnerSpriteIndex] + winnerY + y;
 					int candidatePixelIndex = (candidateWorkingX + x) * SpriteHeights[blockIdx.x] + candidateWorkingY + y;
-					rgbaData[SpriteByteOffsets[blockIdx.x] + candidatePixelIndex] = 0;
-					rgbaData[ByteLineLength + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex] = 0;
-					rgbaData[ByteLineLength * 2 + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex] = 0;
-					rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex] = 0;
+
+					if (ourWinnerPixelIndex == candidatePixelIndex && blockIdx.x == winnerSpriteIndex)
+					{
+						isTheSame = false;
+						break; //Мы не можем здесь очищать исходную область, т.к. она нужна нам для сравнения с ней, если мы ее обнулим поведение будет undefined. Очищаем исходную область мы в главном кернеле.
+					}
+
+					if (rgbaData[SpriteByteOffsets[winnerSpriteIndex] + ourWinnerPixelIndex] != rgbaData[SpriteByteOffsets[blockIdx.x] + candidatePixelIndex])
+					{
+						isTheSame = false;
+						break;
+					}
+					if (rgbaData[ByteLineLength + SpriteByteOffsets[winnerSpriteIndex] + ourWinnerPixelIndex] != rgbaData[ByteLineLength + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex])
+					{
+						isTheSame = false;
+						break;
+					}
+					if (rgbaData[ByteLineLength * 2 + SpriteByteOffsets[winnerSpriteIndex] + ourWinnerPixelIndex] != rgbaData[ByteLineLength * 2 + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex])
+					{
+						isTheSame = false;
+						break;
+					}
+					if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[winnerSpriteIndex] + ourWinnerPixelIndex] != rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex])
+					{
+						isTheSame = false;
+						break;
+					}
 				}
-			}*/
 
-			offsets[SpriteByteOffsets[blockIdx.x] + candidateWorkingX * SpriteHeights[blockIdx.x] + candidateWorkingY] = atlasIndex + 1; //+1 потому что мы хотим чтобы 0 обозначал отсутствие в этом пикселе начала области атласа, а не 0ую область атласа
-			numberOfStrippings++;
-			//printf("isTheSame!!!!! numberOfStrippings = %d, blockIdx.x = %d, candidateWorkingX = %d, candidateWorkingY = %d\n", numberOfStrippings, blockIdx.x, candidateWorkingX, candidateWorkingY);
+				if (!isTheSame)
+					break;
+			}
+
+			//Тут мы теперь дополнительно делаем чертовски необходимую проверку на перекрытие областей. Т.е. недостаточно, чтобы области совпадали. Если спрайт 1 и тот же - важно чтобы они не перекрывались, 
+			//чтобы не повредить изначальную область.
+			if (isTheSame && (blockIdx.x != winnerSpriteIndex || !doOverlap(winnerX, winnerY, winnerWidth, winnerHeight, candidateWorkingX, candidateWorkingY, winnerWidth, winnerHeight)))
+			{
+				erase(rgbaData, blockIdx.x, candidateWorkingX, candidateWorkingY, winnerWidth, winnerHeight, false);
+				/*for (size_t x = 0; x < winnerWidth; x++)
+				{
+					for (size_t y = 0; y < winnerHeight; y++)
+					{
+						int candidatePixelIndex = (candidateWorkingX + x) * SpriteHeights[blockIdx.x] + candidateWorkingY + y;
+						rgbaData[SpriteByteOffsets[blockIdx.x] + candidatePixelIndex] = 0;
+						rgbaData[ByteLineLength + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex] = 0;
+						rgbaData[ByteLineLength * 2 + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex] = 0;
+						rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex] = 0;
+					}
+				}*/
+
+				offsets[SpriteByteOffsets[blockIdx.x] + candidateWorkingX * SpriteHeights[blockIdx.x] + candidateWorkingY] = atlasIndex + 1; //+1 потому что мы хотим чтобы 0 обозначал отсутствие в этом пикселе начала области атласа, а не 0ую область атласа
+				numberOfStrippings++;
+				//printf("isTheSame!!!!! numberOfStrippings = %d, blockIdx.x = %d, candidateWorkingX = %d, candidateWorkingY = %d\n", numberOfStrippings, blockIdx.x, candidateWorkingX, candidateWorkingY);
+			}
 		}
 	}
 
-	numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 16);
-	numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 8);
-	numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 4);
-	numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 2);
-	numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 1);
-	/*if (threadIdx.x % 2 == 0)
-		numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 1, 2);
-	if (threadIdx.x % 4 == 0)
-		numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 2, 4);
-	if (threadIdx.x % 8 == 0)
-		numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 4, 8);
-	if (threadIdx.x % 16 == 0)
-		numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 8, 16);*/
+	//printf("blockIdx.x = %d, numberOfStrippings = %d, numberOfPixelsChecked = %d\n", blockIdx.x, numberOfStrippings, numberOfPixelsChecked);
+	numbersOfStrippings[blockIdx.x] = numberOfStrippings;
 
-	__shared__ unsigned short results[32];
-	if (threadIdx.x % 32 == 0)
-	{
-		//numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 16);
-		results[threadIdx.x / 32] = numberOfStrippings;
-	}
+	//for (size_t candidateWorkingPixelIndex = 0; candidateWorkingPixelIndex < candidateWorkingSquare; candidateWorkingPixelIndex++)
+	//{
+	//	/*int candidateWorkingPixelIndex = taskIndex * BLOCK_SIZE + threadIdx.x;
+	//	if (candidateWorkingPixelIndex >= candidateWorkingWidth * candidateWorkingHeight)
+	//		break;*/
 
-	__syncthreads();
-	if (threadIdx.x < 32)
-	{
-		numberOfStrippings = results[threadIdx.x];
+	//	short candidateWorkingX = (candidateWorkingPixelIndex / candidateWorkingHeight);
+	//	short candidateWorkingY = candidateWorkingPixelIndex % candidateWorkingHeight;
 
-		numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 16);
-		numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 8);
-		numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 4);
-		numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 2);
-		numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 1);
+	//	bool isTheSame = true;
+	//	for (size_t x = 0; x < winnerWidth; x++)
+	//	{
+	//		for (size_t y = 0; y < winnerHeight; y++)
+	//		{
+	//			int ourWinnerPixelIndex = (winnerX + x) * SpriteHeights[winnerSpriteIndex] + winnerY + y;
+	//			int candidatePixelIndex = (candidateWorkingX + x) * SpriteHeights[blockIdx.x] + candidateWorkingY + y;
 
-		/*if (threadIdx.x % 2 == 0)
-			numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 1, 2);
-		if (threadIdx.x % 4 == 0)
-			numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 2, 4);
-		if (threadIdx.x % 8 == 0)
-			numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 4, 8);
-		if (threadIdx.x % 16 == 0)
-			numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 8, 16);*/
-		if (threadIdx.x == 0)
-		{
-			//numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 16);
-			//printf("block id %d, count = %d\n", blockIdx.x, numberOfStrippings);
-			numbersOfStrippings[blockIdx.x] = numberOfStrippings;
-		}
-	}
+	//			if (ourWinnerPixelIndex == candidatePixelIndex && blockIdx.x == winnerSpriteIndex)
+	//			{
+	//				isTheSame = false;
+	//				break; //Мы не можем здесь очищать исходную область, т.к. она нужна нам для сравнения с ней, если мы ее обнулим поведение будет undefined. Очищаем исходную область мы в главном кернеле.
+	//			}
+
+	//			if (rgbaData[SpriteByteOffsets[winnerSpriteIndex] + ourWinnerPixelIndex] != rgbaData[SpriteByteOffsets[blockIdx.x] + candidatePixelIndex])
+	//			{
+	//				isTheSame = false;
+	//				break;
+	//			}
+	//			if (rgbaData[ByteLineLength + SpriteByteOffsets[winnerSpriteIndex] + ourWinnerPixelIndex] != rgbaData[ByteLineLength + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex])
+	//			{
+	//				isTheSame = false;
+	//				break;
+	//			}
+	//			if (rgbaData[ByteLineLength * 2 + SpriteByteOffsets[winnerSpriteIndex] + ourWinnerPixelIndex] != rgbaData[ByteLineLength * 2 + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex])
+	//			{
+	//				isTheSame = false;
+	//				break;
+	//			}
+	//			if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[winnerSpriteIndex] + ourWinnerPixelIndex] != rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex])
+	//			{
+	//				isTheSame = false;
+	//				break;
+	//			}
+	//		}
+
+	//		if (!isTheSame)
+	//			break;
+	//	}
+
+	//	if (isTheSame)
+	//	{
+	//		erase(rgbaData, blockIdx.x, candidateWorkingX, candidateWorkingY, winnerWidth, winnerHeight);
+	//		/*for (size_t x = 0; x < winnerWidth; x++)
+	//		{
+	//			for (size_t y = 0; y < winnerHeight; y++)
+	//			{
+	//				int candidatePixelIndex = (candidateWorkingX + x) * SpriteHeights[blockIdx.x] + candidateWorkingY + y;
+	//				rgbaData[SpriteByteOffsets[blockIdx.x] + candidatePixelIndex] = 0;
+	//				rgbaData[ByteLineLength + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex] = 0;
+	//				rgbaData[ByteLineLength * 2 + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex] = 0;
+	//				rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + candidatePixelIndex] = 0;
+	//			}
+	//		}*/
+
+	//		offsets[SpriteByteOffsets[blockIdx.x] + candidateWorkingX * SpriteHeights[blockIdx.x] + candidateWorkingY] = atlasIndex + 1; //+1 потому что мы хотим чтобы 0 обозначал отсутствие в этом пикселе начала области атласа, а не 0ую область атласа
+	//		numberOfStrippings++;
+	//		//printf("isTheSame!!!!! numberOfStrippings = %d, blockIdx.x = %d, candidateWorkingX = %d, candidateWorkingY = %d\n", numberOfStrippings, blockIdx.x, candidateWorkingX, candidateWorkingY);
+	//	}
+	//}
+
+	//numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 16);
+	//numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 8);
+	//numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 4);
+	//numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 2);
+	//numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 1);
+
+	//__shared__ unsigned short results[32];
+	//if (threadIdx.x % 32 == 0)
+	//{
+	//	//numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 16);
+	//	results[threadIdx.x / 32] = numberOfStrippings;
+	//}
+
+	//__syncthreads();
+	//if (threadIdx.x < 32)
+	//{
+	//	numberOfStrippings = results[threadIdx.x];
+
+	//	numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 16);
+	//	numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 8);
+	//	numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 4);
+	//	numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 2);
+	//	numberOfStrippings += __shfl_down_sync(0xff, numberOfStrippings, 1);
+
+	//	if (threadIdx.x == 0)
+	//	{
+	//		numbersOfStrippings[blockIdx.x] = numberOfStrippings;
+	//	}
+	//}
 }
 
 __global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, unsigned int* scoresResults, unsigned int* indecies, unsigned int* indeciesInfo, unsigned int workingScoresLength, unsigned int optimizedWorkingScoresLength, char* atlas, unsigned int* offsets, unsigned int* spritesCountSizedArray)
@@ -1137,6 +1237,21 @@ __global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsig
 		}
 		//gpuErrchk(cudaPeekAtLastError());
 		cudaDeviceSynchronize();
+
+		if (currentIteration == 94)
+		{
+			int blocksCount = ceilToInt(workingScoresLength, BLOCK_SIZE);
+			for (size_t i = 0; i < BLOCK_SIZE * blocksCount; i++)
+			{
+				int apodko = scoresResults[i];
+				if (apodko >= 1)
+				{
+					printf("score %d: %d. Sprite index = %d, sizing = %d, test = %d.", i, apodko, indeciesInfo[i], indeciesInfo[OptimizedScoresCount + i], 111222);
+					printf(" The sizing of %d is (%d, %d)\n", indeciesInfo[OptimizedScoresCount + i], SizingWidths[indeciesInfo[OptimizedScoresCount + i]], SizingHeights[indeciesInfo[OptimizedScoresCount + i]]);
+				}
+			}
+		}
+
 		dim3 bestScoreFindingBlock(BLOCK_SIZE);
 		int currentBestScoresLength = workingScoresLength;
 		int depth = 0;
@@ -1183,14 +1298,19 @@ __global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsig
 
 		printf("winnersOpaquePixelsCount = %d\n", winnersOpaquePixelsCount);
 
-		dim3 bestAreaStrippingBlock(BLOCK_SIZE);
+		dim3 bestAreaStrippingBlock(1); //Мда, а что поделать....
 		dim3 bestAreaStrippingGrid(SpritesCount); //Нам здесь не нужно учитывать сайзинги. А раз так, кол-во блоков будет равно просто кол-ву спрайтов.
 		stripTheWinnerAreaFromData << <bestAreaStrippingGrid, bestAreaStrippingBlock >> > (rgbaData, indeciesInfo[0], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight, currentIteration, offsets, spritesCountSizedArray);
 		cudaDeviceSynchronize();
 		unsigned int strippedAreasCount = 0;
 		for (size_t i = 0; i < SpritesCount; i++)
 			strippedAreasCount += spritesCountSizedArray[i];
-		erase(rgbaData, indeciesInfo[0], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight); //После того, как стерли все совпадения с победителем, стираем и самого победителя
+
+		if (currentIteration == 94)
+		{
+			printf("erasing the last area: %d, %d, %d, %d, %d. Before that strippedAreasCount = %d, test = %d\n", indeciesInfo[0], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight, strippedAreasCount, 123124);
+		}
+		erase(rgbaData, indeciesInfo[0], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight, currentIteration == 94); //После того, как стерли все совпадения с победителем, стираем и самого победителя
 		offsets[SpriteByteOffsets[indeciesInfo[0]] + winnerAreaX * SpriteHeights[indeciesInfo[0]] + winnerAreaY] = currentIteration + 1;
 		printf("strippedAreasCount = %d\n", (strippedAreasCount + 1) * winnersOpaquePixelsCount); //+1, потому что победителя мы стираем отдельно и он тоже считается
 
@@ -1201,6 +1321,10 @@ __global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsig
 		printf("Opaque Pixels Left: %d\n", opaquePixelsCount);
 		currentIteration++;
 		/*if (opaquePixelsCount <= 0)
+			break;*/
+
+		//break;
+		/*if (currentIteration > 19)
 			break;*/
 	}
 	printf("The End! opaquePixelsCount = %d.\n", opaquePixelsCount);
