@@ -1217,7 +1217,7 @@ __global__ void stripTheWinnerAreaFromData(unsigned char* rgbaData, unsigned int
 	//}
 }
 
-__global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, unsigned int* scoresResults, unsigned int* indecies, unsigned int* indeciesInfo, unsigned int workingScoresLength, unsigned int optimizedWorkingScoresLength, char* atlas, unsigned int* offsets, unsigned int* spritesCountSizedArray)
+__global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, unsigned int* scoresResults, unsigned int* indecies, unsigned int* indeciesInfo, unsigned int workingScoresLength, unsigned int optimizedWorkingScoresLength, char* atlas, unsigned int* offsets, unsigned int* spritesCountSizedArray, unsigned int* atlasLength)
 {
 	/*printf("main threadx = %d, blockx = %d", threadIdx.x, blockIdx.x);
 	return;*/
@@ -1328,6 +1328,8 @@ __global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsig
 			break;*/
 	}
 	printf("The End! opaquePixelsCount = %d.\n", opaquePixelsCount);
+
+	atlasLength[0] = currentIteration;
 }
 
 int main()
@@ -1471,58 +1473,83 @@ int main()
 	char* deviceIndeciesPtr;
 	int* deviceIndeciesInfoPtr;
 	char* deviceAtlasPtr;
+	int atlasSize = byteLineLength * sizeof(int) * 3;
 	char* deviceOffsetsPtr;
+	int offsetsSize = byteLineLength * sizeof(int);
 	char* deviceSpritesCountSizedArrayPtr;
 	int optimizedScoresCount = hostCeilToInt(scoresCount, BLOCK_SIZE) * BLOCK_SIZE; //Делаем кол-во результатов кратным BLOCK_SIZE, чтобы потом было легче высчитывать победителя
 	cudaMemcpyToSymbol(OptimizedScoresCount, &optimizedScoresCount, sizeof(int)); // Сразу записываем его
 	cudaMalloc((void**)&deviceScoresPtr, optimizedScoresCount * sizeof(int));
 	cudaMalloc((void**)&deviceIndeciesPtr, optimizedScoresCount * sizeof(int));
 	cudaMalloc((void**)&deviceIndeciesInfoPtr, optimizedScoresCount * INDECIES_INFO_LENGHT); //int - для индекса спрайта, 2 short - для координат, 1 byte - для индекса области
-	cudaMalloc((void**)&deviceAtlasPtr, byteLineLength * sizeof(int) * 3);
-	cudaMalloc((void**)&deviceOffsetsPtr, byteLineLength * sizeof(int));
+	cudaMalloc((void**)&deviceAtlasPtr, atlasSize);
+	cudaMalloc((void**)&deviceOffsetsPtr, offsetsSize);
 	cudaMalloc((void**)&deviceSpritesCountSizedArrayPtr, spritesCount * sizeof(unsigned int));
 	cudaMemset(deviceScoresPtr, 0, optimizedScoresCount * sizeof(int));
-	cudaMemset(deviceAtlasPtr, 0, byteLineLength * sizeof(int) * 3);
-	cudaMemset(deviceOffsetsPtr, 0, byteLineLength * sizeof(int));
+	cudaMemset(deviceAtlasPtr, 0, atlasSize);
+	cudaMemset(deviceOffsetsPtr, 0, offsetsSize);
 	unsigned int* deviceWorkingSpriteOffsetsPtr;
 	cudaMalloc((void**)&deviceWorkingSpriteOffsetsPtr, sizingsCount * spritesCount * sizeof(unsigned int));
 	cudaMemcpy(deviceWorkingSpriteOffsetsPtr, workingByteOffsets, sizingsCount * spritesCount * sizeof(unsigned int), cudaMemcpyHostToDevice);
+
+	unsigned int* atlasLengthDevice;
+	cudaMalloc((void**)&atlasLengthDevice, sizeof(unsigned int));
 
 	//dim3 block(BLOCK_SIZE);
 	//dim3 grid(spritesCount, 1, sizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
 	//mainKernel << <grid, block >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceResultsPtr);
 	printf("scoresCount = %d\n", scoresCount);
-	mainKernel << <1, 1 >> > (opaquePixelsCount, (unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceScoresPtr, (unsigned int*)deviceIndeciesPtr, (unsigned int*)deviceIndeciesInfoPtr, scoresCount, optimizedScoresCount, deviceAtlasPtr, (unsigned int*)deviceOffsetsPtr, (unsigned int*)deviceSpritesCountSizedArrayPtr);
+	mainKernel << <1, 1 >> > (opaquePixelsCount, (unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceScoresPtr, (unsigned int*)deviceIndeciesPtr, (unsigned int*)deviceIndeciesInfoPtr, scoresCount, optimizedScoresCount, deviceAtlasPtr, (unsigned int*)deviceOffsetsPtr, (unsigned int*)deviceSpritesCountSizedArrayPtr, atlasLengthDevice);
 	gpuErrchk(cudaPeekAtLastError());
 	cudaDeviceSynchronize();
 	gpuErrchk(cudaPeekAtLastError());
 
 	cudaError_t code = cudaGetLastError();
-	printf("code = %d", code);
+	printf("code = %d\n", code);
 	if (code != cudaSuccess)
 	{
+		printf("Starting post gpu processing...\n");
 		const char* errorMessage = cudaGetErrorString(code);
 		printf("CUDA error returned from Error code: %d (%s)\n", code, errorMessage);
 	}
 
-	//testing...
-	int* gpuResults = (int*)malloc(scoresCount * sizeof(int));
-	cudaMemcpy(gpuResults, deviceScoresPtr, scoresCount * sizeof(int), cudaMemcpyDeviceToHost);
-	int spriteTestIndex = 0;
-	int sizingTestIndex = 0;
 
-	int testOffsetIndex = spriteTestIndex * sizingsCount + sizingTestIndex;
-	int voidOffset = voidMapsOffsets[testOffsetIndex];
-	int resultOffset = workingByteOffsets[testOffsetIndex];
+	printf("Starting post gpu processing...\n");
 
-	short testSpriteWidth = spriteWidths[spriteTestIndex];
-	short testSpriteHeight = spriteHeights[spriteTestIndex];
-	short testSizingWidth = sizingWidths[sizingTestIndex];
-	short testSizingHeight = sizingHeights[sizingTestIndex];
-	short workingWidth = testSpriteWidth - testSizingWidth;
-	short workingHeight = testSpriteHeight - testSizingHeight;
+	/*char* atlas = (char*)malloc(atlasSize);
+	char* offsets = (char*)malloc(offsetsSize);
+	cudaMemcpy(atlas, deviceAtlasPtr, atlasSize, cudaMemcpyDeviceToHost);
+	cudaMemcpy(offsets, deviceOffsetsPtr, offsetsSize, cudaMemcpyDeviceToHost);
+	unsigned int* altasLength;
+	cudaMemcpy(altasLength, atlasLengthDevice, sizeof(unsigned int), cudaMemcpyDeviceToHost);*/
 
-	int testCount = scoresCount;
+	unsigned int* altasLength;
+	cudaMemcpy(altasLength, atlasLengthDevice, sizeof(unsigned int), cudaMemcpyDeviceToHost);
+
+	printf("atlas length is %d\n", altasLength[0]);
+	//printf("atlas length is %d\n", altasLength[0]);
+
+	/*free(offsets);
+	free(atlas);*/
+
+	////testing...
+	//int* gpuResults = (int*)malloc(scoresCount * sizeof(int));
+	//cudaMemcpy(gpuResults, deviceScoresPtr, scoresCount * sizeof(int), cudaMemcpyDeviceToHost);
+	//int spriteTestIndex = 0;
+	//int sizingTestIndex = 0;
+
+	//int testOffsetIndex = spriteTestIndex * sizingsCount + sizingTestIndex;
+	//int voidOffset = voidMapsOffsets[testOffsetIndex];
+	//int resultOffset = workingByteOffsets[testOffsetIndex];
+
+	//short testSpriteWidth = spriteWidths[spriteTestIndex];
+	//short testSpriteHeight = spriteHeights[spriteTestIndex];
+	//short testSizingWidth = sizingWidths[sizingTestIndex];
+	//short testSizingHeight = sizingHeights[sizingTestIndex];
+	//short workingWidth = testSpriteWidth - testSizingWidth;
+	//short workingHeight = testSpriteHeight - testSizingHeight;
+
+	//int testCount = scoresCount;
 	/*std::cout << "First " << testCount << " voids:\n";
 	for (size_t i = 0; i < 100; i++)
 	{
@@ -1538,7 +1565,7 @@ int main()
 	}*/
 
 
-	int* cpuResults = (int*)malloc(scoresCount * sizeof(int));
+	//int* cpuResults = (int*)malloc(scoresCount * sizeof(int));
 
 
 	//testing...
@@ -1546,15 +1573,21 @@ int main()
 	cudaFree(deviceRgbaDataPtr);
 	cudaFree(deviceVoidsPtr);
 	cudaFree(deviceRgbaFlagsPtr);
+	cudaFree(deviceWorkingByteOffsetsPtr);
+
 	cudaFree(deviceScoresPtr);
-	cudaFree(deviceWorkingSpriteOffsetsPtr);
 	cudaFree(deviceIndeciesPtr);
+	cudaFree(deviceIndeciesInfoPtr);
 	cudaFree(deviceAtlasPtr);
 	cudaFree(deviceOffsetsPtr);
-	cudaFree(deviceIndeciesInfoPtr);
+	cudaFree(deviceSpritesCountSizedArrayPtr);
 
-	free(gpuResults);
-	free(cpuResults);
+	cudaFree(deviceWorkingSpriteOffsetsPtr);
+	cudaFree(atlasLengthDevice);
+
+
+	//free(gpuResults);
+	//free(cpuResults);
 	free(blob);
 
 
