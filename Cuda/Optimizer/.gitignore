@@ -12,3 +12,4 @@ Debug
 *.exp
 *.out
 *.obj
+*.bytes

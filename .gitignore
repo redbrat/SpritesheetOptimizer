@@ -11,3 +11,4 @@
 /Py/**/*.npy
 /Py/**/*.txt
 /Cuda/ProfilableOptimizer/**
+*.bytes

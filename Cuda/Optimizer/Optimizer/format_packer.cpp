@@ -1,5 +1,7 @@
 ﻿#include "format_packer.h"
 #include <tuple>
+#include <stdio.h>
+#include "bit_converter.h"
 
 char getBitsCount(int number)
 {
@@ -241,6 +243,24 @@ unsigned int getMaxInteger(int size)
 
 	А что в случаем когда у нас хватает места?
 
+	Ок, по-видимому сдвигать надо в другую сторону.
+
+
+	Ок, я думал, что у нас вот так
+	00000001 00010100 00000000 00000000
+	00000000 -------- -------- --------
+
+	А оказалоь, что на самом деле вот эдак
+	00000000 00000000 00010100 00000001
+	-------- -------- -------- 00000000 //резерв
+
+	Если у нас так, то, чтобы записать 1й байт после резерва, мне надо сдвинуть его на startBitIndex влево
+
+	theOneChunk = value << startBitIndex;
+
+	А если бы мне надо было записать все 4 байта, но понадобилось бы 2 куска. 
+	1) value & maxInt(availableSpace) << startBitIndex
+	2) value >> availableSpace
 */
 
 unsigned int bitwiseWrite(int* buffer, unsigned int bitIndex, unsigned int value, char valueFrameLength)
@@ -250,16 +270,15 @@ unsigned int bitwiseWrite(int* buffer, unsigned int bitIndex, unsigned int value
 	int availableSpace = 32 - startBitIndex;
 	if (availableSpace < valueFrameLength)
 	{
-		int difference = valueFrameLength - availableSpace;
-		int firstChunk = (value >> difference)& getMaxInteger(availableSpace);
-		int secondChunk = (value && getMaxInteger(difference)) << (32 - difference);
+		int firstChunk = (value & getMaxInteger(availableSpace)) << startBitIndex;
+		int secondChunk = value >> availableSpace;
 
 		buffer[bufferIndex] |= firstChunk;
 		buffer[bufferIndex + 1] = secondChunk;
 	}
 	else
 	{
-		int theOneChunk = value << (availableSpace - valueFrameLength);
+		int theOneChunk = value << startBitIndex;
 		buffer[bufferIndex] |= theOneChunk;
 	}
 	return bitIndex + valueFrameLength;
@@ -288,13 +307,13 @@ unsigned int bitwiseWrite(int* buffer, unsigned int bitIndex, unsigned int value
 больше шорта. Наверное могут. Этих оффсетов может быть настолько много, что лучше хранить отдельно длину оффсета.
 
 2.2.2020
-Ок, был неправ. Индексы должны быть не такими. Во-первых у кусков атласа индексы обозначают индекс спрайта, поэтому переименовал в 
-atlasChunkSpriteIndexLength. При этом нельзя просто взять bitsCount(spritesCount), т.к. из может быть очень много, а куски атласа 
-могут браться только из пары первых спрайтов и мы будем waste space. Второе - индексы смещений - они указывают уже на индекс куска 
+Ок, был неправ. Индексы должны быть не такими. Во-первых у кусков атласа индексы обозначают индекс спрайта, поэтому переименовал в
+atlasChunkSpriteIndexLength. При этом нельзя просто взять bitsCount(spritesCount), т.к. из может быть очень много, а куски атласа
+могут браться только из пары первых спрайтов и мы будем waste space. Второе - индексы смещений - они указывают уже на индекс куска
 в атласе. Они используются все, поэтому длина этого индекса будет bistCount(atlasLength).
 */
 
-std::tuple<char*, int> pack(int atlasLength, char* atlasBuffer, unsigned int* offsetsBuffer, int offsetsLength, int spritesCount, short* spriteWidths, short* spriteHeights)
+std::tuple<char*, int> format_packer::pack(int atlasLength, char* atlasBuffer, unsigned int* offsetsBuffer, int spritesCount, short* spriteWidths, short* spriteHeights, char* prefixBuffer, int prefixLength)
 {
 	unsigned char atlasChunkSpriteIndexLength = 0;
 	unsigned char atlasXLength = 0;
@@ -305,6 +324,8 @@ std::tuple<char*, int> pack(int atlasLength, char* atlasBuffer, unsigned int* of
 	unsigned char atlasLengthLength = getBitsCount(atlasLength);
 	unsigned char chunkOffsetXLength = 0;
 	unsigned char chunkOffsetYLength = 0;
+
+	printf("pack 1\n");
 
 	int atlasStructureSize = sizeof(int) + sizeof(short) * 4;
 	for (size_t i = 0; i < atlasLength; i++)
@@ -331,6 +352,7 @@ std::tuple<char*, int> pack(int atlasLength, char* atlasBuffer, unsigned int* of
 		if (chunkHeightLength > atlasHeightLength)
 			atlasHeightLength = chunkHeightLength;
 	}
+	printf("pack 2\n");
 
 	int maxChunksInSpriteCount = 0;
 	int overallChunksCount = 0;
@@ -367,6 +389,7 @@ std::tuple<char*, int> pack(int atlasLength, char* atlasBuffer, unsigned int* of
 	int maxChunksInSpriteCountLength = getBitsCount(maxChunksInSpriteCount);
 
 	unsigned int bufferLengthInBits = 8 //1 байт зарезервирован.
+		+ prefixLength * 8 //Мета-инфа. Она у нас в байтах, поэтому x8
 		+ 32 //atlasLength. Всякое бывает, может и 4 байта
 		+ 32 //spritesCount. Спрайтов может и будет больше 65к, поэтому чтобы не мелочиться берем 4 байта
 		+ 16 //maxChunksInSpriteCountLength. Обозначает длину значения кол-ва кусков атласа в спрайте. Очень нужно
@@ -389,7 +412,7 @@ std::tuple<char*, int> pack(int atlasLength, char* atlasBuffer, unsigned int* of
 
 		+ spritesCount * maxChunksInSpriteCountLength //По оффсету на каждый спрайт - на начало записей кусков для каждого
 
-		+ atlasLengthLength * overallChunksCount //Непосредственно записи смещений кусков атласов - (atlcas index, chunk (x, y))
+		+ atlasLengthLength * overallChunksCount //Непосредственно записи смещений кусков атласов - (atlas index, chunk (x, y))
 		+ chunkOffsetXLength * overallChunksCount
 		+ chunkOffsetYLength * overallChunksCount;
 
@@ -398,10 +421,37 @@ std::tuple<char*, int> pack(int atlasLength, char* atlasBuffer, unsigned int* of
 		bufferLength++;
 
 	int* buffer = (int*)malloc(bufferLength);
-	memset(buffer, 0, bufferLength);
+	if (buffer != NULL)
+	{
+		printf("!= NULL");
+		memset(buffer, 0, bufferLength);
+	}
 
+
+	int metaLength = bit_converter::GetInt(prefixBuffer, 0);
+	printf("metaLength = %d\n", metaLength);
+	metaLength = bit_converter::GetInt((char*)buffer, 1);
+	printf("metaLength2 = %d\n", metaLength);
 	unsigned int bitIndex = 8;
+	for (size_t i = 0; i < prefixLength; i++)
+	{
+		if (bitIndex == 8)
+		{
+			printf("1st byte source: %d\n", (int)prefixBuffer[0]);
+			printf("1st byte before: %d\n", (int)buffer[1]);
+		}
+		bitIndex = bitwiseWrite(buffer, bitIndex, prefixBuffer[i], 8);
+		if (bitIndex == 16)
+			printf("1st byte after: %d\n", (int)buffer[1]);
+
+	}
+	metaLength = bit_converter::GetInt((char*)buffer, 1);
+	printf("metaLength3 = %d\n", metaLength);
+
+	printf("atlasLength1 = %d\n", atlasLength);
+	printf("bitIndex = %d, byteIndex = %d\n", bitIndex, bitIndex / 8);
 	bitIndex = bitwiseWrite(buffer, bitIndex, atlasLength, 32);
+	printf("atlasLength2 = %d, byteIndex = %d\n", bit_converter::GetInt((char*)buffer, (bitIndex / 8) - 4), (bitIndex / 8) - 4);
 	bitIndex = bitwiseWrite(buffer, bitIndex, spritesCount, 32);
 	bitIndex = bitwiseWrite(buffer, bitIndex, maxChunksInSpriteCountLength, 16);
 
@@ -434,6 +484,7 @@ std::tuple<char*, int> pack(int atlasLength, char* atlasBuffer, unsigned int* of
 
 	//Записываем чанки
 
+	offsetSoFar = 0;
 	for (size_t i = 0; i < spritesCount; i++)
 	{
 		int chunksInSpriteCount = 0;
@@ -450,8 +501,14 @@ std::tuple<char*, int> pack(int atlasLength, char* atlasBuffer, unsigned int* of
 		}
 
 		bitIndex = bitwiseWrite(buffer, bitIndex, chunksInSpriteCount, maxChunksInSpriteCountLength);
+		offsetSoFar += spriteWidths[i] * spriteHeights[i];
 	}
+	printf("bufferLengthInBits = %d\n", bufferLengthInBits);
+	printf("bitIndex before chunks writing: %d\n", bitIndex);
+	printf("atlasLengthLength = %d, chunkOffsetXLength = %d, chunkOffsetYLength = %d\n", atlasLengthLength, chunkOffsetXLength, chunkOffsetYLength);
 
+	overallChunksCount = 0;
+	offsetSoFar = 0;
 	for (size_t i = 0; i < spritesCount; i++)
 	{
 		for (size_t x = 0; x < spriteWidths[i]; x++)
@@ -461,13 +518,18 @@ std::tuple<char*, int> pack(int atlasLength, char* atlasBuffer, unsigned int* of
 				int pixelIndex = offsetSoFar + x * spriteHeights[i] + y;
 				if (offsetsBuffer[pixelIndex] != 0)
 				{
-					bitIndex = bitwiseWrite(buffer, bitIndex, offsetsBuffer[pixelIndex], atlasLengthLength);
+					bitIndex = bitwiseWrite(buffer, bitIndex, offsetsBuffer[pixelIndex] - 1, atlasLengthLength);
 					bitIndex = bitwiseWrite(buffer, bitIndex, x, chunkOffsetXLength);
+					//printf("i = %zd, x = %zd, y = %zd, bitIndex = %d, chunkOffsetYLength = %d\n", i, x, y, bitIndex, chunkOffsetYLength);
 					bitIndex = bitwiseWrite(buffer, bitIndex, y, chunkOffsetYLength);
+					overallChunksCount++;
 				}
 			}
 		}
+		offsetSoFar += spriteWidths[i] * spriteHeights[i];
 	}
-	 
+	printf("overallChunksCount (2) = %d\n", overallChunksCount);
+	printf("bitIndex after chunks writing: %d\n", bitIndex);
+
 	return { (char*)buffer, bufferLength };
 }

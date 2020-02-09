@@ -7,6 +7,8 @@
 #include "bit_converter.h"
 #include <iostream>
 #include <assert.h>
+#include "format_packer.h"
+#include <fstream>
 
 using namespace std;
 
@@ -1334,7 +1336,9 @@ __global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsig
 
 int main()
 {
-	string path = "P:\\U\\Some2DGame\\Cuda\\info\\data.bytes";
+	cudaDeviceReset();
+
+	string path = "P:\\U\\Some2DGame\\Cuda\\info\\new-data.bytes";
 	tuple<char*, int> blobTuple = file_reader::readFile(path);
 	char* blob = get<0>(blobTuple);
 	int blobLength = get<1>(blobTuple);
@@ -1514,8 +1518,6 @@ int main()
 	}
 
 
-	printf("Starting post gpu processing...\n");
-
 	/*char* atlas = (char*)malloc(atlasSize);
 	char* offsets = (char*)malloc(offsetsSize);
 	cudaMemcpy(atlas, deviceAtlasPtr, atlasSize, cudaMemcpyDeviceToHost);
@@ -1523,52 +1525,14 @@ int main()
 	unsigned int* altasLength;
 	cudaMemcpy(altasLength, atlasLengthDevice, sizeof(unsigned int), cudaMemcpyDeviceToHost);*/
 
-	unsigned int* altasLength;
+	unsigned int* altasLength = (unsigned int*)malloc(sizeof(unsigned int));
 	cudaMemcpy(altasLength, atlasLengthDevice, sizeof(unsigned int), cudaMemcpyDeviceToHost);
 
-	printf("atlas length is %d\n", altasLength[0]);
-	//printf("atlas length is %d\n", altasLength[0]);
+	char* atlasPtr = (char*)malloc(atlasSize);
+	cudaMemcpy(atlasPtr, deviceAtlasPtr, atlasSize, cudaMemcpyDeviceToHost);
+	unsigned int* offsetsPtr = (unsigned int*)malloc(offsetsSize);
+	cudaMemcpy(offsetsPtr, deviceOffsetsPtr, offsetsSize, cudaMemcpyDeviceToHost);
 
-	/*free(offsets);
-	free(atlas);*/
-
-	////testing...
-	//int* gpuResults = (int*)malloc(scoresCount * sizeof(int));
-	//cudaMemcpy(gpuResults, deviceScoresPtr, scoresCount * sizeof(int), cudaMemcpyDeviceToHost);
-	//int spriteTestIndex = 0;
-	//int sizingTestIndex = 0;
-
-	//int testOffsetIndex = spriteTestIndex * sizingsCount + sizingTestIndex;
-	//int voidOffset = voidMapsOffsets[testOffsetIndex];
-	//int resultOffset = workingByteOffsets[testOffsetIndex];
-
-	//short testSpriteWidth = spriteWidths[spriteTestIndex];
-	//short testSpriteHeight = spriteHeights[spriteTestIndex];
-	//short testSizingWidth = sizingWidths[sizingTestIndex];
-	//short testSizingHeight = sizingHeights[sizingTestIndex];
-	//short workingWidth = testSpriteWidth - testSizingWidth;
-	//short workingHeight = testSpriteHeight - testSizingHeight;
-
-	//int testCount = scoresCount;
-	/*std::cout << "First " << testCount << " voids:\n";
-	for (size_t i = 0; i < 100; i++)
-	{
-		int x = i / workingHeight;
-		int y = i % workingHeight;
-		std::cout << i << " (" << x << "," << y << ") : voidsBlob = " << ((voidsBlob[voidOffset + i / 8] >> (i % 8)) & 1) << ", results = " << gpuResults[resultOffset + i] << "\n";
-	}
-	for (size_t i = testCount - 100; i < testCount; i++)
-	{
-		int x = i / workingHeight;
-		int y = i % workingHeight;
-		std::cout << i << " (" << x << "," << y << ") : voidsBlob = " << ((voidsBlob[voidOffset + i / 8] >> (i % 8)) & 1) << ", results = " << gpuResults[resultOffset + i] << "\n";
-	}*/
-
-
-	//int* cpuResults = (int*)malloc(scoresCount * sizeof(int));
-
-
-	//testing...
 
 	cudaFree(deviceRgbaDataPtr);
 	cudaFree(deviceVoidsPtr);
@@ -1584,14 +1548,39 @@ int main()
 
 	cudaFree(deviceWorkingSpriteOffsetsPtr);
 	cudaFree(atlasLengthDevice);
+	printf("7\n");
 
 
-	//free(gpuResults);
-	//free(cpuResults);
+	printf("atlas length is %d\n", altasLength[0]);
+
+	std::tuple<char*, int> bufferAndLength = format_packer::pack(altasLength[0], atlasPtr, offsetsPtr, spritesCount, spriteWidths, spriteHeights, blob, metaLength + sizeof(int));
+
+	char* buffer = get<0>(bufferAndLength);
+	int bufferLength = get<1>(bufferAndLength);
+
+	std::ofstream ofile("format.bytes", std::ios::binary);
+	ofile.write(buffer, bufferLength);
+
+	printf("bufferLength = %d\n", bufferLength);
+
+	//printf("atlas length is %d\n", altasLength[0]);
+
+
+	//free(buffer);
+	printf("1\n");
+
+	free(offsetsPtr);
+	printf("2\n");
+	free(atlasPtr);
+	printf("3\n");
+	free(altasLength);
+	printf("4\n");
 	free(blob);
 
+	printf("8\n");
 
-	//printf("ok\n");
+	cudaDeviceReset();
+	printf("9\n");
 
 	return 0;
 }

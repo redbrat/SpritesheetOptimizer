@@ -790,8 +790,35 @@ public class Optimizer : EditorWindow
             }
         }
 
+        drawParsingCuda();
+
         Repaint();
     }
+
+    //Parsing cuda START
+
+    private static TextAsset _importedFromCuda;
+
+    private void drawParsingCuda()
+    {
+        var newImportedFromCuda = EditorGUILayout.ObjectField(_importedFromCuda, typeof(TextAsset), false) as TextAsset;
+        if (newImportedFromCuda != _importedFromCuda)
+            _importedFromCuda = newImportedFromCuda;
+
+        if (_importedFromCuda != default && GUILayout.Button("Parse Cuda"))
+        {
+            var bytes = _importedFromCuda.bytes;
+            Debug.LogError($"bytes length = {bytes.Length}");
+
+            var metaLength = BitConverter.ToInt32(bytes, 1);
+            Debug.LogError($"metaLength = {metaLength}");
+
+            var metaText = Encoding.UTF8.GetString(bytes, 5, metaLength);
+            Debug.Log($"metaText = {metaText}");
+        }
+    }
+
+    //Parsing cuda FINISH
 
     private void writeBit(List<byte> bitsContainer, long bitsCounter, int bit)
     {
