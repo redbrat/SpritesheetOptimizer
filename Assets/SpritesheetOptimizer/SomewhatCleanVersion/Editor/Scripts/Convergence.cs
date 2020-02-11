@@ -31,9 +31,5 @@ public class Convergence : ScriptableObject
         _writeAndImportBytes.Invoke(bytes, _getPathByFolderAndName.Invoke(_cudaDbFolder, $"{_getHashOfByteArray.Invoke(bytes)}.bytes"));
     }
 
-    public void Import(byte[] bytes, string folderName)
-    {
-        var parentFolder = _importsFolder.GetOfCreateSubFolder(folderName);
-        _importFromCuda.Invoke(bytes, parentFolder);
-    }
+    public Import Import(byte[] bytes, string folderName) => _importFromCuda.Invoke(bytes, _importsFolder.GetOfCreateSubFolder(folderName));
 }

@@ -6,7 +6,7 @@ using UnityEditor;
 using UnityEngine;
 
 [CreateAssetMenu(fileName = nameof(ImportFromCuda), menuName = CreateAssetMenuPaths.ProductName + "/" + CreateAssetMenuPaths.FunctionsName + "/" + nameof(ImportFromCuda), order = 0)]
-public class ImportFromCuda : MethodBase2<byte[], DefaultAsset>
+public class ImportFromCuda : FunctionBase2<byte[], DefaultAsset, Import>
 {
     [SerializeField]
     private StringValue _atlasName;
@@ -18,15 +18,11 @@ public class ImportFromCuda : MethodBase2<byte[], DefaultAsset>
     [SerializeField]
     private WriteAndImportSprite _writeAndImportSprite;
 
-    public override void Invoke(byte[] bytes, DefaultAsset parent)
+    public override Import Invoke(byte[] bytes, DefaultAsset parent)
     {
-        Debug.LogError($"bytes length = {bytes.Length}");
-
         var metaLength = BitConverter.ToInt32(bytes, 1);
-        Debug.LogError($"metaLength = {metaLength}");
 
         var metaText = Encoding.UTF8.GetString(bytes, 5, metaLength);
-        Debug.Log($"metaText = {metaText}");
 
         var meta = JsonUtility.FromJson<FormatMeta>(metaText);
         var sprites = new Sprite[meta.SpriteInfos.Length];
@@ -64,18 +60,6 @@ public class ImportFromCuda : MethodBase2<byte[], DefaultAsset>
         var chunkOffsetYLength = BitConverter.ToInt16(bytes, currentByteOffset);
         currentByteOffset += 2;
 
-        Debug.Log($"atlasLength = {atlasLength}");
-        Debug.Log($"spritesCount = {spritesCount}");
-        Debug.Log($"maxChunksInSpriteCountLength = {maxChunksInSpriteCountLength}");
-        Debug.Log($"atlasChunkSpriteIndexLength = {atlasChunkSpriteIndexLength}");
-        Debug.Log($"atlasXLength = {atlasXLength}");
-        Debug.Log($"atlasYLength = {atlasYLength}");
-        Debug.Log($"atlasWidthLength = {atlasWidthLength}");
-        Debug.Log($"atlasHeightLength = {atlasHeightLength}");
-        Debug.Log($"atlasLengthLength = {atlasLengthLength}");
-        Debug.Log($"chunkOffsetXLength = {chunkOffsetXLength}");
-        Debug.Log($"chunkOffsetYLength = {chunkOffsetYLength}");
-
         var bitOffset = currentByteOffset * 8;
 
         var atlasTexturesFolder = parent.GetOfCreateSubFolder(_atlasName.Value);
@@ -112,28 +96,6 @@ public class ImportFromCuda : MethodBase2<byte[], DefaultAsset>
 
             atlasTextures[i] = _writeAndImportSprite.Invoke(atlasTexture.EncodeToPNG(), atlasTexturesFolder, $"{i}.png");
             DestroyImmediate(atlasTexture);
-            //var path = Path.Combine(_atlasFolderName, $"{i}.png");
-            //File.WriteAllBytes(path, atlasTexture.EncodeToPNG());
-            //AssetDatabase.ImportAsset(path);
-            //var ti = AssetImporter.GetAtPath(path) as TextureImporter;
-            //ti.textureType = TextureImporterType.Sprite;
-            //ti.filterMode = FilterMode.Point;
-            //ti.alphaIsTransparency = true;
-            //ti.mipmapEnabled = false;
-            //ti.spriteImportMode = SpriteImportMode.Single;
-            //ti.spritePivot = Vector2.down + Vector2.right;
-            //ti.isReadable = true;
-            //ti.crunchedCompression = false;
-            //ti.textureCompression = TextureImporterCompression.Uncompressed;
-
-            //var texSettings = new TextureImporterSettings();
-            //ti.ReadTextureSettings(texSettings);
-            //texSettings.spriteAlignment = (int)SpriteAlignment.BottomLeft;
-            //ti.SetTextureSettings(texSettings);
-
-            //AssetDatabase.ImportAsset(path);
-
-            //atlasTextures[i] = AssetDatabase.LoadAssetAtPath<Sprite>(path);
         }
 
         var optimizedSprites = new OptimizedSprite[spritesCount];
@@ -155,21 +117,32 @@ public class ImportFromCuda : MethodBase2<byte[], DefaultAsset>
                 chunksOffset += chunkOffsetYLength;
 
                 var newChunkStruct = new OptimizedSpriteChunk();
-                newChunkStruct.Sprite = atlasTextures[atlasIndex];
+                var chunkSprite = atlasTextures[atlasIndex];
+                newChunkStruct.Sprite = chunkSprite;
                 newChunkStruct.X = offsetX;
                 newChunkStruct.Y = offsetY;
+                newChunkStruct.Width = Mathf.FloorToInt(chunkSprite.rect.width);
+                newChunkStruct.Heihght = Mathf.FloorToInt(chunkSprite.rect.height);
                 chunkList.Add(newChunkStruct);
             }
             var newOptimizedSprite = (OptimizedSprite)CreateInstance(typeof(OptimizedSprite));
+            newOptimizedSprite.OriginalSprite = sprites[i];
+            newOptimizedSprite.Pivot = meta.SpriteInfos[i].Pivot;
+            newOptimizedSprite.Width = meta.SpriteInfos[i].Size.x;
+            newOptimizedSprite.Height = meta.SpriteInfos[i].Size.y;
             newOptimizedSprite.Chunks = chunkList.ToArray();
             newOptimizedSprite.CreateAsAsset(optimizedSpritesFolder.GetPathToFileName($"{i}.asset"));
+            //newOptimizedSprite.DebugSprite();
+            optimizedSprites[i] = newOptimizedSprite;
             chunkList.Clear();
         }
 
-        var atlas = CreateInstance<Atlas>();
-        atlas.Chunks = atlasTextures;
-        atlas.Name = atlasTexturesFolder.name;
-        atlas.Folder = parent;
-        atlas.CreateAsAsset(parent.GetPathToFileName("atlas.asset"));
+        var import = CreateInstance<Import>();
+        import.Chunks = atlasTextures;
+        import.Folder = parent;
+        import.Meta = meta;
+        import.OptimizedSprites = optimizedSprites;
+        import.CreateAsAsset(parent.GetPathToFileName("import.asset"));
+        return import;
     }
 }

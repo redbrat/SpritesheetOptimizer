@@ -22,7 +22,7 @@ public class GetCudaExport : FunctionBase1<SpritesInfo, byte[]>
         {
             var currentSprite = param.Sprites[i];
             var pathToSprite = AssetDatabase.GetAssetPath(currentSprite);
-            metaList.Add(new FormatMetaSpriteInfo(pathToSprite, currentSprite.name));
+            metaList.Add(new FormatMetaSpriteInfo(pathToSprite, currentSprite.name, currentSprite.pivot, new Vector2Int((int)currentSprite.rect.width, (int)currentSprite.rect.height)));
         }
         var meta = new FormatMeta(metaList.ToArray());
 

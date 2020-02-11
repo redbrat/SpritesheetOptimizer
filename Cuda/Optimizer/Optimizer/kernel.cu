@@ -1338,7 +1338,8 @@ int main()
 {
 	cudaDeviceReset();
 
-	string path = "P:\\U\\Some2DGame\\Cuda\\info\\new-data.bytes";
+	//string path = "P:\\U\\Some2DGame\\Cuda\\info\\new-data.bytes";
+	string path = "P:\\U\\Some2DGame\\Assets\\SpritesheetOptimizer\\SomewhatCleanVersion\\DB\\Exported\\+Ki2mqq6D3CLZJcSc1ukx6aKwsQ=.bytes";
 	tuple<char*, int> blobTuple = file_reader::readFile(path);
 	char* blob = get<0>(blobTuple);
 	int blobLength = get<1>(blobTuple);
