@@ -69,7 +69,7 @@ char getBitsCount(int number)
 	return 31;
 	//return 32;
 }
-unsigned int getMaxInteger(int size)
+int getMaxInteger(int size)
 {
 	/*if (size == 1)
 		return 1;
@@ -263,23 +263,51 @@ unsigned int getMaxInteger(int size)
 	2) value >> availableSpace
 */
 
-unsigned int bitwiseWrite(int* buffer, unsigned int bitIndex, unsigned int value, char valueFrameLength)
+int bitwiseWrite(int* buffer, int bitIndex, int value, char valueFrameLength)
 {
 	int bufferIndex = bitIndex / 32;
 	int startBitIndex = bitIndex % 32;
 	int availableSpace = 32 - startBitIndex;
+	unsigned int uValue;
+	memcpy(&uValue, &value, 4);
+	if (bitIndex <= 40)
+		printf("bitIndex = %d\n", bitIndex);
+	if (bitIndex <= 40)
+		printf("value = %d\n", value);
+	if (bitIndex <= 40)
+		printf("uValue = %u\n", uValue);
+	if (bitIndex <= 40)
+		printf("valueFrameLength = %d\n", valueFrameLength);
 	if (availableSpace < valueFrameLength)
 	{
-		int firstChunk = (value & getMaxInteger(availableSpace)) << startBitIndex;
-		int secondChunk = value >> availableSpace;
+		int firstChunk = (uValue & getMaxInteger(availableSpace)) << startBitIndex;
+		int secondChunk = uValue >> availableSpace;
+		if (bitIndex <= 40)
+			printf("firstChunk = %d\n", firstChunk);
+		if (bitIndex <= 40)
+			printf("secondChunk = %d\n", secondChunk);
+		if (bitIndex <= 40)
+			printf("buffer[bufferIndex] before = %d\n", buffer[bufferIndex]);
+		if (bitIndex <= 40)
+			printf("buffer[bufferIndex + 1] before = %d\n", buffer[bufferIndex + 1]);
 
 		buffer[bufferIndex] |= firstChunk;
 		buffer[bufferIndex + 1] = secondChunk;
+		if (bitIndex <= 40)
+			printf("buffer[bufferIndex] after = %d\n", buffer[bufferIndex]);
+		if (bitIndex <= 40)
+			printf("buffer[bufferIndex + 1] after = %d\n", buffer[bufferIndex + 1]);
 	}
 	else
 	{
-		int theOneChunk = value << startBitIndex;
+		int theOneChunk = uValue << startBitIndex;
+		if (bitIndex <= 40)
+			printf("theOneChunk = %d\n", theOneChunk);
+		if (bitIndex <= 40)
+			printf("buffer[bufferIndex] before = %d\n", buffer[bufferIndex]);
 		buffer[bufferIndex] |= theOneChunk;
+		if (bitIndex <= 40)
+			printf("buffer[bufferIndex] after = %d\n", buffer[bufferIndex]);
 	}
 	return bitIndex + valueFrameLength;
 }
@@ -432,18 +460,32 @@ std::tuple<char*, int> format_packer::pack(int atlasLength, char* atlasBuffer, u
 	printf("metaLength = %d\n", metaLength);
 	metaLength = bit_converter::GetInt((char*)buffer, 1);
 	printf("metaLength2 = %d\n", metaLength);
-	unsigned int bitIndex = 8;
+	int bitIndex = 8;
 	for (size_t i = 0; i < prefixLength; i++)
 	{
-		if (bitIndex == 8)
+		if (bitIndex <= 40)
 		{
+			printf("bitIndex = %d\n", bitIndex);
 			printf("1st byte source: %d\n", (int)prefixBuffer[0]);
-			printf("1st byte before: %d\n", (int)buffer[1]);
+			printf("1st byte before: %d\n", (int)((char*)buffer)[1]);
+			printf("2d byte source: %d\n", (int)prefixBuffer[1]);
+			printf("2d byte before: %d\n", (int)((char*)buffer)[2]);
+			printf("3d byte source: %d\n", (int)prefixBuffer[2]);
+			printf("3d byte before: %d\n", (int)((char*)buffer)[3]);
+			printf("4th byte source: %d\n", (int)prefixBuffer[3]);
+			printf("4th byte before: %d\n", (int)((char*)buffer)[4]);
 		}
-		bitIndex = bitwiseWrite(buffer, bitIndex, prefixBuffer[i], 8);
-		if (bitIndex == 16)
-			printf("1st byte after: %d\n", (int)buffer[1]);
+		bitIndex = bitwiseWrite(buffer, bitIndex, (unsigned char)prefixBuffer[i], 8);
+		/*if (bitIndex == 16)
+			printf("1st byte after: %u\n", (unsigned int)buffer[1]);*/
 
+		if (bitIndex <= 48)
+		{
+			printf("1st byte after: %d\n", (int)((char*)buffer)[1]);
+			printf("2d byte after: %d\n", (int)((char*)buffer)[2]);
+			printf("3d byte after: %d\n", (int)((char*)buffer)[3]);
+			printf("4th byte after: %d\n", (int)((char*)buffer)[4]);
+		}
 	}
 	metaLength = bit_converter::GetInt((char*)buffer, 1);
 	printf("metaLength3 = %d\n", metaLength);

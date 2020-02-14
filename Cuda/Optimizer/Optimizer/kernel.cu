@@ -1240,7 +1240,7 @@ __global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsig
 		//gpuErrchk(cudaPeekAtLastError());
 		cudaDeviceSynchronize();
 
-		if (currentIteration == 94)
+		/*if (currentIteration == 94)
 		{
 			int blocksCount = ceilToInt(workingScoresLength, BLOCK_SIZE);
 			for (size_t i = 0; i < BLOCK_SIZE * blocksCount; i++)
@@ -1252,7 +1252,7 @@ __global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsig
 					printf(" The sizing of %d is (%d, %d)\n", indeciesInfo[OptimizedScoresCount + i], SizingWidths[indeciesInfo[OptimizedScoresCount + i]], SizingHeights[indeciesInfo[OptimizedScoresCount + i]]);
 				}
 			}
-		}
+		}*/
 
 		dim3 bestScoreFindingBlock(BLOCK_SIZE);
 		int currentBestScoresLength = workingScoresLength;
@@ -1339,7 +1339,9 @@ int main()
 	cudaDeviceReset();
 
 	//string path = "P:\\U\\Some2DGame\\Cuda\\info\\new-data.bytes";
-	string path = "P:\\U\\Some2DGame\\Assets\\SpritesheetOptimizer\\SomewhatCleanVersion\\DB\\Exported\\+Ki2mqq6D3CLZJcSc1ukx6aKwsQ=.bytes";
+	//string fileName = "+Ki2mqq6D3CLZJcSc1ukx6aKwsQ=";
+	string fileName = "mmaOTWcpp9q+IosR6E7O4+QNJEI=";
+	string path = "P:\\U\\Some2DGame\\Assets\\SpritesheetOptimizer\\SomewhatCleanVersion\\DB\\Exported\\" + fileName + ".bytes";
 	tuple<char*, int> blobTuple = file_reader::readFile(path);
 	char* blob = get<0>(blobTuple);
 	int blobLength = get<1>(blobTuple);
@@ -1559,7 +1561,7 @@ int main()
 	char* buffer = get<0>(bufferAndLength);
 	int bufferLength = get<1>(bufferAndLength);
 
-	std::ofstream ofile("format.bytes", std::ios::binary);
+	std::ofstream ofile(fileName + ".bytes", std::ios::binary);
 	ofile.write(buffer, bufferLength);
 
 	printf("bufferLength = %d\n", bufferLength);

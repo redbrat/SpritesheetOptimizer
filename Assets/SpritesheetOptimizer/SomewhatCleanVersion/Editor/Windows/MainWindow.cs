@@ -10,7 +10,24 @@ using UnityEngine;
 public class MainWindow : EditorWindow
 {
     private static MainWindow _intance;
-    private Convergence _convergence;
+    private Convergence __convergence;
+    private Convergence _convergence
+    {
+        get
+        {
+            if (__convergence == default)
+            {
+                var convergenceName = default(StringValue);
+                if (!AssetsUtility.FindAsset("ConvergenceName", out convergenceName))
+                    throw new ApplicationException("Can't find ConvergenceName asset! Try to reimport the asset from asset store.");
+                var convergence = default(Convergence);
+                if (!AssetsUtility.FindAsset(convergenceName.Value, out convergence))
+                    throw new ApplicationException("Can't find Convergence asset! Try to reimport the asset from asset store.");
+                __convergence = convergence;
+            }
+            return __convergence;
+        }
+    }
 
     private static Sprite _selectedSprite;
 
@@ -22,15 +39,7 @@ public class MainWindow : EditorWindow
     [MenuItem("Optimizer/Main Window")]
     private static void windowInitializer()
     {
-        var convergenceName = default(StringValue);
-        if (!AssetsUtility.FindAsset("ConvergenceName", out convergenceName))
-            throw new ApplicationException("Can't find ConvergenceName asset! Try to reimport the asset from asset store.");
-        var convergence = default(Convergence);
-        if (!AssetsUtility.FindAsset(convergenceName.Value, out convergence))
-            throw new ApplicationException("Can't find Convergence asset! Try to reimport the asset from asset store.");
-
         _intance = GetWindow<MainWindow>();
-        _intance._convergence = convergence;
     }
 
     private void OnGUI()
