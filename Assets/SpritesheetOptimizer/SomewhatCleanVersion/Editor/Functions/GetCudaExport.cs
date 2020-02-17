@@ -150,12 +150,18 @@ public class GetCudaExport : FunctionBase1<SpritesInfo, byte[]>
                                 break;
                         }
                         writeIntoBitsList(newSpriteSizingVoidMap, bitsCounter++, isVoid ? 0 : 1);
+
+                        if (i == 7 && j == 18)
+                            Debug.Log($"Voidness for {i}th sprite and {j}th sizing on the coordinates {x},{y} is {(isVoid ? 0 : 1)}");
                     }
                 }
 
                 currentVoidOffset += newSpriteSizingVoidMap.Count;
                 voidMapsLength += newSpriteSizingVoidMap.Count;
                 newSpriteVoidMaps.Add(newSpriteSizingVoidMap);
+
+                if (i == 7 && j == 18)
+                    Debug.Log($"Area offset for {i}th sprite and {j}th sizing is {newSpriteVoidMapsOffsets[j]}");
             }
 
             voidMaps.Add(newSpriteVoidMaps);
@@ -277,6 +283,8 @@ public class GetCudaExport : FunctionBase1<SpritesInfo, byte[]>
                 combinedData[currentOffset++] = (byte)(voidMapsOffsets[i][j] >> 8 & 255);
                 combinedData[currentOffset++] = (byte)(voidMapsOffsets[i][j] >> 16 & 255);
                 combinedData[currentOffset++] = (byte)(voidMapsOffsets[i][j] >> 24 & 255);
+                //if (i == 7 && j == 18)
+                //    Debug.Log($"VoidMapOffset = {voidMapsOffsets[i][j]}, first byte of candidateVoidMapGlobal = {voidMaps[i][j]}");
             }
         }
 

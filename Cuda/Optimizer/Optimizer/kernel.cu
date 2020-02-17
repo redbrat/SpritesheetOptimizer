@@ -235,7 +235,7 @@ sizingsCount и spritesCount непонятно что вообще делают
 А вот еще один прием. Нам ведь не нужны особо большие константы. Можно заблокировать кол-во сайзингов, скажем, на 22, и все оставшееся место распределить пропорционально этому кол-ву сайзигнов. Тогда и
 выяснится максимальное кол-во спрайтов. Точнее даже не спрайтов, а в целом пикселей.
 
-Итак, у нас всего пока что занято 12 байтов единичными значениями, все остальное - массивы. Остально состоит из следующего:
+Итак, у нас всего пока что занято 12 байтов единичными значениями, все остальное - массивы. Остальное состоит из следующего:
 22 * (sizeof(short) + 2) - все сайзинги. = 22*4 = 88
 spritesCount * (sizeof(int) + sizeof(int) + sizeof(short) + sizeof(short)) - битовые и байтовые сдвиги спрайтов (int), а также их ширина и высота (short) =  12 * spritesCount
 spritesCount * 22 * sizeof(int) - сдвиги карты пустот. = 88 * spritesCount
@@ -320,21 +320,21 @@ spritesCount получится равным 5453. Уже более-менее.
 22.12.2019
 Ок, динамический параллелизм все же нужен - во-первых тупо не хватает регистров. Даже на подсчет еле-еле наскреб. Ну и главное - иначе невозможно синхронизироваться между блоками. Ну... разве что через цпу
 все делать, но это не вариант. Походу я после переделки проекта потерял какой-то лог, где рассчитывал максимальные размеры констант. А нет, от 12.12 запись это. Пипец давно чето. Ок, походу не хватает
-констакт мемори для компайлера. Надо чуток освободить... сделаем макс. кол-во спрайтов равным 650 вместо 654.
+констант мемори для компайлера. Надо чуток освободить... сделаем макс. кол-во спрайтов равным 650 вместо 654.
 
 Вот тут если что ответ че делать чтобы использовать динамический параллелизм: https://viralfsharp.com/2014/08/17/compiling-cuda-projects-with-dynamic-parallelism-vs-201213/
 
 Ок, с этим разобрались. Сейчас надо сделать первую версию с динамическим параллелизмом. По идее мне надо иметь общее кол-во непрозрачных пикселей и в главном кернеле сделать цикл while, и в нем пока есть
-непрозрачные пиксели делать следующие 3 вещи: считать очки, выделать из них наиболшие, область с наибольшим подсчитанным счетом убирать со всех мап. В этом собственно будет заключаться вся работа. Но третий
+непрозрачные пиксели делать следующие 3 вещи: считать очки, выделить из них наиболшие, область с наибольшим подсчитанным счетом убирать со всех мап. В этом собственно будет заключаться вся работа. Но третий
 пункт слишком массивная задача, пока что хватит реализовать 1 неполный проход цикла - подсчет и поиск наибольшего значения и сравнить его с результатом цпу.
 
 Ок, пришла пора расписать подробно алгоритм поиска наибольшего результата. Как я это сделаю... Грубо говоря, на входе у нас массив интов длиной во всех рабочих пикселей. В каждом элементе массива у нас счет
 данной области. Короче если размер блока у нас как и прежде 1024, то количество блоков должно быть размер массива / 1024. На самом деле тоже непонятно как синхронизироваться между блоками. А, ну да,
 рекурсивно дергать кернел же. Ок. Значит дергаем кернел пока не останется меньше или равно 1024 кандидатов и там уже доделываем все в 1 кернеле.
 
-Ок, с формой понятно. Что с содержанием? Чтобы мне не просто упорядочить некие значения а привязать их к областям, мне надо хранить еще и индексы областей вместе со значениями. Для первой итерации индекс
-можно будет понять из номера блока и номера потока. А дальше надо будет их как-то хранить. Чтобы не делать условия, надо как-то, я думаю вне рекурсии подготовить этот массив индексов. Мне надо что-нибудь
-грузить в шаред память? Да, наверное нет. В пределах 1 варпа обмен данными будет происходить мультикастом, а т.к. обмениваться данными между варпами можно лишь довольно медленно, а между блоками вообще
+Ок, с формой понятно. Что с содержанием? Чтобы мне не просто упорядочить некие значения, а привязать их к областям, мне надо хранить еще и индексы областей вместе со значениями. Для первой итерации индекс
+можно будет понять из номера блока и номера потока. А дальше надо будет их как-то хранить. Чтобы не делать условия, надо как-то, я думаю, вне рекурсии подготовить этот массив индексов. Мне надо что-нибудь
+грузить в шаред память? Да, наверное, нет. В пределах 1 варпа обмен данными будет происходить мультикастом, а т.к. обмениваться данными между варпами можно лишь довольно медленно, а между блоками вообще
 непонятно как обмениваться, то сразу после вычисления победителя в пределах 1 варпа будет происходить перевызов кернела. Тааак... А как я собрался рекурсией вызывать кернел если я не могу гарантировать
 что другие блоки не закончили работать?
 
@@ -368,24 +368,33 @@ spritesCount получится равным 5453. Уже более-менее.
 
 
 13.1.2020
-Ок, я отдохнул пару-тройку дней, и заодно подумал над одним очень странным багом в расслабленном режиме. И, блин, правильно сделал, потому что иначе хрен бы я нашел проблему если бы заставлял себя. Тут дело 
+Ок, я отдохнул пару-тройку дней, и заодно подумал над одним очень странным багом в расслабленном режиме. И, блин, правильно сделал, потому что иначе хрен бы я нашел проблему если бы заставлял себя. Тут дело
 в том, что у нас многие области перекрываются и, т.к. стирание происходит по большей части параллельно, каждый поток думает, что его область еще не стерта, хотя в реальности некоторые из них ошибаются.
 
-Решение мне не особо нравится, но другого я пока не могу придумать. Надо выделить каждому потоку по спрайту. С другой стороны, при кол-ве спрайтов в районе нескольких тысяч оккупация будет практически 
-идеальной. Не оптимально будет только в случае мелких наборов. Но просто иначе никак. Любое деление на части меньше спрайта будет рвать граф пикселей, а вся логика этого алгоритма построена на связанности 
-этого графа. Разве что разделить граф, но потом еще пройтись дополнительно по району границ. Но это слишком сложно, оставим для неближайшего будушего. !!!ДАЛЬНЕЕ БУДУЩЕЕ!!! (буду помечать так, чтобы потом 
+Решение мне не особо нравится, но другого я пока не могу придумать. Надо выделить каждому потоку по спрайту. С другой стороны, при кол-ве спрайтов в районе нескольких тысяч оккупация будет практически
+идеальной. Не оптимально будет только в случае мелких наборов. Но просто иначе никак. Любое деление на части меньше спрайта будет рвать граф пикселей, а вся логика этого алгоритма построена на связанности
+этого графа. Разве что разделить граф, но потом еще пройтись дополнительно по району границ. Но это слишком сложно, оставим для неближайшего будушего. !!!ДАЛЬНЕЕ БУДУЩЕЕ!!! (буду помечать так, чтобы потом
 было легко найти).
 
 ...чуть позже
-Так, ок, еще одна важная деталь, которая вообще не очевидна. Нам надо не только запрещать стирать исхоюную область, но и "повреждать" ее! Т.е. такое вполне может быть, что другая область находится внутри 
+Так, ок, еще одна важная деталь, которая вообще не очевидна. Нам надо не только запрещать стирать исходную область, но и "повреждать" ее! Т.е. такое вполне может быть, что другая область находится внутри
 исходиной и стирая ее мы повредим исходную и не сможем больше валидно проверять. Вот блин!
 
 ...еще попозже
-Ок, починил конечно, но все равно в самом конце несовпадение - вместо двух областей по 1 пикселю у меня 1 область 2х2. Общая сумма у этих двух вариантов одинаковая, поэтому я даже дальше не стал 
-разбираться, почему не совпадает - упорядочивание я на шарповой стороне не контролирую. Поэтому, думаю, можно принять это за успех, а исправить это потом с помобщью более совершенного подсчета очков - 
+Ок, починил конечно, но все равно в самом конце несовпадение - вместо двух областей по 1 пикселю у меня 1 область 2х2. Общая сумма у этих двух вариантов одинаковая, поэтому я даже дальше не стал
+разбираться, почему не совпадает - упорядочивание я на шарповой стороне не контролирую. Поэтому, думаю, можно принять это за успех, а исправить это потом с помобщью более совершенного подсчета очков -
 сейчас, конечно, там наиболее простой вариант, в котором многое не учитывается.
 
 Следующий этап - надо сделать отсылаемый обратно клиенту пакет.
+
+
+15.2.2020
+Ок, прошло больше месяца, и первая итерация завершена. Блять, ну надо же, не может быть... Короче пора заниматься оптимизацией и вообще вспоминать все что я собирался сделать когда делал алгоритм. Первое -
+используем войдмапы. В VoidOffsets у нас константы-оффсеты войд-бит для... точно, voids. Там у нас хранится в данный момент 650 * 22 * спрайто-зайзового размера битовых войдмап.
+
+
+16.2.2020
+Ок, я нифига не помню, и\или не понимаю. Надо начать с того, что еще раз проверить что мы правильно читаем войдмапы.
 */
 
 
@@ -558,14 +567,23 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 		//} //Проверили правильность апрсинга войдмап
 
 
-		//for (i = 0; i < numberOfTimesWeNeedToLoadVoid; i++)// - КЭШ
+		//if (blockIdx.x == 7 && blockIdx.z == 18 && threadIdx.x == 0)
 		//{
-		//	temp = i * BLOCK_SIZE + threadIdx.x;
-		//	if (temp >= candidateVoidAreaBitSquare)
-		//		continue;
-		//	cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + temp] = candidateVoidMapGlobal[temp];
-		//	//candidateVoidMap[voidByteAddress] = voids[SpriteBitOffsets[candidateIndex]];
+		//	printf("Void offset: %d\n", VoidOffsets[blockIdx.x * SizingsCount + blockIdx.z]);
+		//	printf("candidateIndex * SizingsCount + blockIdx.z: %d\n", blockIdx.x * SizingsCount + blockIdx.z);
+		//	printf("VoidOffsets[0]: %d\n", VoidOffsets[0]);
 		//}
+		////Проверили правильность смещения войдмап
+
+
+		for (i = 0; i < numberOfTimesWeNeedToLoadVoid; i++)// - КЭШ
+		{
+			temp = i * BLOCK_SIZE + threadIdx.x;
+			if (temp >= candidateVoidAreaBitSquare)
+				continue;
+			cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + temp] = candidateVoidMapGlobal[temp];
+			//candidateVoidMap[voidByteAddress] = voids[SpriteBitOffsets[candidateIndex]];
+		}
 
 		__syncthreads(); //Обязательна синхронизация для того, чтобы потоки, которые не выполняли загрузку в шаред-память, не начали с этой шаред памятью работать, пока другие в нее еще не все загрузили, ибо результат - непредсказуем.
 
@@ -581,13 +599,16 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 		//} //Проверил, работает
 
 
+
 		//if (blockIdx.x == 7 && blockIdx.z == 18 && threadIdx.x < (SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z]) * (SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z]))
 		//{
-		//	int candidateX = threadIdx.x / (SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z]);
-		//	int candidateY = threadIdx.x % (SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z]);
+		//	int candidateX = threadIdx.x / (SpriteHeights[blockIdx.x] - SizingHeights[blockIdx.z] + 1);
+		//	int candidateY = threadIdx.x % (SpriteHeights[blockIdx.x] - SizingHeights[blockIdx.z] + 1);
 		//	printf("	void (%d, %d): %d\n", candidateX, candidateY, cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + threadIdx.x / 8] >> threadIdx.x % 8 & 1);
 		//} //Проверили правильность парсинга войдмап
 		//return;
+
+
 
 		/*if (threadIdx.x == 0)
 			printf("candidateIndex = %d, blocx = %d\n", candidateIndex, blockIdx.x);
@@ -606,9 +627,9 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 			int ourWorkingY = ourWorkingPixelIndex % ourWorkingHeight;
 			/*if (taskIndex == 0)
 				results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] = 0;*/
-			//int coincidences = 0; //Значения меньше 0 - повторы
+				//int coincidences = 0; //Значения меньше 0 - повторы
 
-			//int score = 1;
+				//int score = 1;
 			temp = 0;
 			size_t x;
 			size_t y;
@@ -673,14 +694,35 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 				printf("r(%d) = %d\n", ourWorkingPixelIndex, rgbaData[SpriteByteOffsets[blockIdx.x] + ourWorkingX * SpriteHeights[blockIdx.x] + ourWorkingY]);
 			return;*/
 
+			//printf("1\n");
 			for (size_t candidateWorkingX = 0; candidateWorkingX < candidateWorkingWidth; candidateWorkingX++)
 			{
 				for (size_t candidateWorkingY = 0; candidateWorkingY < candidateWorkingHeight; candidateWorkingY++)
 				{
 					int candidatePixelIndex = candidateWorkingX * candidateWorkingHeight + candidateWorkingY;
 					//int candidatePixelIndex = fmaf(candidateWorkingX, candidateWorkingHeight, candidateWorkingY);
-					/*if (cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + candidatePixelIndex / 8] >> candidatePixelIndex % 8 & 1 == 0)
-						break;*/
+					//if (candidateIndex == 7 && blockIdx.z == 18)
+					//{
+					//	//printf("	!!void (%d, %d): %d, %d\n", candidateWorkingX, candidateWorkingY, ((cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1), 666);
+					//	/*printf("	!!void (%d, ", candidateWorkingX);
+					//	printf("%d): ", candidateWorkingY);
+					//	printf("%d\n", ((cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1));*/
+					//	//printf("%d, %d, %d\n", (int)candidateWorkingX, (int)candidateWorkingY, (int)((cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1));
+					//	continue;
+					//}
+					//if (cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + candidatePixelIndex / 8] >> candidatePixelIndex % 8 & 1 == 0)
+					if ((int)((cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1) == 0)
+					{
+						//printf("void filtered\n");
+						continue;
+					}
+
+					//int voidMapIndex = candidateWorkingX * (SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z]) + candidateWorkingY;
+					//if ((cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + voidMapIndex / 8] >> (voidMapIndex % 8)) & 1 == 0) //Пустота
+					//{
+					//	printf("void filtered\n");
+					//	continue;
+					//}
 
 					bool isTheSame = true;
 					for (x = 0; x < SizingWidths[blockIdx.z]; x++)
@@ -984,26 +1026,69 @@ __global__ void findTheBestScore(unsigned int* scores, unsigned int* indecies, u
 /*
 	Ок, для удаления области из данных нам надо всего лишь пройтись по всем данным 1 раз - тривиально. И область виннера никогда не меняется. Она задана извне 1 раз, соответственно изменениям подвержены
 	только переменные области кандидата.
+
+	Ок, чтобы обновить войдмапы, нам не нужно проходиться по width и height. Нам нужны лишь координаты самой области
 */
 
-__device__ void erase(unsigned char* rgbaData, unsigned int spriteIndex, short x, short y, short sizingWidth, short sizingHeight, bool verbose)
+__device__ void erase(unsigned char* rgbaData, unsigned char* voids, unsigned int spriteIndex, unsigned int sizingIndex, short x, short y, short sizingWidth, short sizingHeight, bool verbose)
 {
+	for (size_t currentSizingIndex = sizingIndex; currentSizingIndex < SizingsCount; currentSizingIndex++)
+	{
+		int spriteSizeVoidOffset = VoidOffsets[spriteIndex * SizingsCount + currentSizingIndex];
+		unsigned char* currentSpriteSizeVoids = voids + spriteSizeVoidOffset;
+		int currentSizingWidth = SizingWidths[currentSizingIndex];
+		int currentSizingHeight = SizingHeights[currentSizingIndex];
+
+		/*if (verbose)
+			printf("erasing %d (%d, %d) from sprite %d and sizing %d (void offset %d)\n", (int)currentSizingIndex, currentSizingWidth, currentSizingHeight, spriteIndex, sizingIndex, spriteSizeVoidOffset);*/
+
+		int diffWidth = sizingWidth - currentSizingWidth;
+		int diffHeight = sizingHeight - currentSizingHeight;
+		if (diffWidth < 0 || diffHeight < 0) //Это может быть, например, если сайзинг у насс 8,7 а мы спустились на 7,8 - пропускаем этот сайзинг.
+			continue;
+		/*printf("diffWidth = %d\n", diffWidth);
+		printf("diffHeight = %d\n", diffHeight);
+		if (diffWidth < 0)
+			printf("diffWidth < 0, currentSizingIndex = %d (%d, %d), sizingIndex = %d (%d, %d)", (int)currentSizingIndex, currentSizingWidth, currentSizingHeight, sizingIndex, sizingWidth, sizingHeight);
+		if (diffHeight < 0)
+			printf("diffHeight < 0, currentSizingIndex = %d (%d, %d), sizingIndex = %d (%d, %d)", (int)currentSizingIndex, currentSizingWidth, currentSizingHeight, sizingIndex, sizingWidth, sizingHeight);*/
+
+		for (size_t xx = 0; xx <= diffWidth; xx++)
+		{
+			//printf("xxx\n");
+			for (size_t yy = 0; yy <= diffHeight; yy++)
+			{
+				//printf("yyy\n");
+				int voidMapIndex = (x + xx) * (SpriteHeights[spriteIndex] - currentSizingHeight + 1) + y + yy;
+				/*if (verbose)
+				{
+					int was = currentSpriteSizeVoids[voidMapIndex / 8];
+					currentSpriteSizeVoids[voidMapIndex / 8] &= ~(1 << (voidMapIndex % 8));
+					int became = currentSpriteSizeVoids[voidMapIndex / 8];
+					printf("	erasing at %d,%d. Was %d, became %d\n", (int)(x + xx), (int)(y + yy), (int)((was >> (voidMapIndex % 8)) & 1), (int)((became >> (voidMapIndex % 8)) & 1));
+				}
+				else*/
+					currentSpriteSizeVoids[voidMapIndex / 8] &= ~(1 << (voidMapIndex % 8));
+			}
+		}
+	}
+
 	for (size_t xx = 0; xx < sizingWidth; xx++)
 	{
 		for (size_t yy = 0; yy < sizingHeight; yy++)
 		{
 			int pixelIndex = (x + xx) * SpriteHeights[spriteIndex] + y + yy;
-			if (verbose)
-			{
-				printf("%d\n", x + xx);
-				printf("%d\n", y + yy);
-				printf("%d\n", rgbaData[SpriteByteOffsets[spriteIndex] + pixelIndex]);
-				printf("%d\n", rgbaData[ByteLineLength + SpriteByteOffsets[spriteIndex] + pixelIndex]);
-				printf("%d\n", rgbaData[ByteLineLength * 2 + SpriteByteOffsets[spriteIndex] + pixelIndex]);
-				printf("%d\n", rgbaData[ByteLineLength * 3 + SpriteByteOffsets[spriteIndex] + pixelIndex]);
-				printf("\n");
-				//printf("Verbose erasing: (%d, %d) = (%d, %d, %d, %d), test = %d\n", x + xx, y + yy, rgbaData[SpriteByteOffsets[spriteIndex] + pixelIndex], rgbaData[ByteLineLength + SpriteByteOffsets[spriteIndex] + pixelIndex], rgbaData[ByteLineLength * 2 + SpriteByteOffsets[spriteIndex] + pixelIndex], rgbaData[ByteLineLength * 3 + SpriteByteOffsets[spriteIndex] + pixelIndex], 121212);
-			}
+			//if (verbose)
+			//{
+			//	printf("%d\n", x + xx);
+			//	printf("%d\n", y + yy);
+			//	printf("%d\n", rgbaData[SpriteByteOffsets[spriteIndex] + pixelIndex]);
+			//	printf("%d\n", rgbaData[ByteLineLength + SpriteByteOffsets[spriteIndex] + pixelIndex]);
+			//	printf("%d\n", rgbaData[ByteLineLength * 2 + SpriteByteOffsets[spriteIndex] + pixelIndex]);
+			//	printf("%d\n", rgbaData[ByteLineLength * 3 + SpriteByteOffsets[spriteIndex] + pixelIndex]);
+			//	printf("\n");
+			//	//printf("Verbose erasing: (%d, %d) = (%d, %d, %d, %d), test = %d\n", x + xx, y + yy, rgbaData[SpriteByteOffsets[spriteIndex] + pixelIndex], rgbaData[ByteLineLength + SpriteByteOffsets[spriteIndex] + pixelIndex], rgbaData[ByteLineLength * 2 + SpriteByteOffsets[spriteIndex] + pixelIndex], rgbaData[ByteLineLength * 3 + SpriteByteOffsets[spriteIndex] + pixelIndex], 121212);
+			//}
 			rgbaData[SpriteByteOffsets[spriteIndex] + pixelIndex] = 0;
 			rgbaData[ByteLineLength + SpriteByteOffsets[spriteIndex] + pixelIndex] = 0;
 			rgbaData[ByteLineLength * 2 + SpriteByteOffsets[spriteIndex] + pixelIndex] = 0;
@@ -1019,7 +1104,7 @@ __device__ bool doOverlap(short x1, short y1, short w1, short h1, short x2, shor
 	if (y1 >= y2 + h2 || y2 >= y1 + h1)
 		return false;
 	return true;
-	
+
 	//// If one rectangle is on left side of other 
 	//if (l1.x > r2.x || l2.x > r1.x)
 	//	return false;
@@ -1031,7 +1116,7 @@ __device__ bool doOverlap(short x1, short y1, short w1, short h1, short x2, shor
 	//return true;
 }
 
-__global__ void stripTheWinnerAreaFromData(unsigned char* rgbaData, unsigned int winnerSpriteIndex, unsigned short winnerX, unsigned short winnerY, unsigned short winnerWidth, unsigned short winnerHeight, unsigned int atlasIndex, unsigned int* offsets, unsigned int* numbersOfStrippings)
+__global__ void stripTheWinnerAreaFromData(unsigned char* rgbaData, unsigned char* voids, unsigned int winnerSpriteIndex, unsigned int winnerSizing, unsigned short winnerX, unsigned short winnerY, unsigned short winnerWidth, unsigned short winnerHeight, unsigned int atlasIndex, unsigned int* offsets, unsigned int* numbersOfStrippings)
 {
 	short candidateWorkingWidth = SpriteWidths[blockIdx.x] - winnerWidth + 1;
 	short candidateWorkingHeight = SpriteHeights[blockIdx.x] - winnerHeight + 1;
@@ -1095,7 +1180,7 @@ __global__ void stripTheWinnerAreaFromData(unsigned char* rgbaData, unsigned int
 			//чтобы не повредить изначальную область.
 			if (isTheSame && (blockIdx.x != winnerSpriteIndex || !doOverlap(winnerX, winnerY, winnerWidth, winnerHeight, candidateWorkingX, candidateWorkingY, winnerWidth, winnerHeight)))
 			{
-				erase(rgbaData, blockIdx.x, candidateWorkingX, candidateWorkingY, winnerWidth, winnerHeight, false);
+				erase(rgbaData, voids, blockIdx.x, winnerSizing, candidateWorkingX, candidateWorkingY, winnerWidth, winnerHeight, false);
 				/*for (size_t x = 0; x < winnerWidth; x++)
 				{
 					for (size_t y = 0; y < winnerHeight; y++)
@@ -1239,6 +1324,7 @@ __global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsig
 		}
 		//gpuErrchk(cudaPeekAtLastError());
 		cudaDeviceSynchronize();
+		//return;
 
 		/*if (currentIteration == 94)
 		{
@@ -1302,7 +1388,7 @@ __global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsig
 
 		dim3 bestAreaStrippingBlock(1); //Мда, а что поделать....
 		dim3 bestAreaStrippingGrid(SpritesCount); //Нам здесь не нужно учитывать сайзинги. А раз так, кол-во блоков будет равно просто кол-ву спрайтов.
-		stripTheWinnerAreaFromData << <bestAreaStrippingGrid, bestAreaStrippingBlock >> > (rgbaData, indeciesInfo[0], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight, currentIteration, offsets, spritesCountSizedArray);
+		stripTheWinnerAreaFromData << <bestAreaStrippingGrid, bestAreaStrippingBlock >> > (rgbaData, voids, indeciesInfo[0], indeciesInfo[OptimizedScoresCount], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight, currentIteration, offsets, spritesCountSizedArray);
 		cudaDeviceSynchronize();
 		unsigned int strippedAreasCount = 0;
 		for (size_t i = 0; i < SpritesCount; i++)
@@ -1312,7 +1398,7 @@ __global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsig
 		{
 			printf("erasing the last area: %d, %d, %d, %d, %d. Before that strippedAreasCount = %d, test = %d\n", indeciesInfo[0], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight, strippedAreasCount, 123124);
 		}
-		erase(rgbaData, indeciesInfo[0], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight, currentIteration == 94); //После того, как стерли все совпадения с победителем, стираем и самого победителя
+		erase(rgbaData, voids, indeciesInfo[0], indeciesInfo[OptimizedScoresCount], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight, true); //После того, как стерли все совпадения с победителем, стираем и самого победителя
 		offsets[SpriteByteOffsets[indeciesInfo[0]] + winnerAreaX * SpriteHeights[indeciesInfo[0]] + winnerAreaY] = currentIteration + 1;
 		printf("strippedAreasCount = %d\n", (strippedAreasCount + 1) * winnersOpaquePixelsCount); //+1, потому что победителя мы стираем отдельно и он тоже считается
 
@@ -1325,9 +1411,9 @@ __global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsig
 		/*if (opaquePixelsCount <= 0)
 			break;*/
 
-		//break;
-		/*if (currentIteration > 19)
-			break;*/
+			//break;
+			/*if (currentIteration > 19)
+				break;*/
 	}
 	printf("The End! opaquePixelsCount = %d.\n", opaquePixelsCount);
 
@@ -1367,6 +1453,9 @@ int main()
 	cudaMemcpyToSymbol(SizingWidths, sizingWidths, sizingsLineLength);
 	cudaMemcpyToSymbol(SizingHeights, sizingHeights, sizingsLineLength);
 
+	/*for (size_t i = 0; i < sizingsCount; i++)
+		printf("Sizing #%d: %d,%d\n", i, sizingWidths[i], sizingHeights[i]);
+	return;*/
 
 	char* registryBlob = sizingsBlob + sizingsBlobLenght;
 	int registryBlobLength = spritesCount * REGISTRY_STRUCTURE_LENGTH; //регистр на данный момент состоит из 2 шортов и 2 интов, длина структуры задается через REGISTRY_STRUCTURE_LENGTH
