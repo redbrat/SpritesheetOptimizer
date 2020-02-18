@@ -414,8 +414,17 @@ spritesCount получится равным 5453. Уже более-менее.
 будет заняться. А пока что легче сделать поспрайтовое условие - оно будет нормально работать если в первой половине будет примерно столько же пискелей сколько во второй. Можно в принципе об этом заботиться на
 этапе упаковки.
 
-Шикарно! Просто шикарно. Ускорились очень хорошо - до 160 сек!! Это с обеими оптимизациями. Можно конечно попробовать их по-отдельности чисто для теста, хотя я уверен, что результат будет хуже.
+Шикарно! Просто шикарно. Ускорились очень хорошо - до 163 сек!! Это с обеими оптимизациями. Можно конечно попробовать их по-отдельности чисто для теста, хотя я уверен, что результат будет хуже.
+
+Да, протестировал - стандартная оптимизация повторов (1) - 215 сек. Оптимизация №2 без стандартной - 205 сек.
+
+Ок. Элементарные способы оптимизации я вроде бы исчерапал. Дальше надо, мне кажется, переходить на болеее масштабные тест-кейсы - хотя бы 1-мегапиксельные (пока что все тестирую на нарезанной 256х256 текстуре), и 
+уже на ее примере смотреть какая там производительность и какие примерно усилия требуются.
 */
+
+#define RGBA_FLAGS_UTILIZING false
+#define REPEAT_OPTIMIZATION_1 true
+#define REPEAT_OPTIMIZATION_2 true
 
 
 #define BLOCK_SIZE 1024
@@ -427,7 +436,6 @@ spritesCount получится равным 5453. Уже более-менее.
 #define DATA_STRUCTURE_LENGTH 4
 #define RESERVED_DATA_LENGHT 2
 #define INDECIES_INFO_LENGHT 8
-#define RGBA_FLAGS_UTILIZING false
 
 #define MAX_FLAGS_LENGTH_FOR_SPRITE 8192 //Для 256х256 спрайта он именно такой
 
@@ -569,7 +577,16 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 	работала. Так что игнорим все спрайты что до нас - если мы повтор, мы просто не выиграем у не-повтора из спрайта до нас. Эта оптимизация будет работать без второй половины? Да, будет. На самом деле она может работать и самостоятельно, если убрать условие и просто всегда
 	начинать с собственного спрайта. Но в этом случае для спрайтов, находящихся в первой половине, возможно, будет производиться ненужная работа - они никогда не узнают, если они повторы, и поэтому будут в любом случае обрабатывать большую часть бд, хотя могли бы отдыхать.
 	*/
-	for (size_t candidateIndex = blockIdx.x >= SpritesCount / 2 ? blockIdx.x : 0; candidateIndex < SpritesCount; candidateIndex++)
+
+	/*
+	Если у нас включены обе оптимизации - оставляем REPEAT_OPTIMIZATION_1 хотябы какое-то место для работы (первую половину БД). Если этого не делать то REPEAT_OPTIMIZATION_1 никогда не сработает, т.к. у нее условие, что кандидатская область находится до нашей.
+	Если включена REPEAT_OPTIMIZATION_1, но отключена REPEAT_OPTIMIZATION_2, то проходиться мы будем всегда от начала и до конца всю бд.
+	Если включена REPEAT_OPTIMIZATION_2, но отключена REPEAT_OPTIMIZATION_1, то мы всегда игнорим все спрайты, что шли до нашего, независимо от такого какой индекс у нашего спрайта.
+	*/
+	
+	i = REPEAT_OPTIMIZATION_2 ? (REPEAT_OPTIMIZATION_1 ? (blockIdx.x >= SpritesCount / 2 ? blockIdx.x : 0) : blockIdx.x) : 0;
+
+	for (size_t candidateIndex = i; candidateIndex < SpritesCount; candidateIndex++)
 	{
 		int candidateWorkingWidth = SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z] + 1;
 		int candidateWorkingHeight = SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z] + 1;
@@ -678,13 +695,13 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 			int ourWorkingX = (ourWorkingPixelIndex / ourWorkingHeight);
 			int ourWorkingY = ourWorkingPixelIndex % ourWorkingHeight;
 
-			if (results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] < 0)
+			if (REPEAT_OPTIMIZATION_1 && results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingPixelIndex)] < 0)
 				continue;
 
 			bool isRepeat = false;
 
 			/*if (taskIndex == 0)
-				results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] = 0;*/
+				results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingPixelIndex)] = 0;*/
 				//int coincidences = 0; //Значения меньше 0 - повторы
 
 			//Считаем счет. Мда.
@@ -794,15 +811,15 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 					break;
 			}
 
-			if (isRepeat)
-				results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] = -1;
+			if (REPEAT_OPTIMIZATION_1 && isRepeat)
+				results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingPixelIndex)] = -1;
 			else
 			{
-				results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] += coincidences * temp;
+				results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingPixelIndex)] += coincidences * temp;
 				if (taskIndex == 0) //У каждого треда может быть много заданий. Нет смысла записывать много раз одни и те же данные.
 				{
-					indeciesInfo[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] = blockIdx.x;
-					indeciesInfo[OptimizedScoresCount + (workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] = blockIdx.z;
+					indeciesInfo[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingPixelIndex)] = blockIdx.x;
+					indeciesInfo[OptimizedScoresCount + (workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingPixelIndex)] = blockIdx.z;
 				}
 			}
 		}
