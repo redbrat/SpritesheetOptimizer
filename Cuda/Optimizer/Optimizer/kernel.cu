@@ -395,6 +395,20 @@ spritesCount получится равным 5453. Уже более-менее.
 
 16.2.2020
 Ок, я нифига не помню, и\или не понимаю. Надо начать с того, что еще раз проверить что мы правильно читаем войдмапы.
+
+
+18.2.2020
+Ок, все вроде бы наконец-то более-менее хорошо. Процесс наладился, как работает все вспомнил, некоторые очень странные глюки поняты и исправлены. Удалось сократить вермя выполнения более, чем вдвое с помощью 
+самый элементарных оптимизаций - с 723 секунд до 354:
+
+723 -> 565 (voidmaps) -> 594 (flags loading) -> flags utilizing (r&g) (635) -> alpha minor optimization (563) -> flags loading and utilizing off (447 nice...) -> self void testing (354!!)
+
+Теперь, я помню, была еще одна оптимизация, которую я отложил. Что-то не совсем тривиальное, про то, что нет смысла проверять какие-то области... Ах да. Что нет смысла проверять вообще что-либо до нас. Так ли 
+это? Если область до нас... Да, вон от 16.12.2019 объясняется. Но там вроде ошибка. Если мы будем игнорить все до нашего спрайта, мы никогда не узнаем о том, что хоть кто-то повтор, потому что чтобы это узнать, 
+надо проверить спрайты до нас. Но тут есть важное обстоятельство. Смысл проверки на повтор - уменьшение кол-ва работы. Т.е. если мы повтор - перестаем проходиться по всем спрайтам. Но если наш спрайт находится 
+где-то во второй половине бд, нам надо будет пройти половину бд только чтобы понять что мы не повтор и дальше уже допройти бд. Что мы можем в этом случае сделать? Если спрайт находится в первой половине - он 
+может узнать что он повтор рано и отключиться. Если во второй - поздно, поэтому выигрыш маленький от проверки и выгоднее заигнорить все до нас и начать с нас, правильно? Если мы повтор, мы просто не выиграем по 
+счету. Вроде логично. Ок, попробую, но походу у меня пока вообще никакая проверка на повтор не реализована, надо заняться.
 */
 
 
@@ -541,6 +555,8 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 
 	//int sizingSquare = SizingWidths[blockIdx.z] * SizingHeights[blockIdx.z];
 
+
+	//ОК, почему мы проходимся сначала по кандидатским спрайтам, а уже в них - по пикселям нашего спрайта? Потому что если мы сначала будем проходиться по пикселям, то каждый кандидат будет загружен такое кол-во раз, какое кол-во пикселей обрабатывает каждый тред.
 	for (size_t candidateIndex = 0; candidateIndex < SpritesCount; candidateIndex++)
 	{
 		int candidateWorkingWidth = SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z] + 1;
@@ -641,6 +657,11 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 			int ourWorkingPixelIndex = taskIndex * BLOCK_SIZE + threadIdx.x;
 			if (ourWorkingPixelIndex >= (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z] + 1) * ourWorkingHeight)
 				break;
+
+			/*if ((int)((cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + ourWorkingPixelIndex / 8] >> (ourWorkingPixelIndex % 8)) & 1) == 0)
+				continue;*/
+			if ((int)((voids + VoidOffsets[blockIdx.x * SizingsCount + blockIdx.z])[ourWorkingPixelIndex / 8] >> (ourWorkingPixelIndex % 8) & 1) == 0)
+				continue;
 
 			int ourWorkingX = (ourWorkingPixelIndex / ourWorkingHeight);
 			int ourWorkingY = ourWorkingPixelIndex % ourWorkingHeight;
