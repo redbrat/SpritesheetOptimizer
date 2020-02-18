@@ -398,17 +398,23 @@ spritesCount получится равным 5453. Уже более-менее.
 
 
 18.2.2020
-Ок, все вроде бы наконец-то более-менее хорошо. Процесс наладился, как работает все вспомнил, некоторые очень странные глюки поняты и исправлены. Удалось сократить вермя выполнения более, чем вдвое с помощью 
-самый элементарных оптимизаций - с 723 секунд до 354:
+Ок, все вроде бы наконец-то более-менее хорошо. Процесс наладился, как работает все вспомнил, некоторые очень странные глюки поняты и исправлены. Удалось сократить вермя выполнения более чем вдвое с помощью
+самых элементарных оптимизаций - с 723 секунд до 354:
 
 723 -> 565 (voidmaps) -> 594 (flags loading) -> flags utilizing (r&g) (635) -> alpha minor optimization (563) -> flags loading and utilizing off (447 nice...) -> self void testing (354!!)
 
-Теперь, я помню, была еще одна оптимизация, которую я отложил. Что-то не совсем тривиальное, про то, что нет смысла проверять какие-то области... Ах да. Что нет смысла проверять вообще что-либо до нас. Так ли 
-это? Если область до нас... Да, вон от 16.12.2019 объясняется. Но там вроде ошибка. Если мы будем игнорить все до нашего спрайта, мы никогда не узнаем о том, что хоть кто-то повтор, потому что чтобы это узнать, 
-надо проверить спрайты до нас. Но тут есть важное обстоятельство. Смысл проверки на повтор - уменьшение кол-ва работы. Т.е. если мы повтор - перестаем проходиться по всем спрайтам. Но если наш спрайт находится 
-где-то во второй половине бд, нам надо будет пройти половину бд только чтобы понять что мы не повтор и дальше уже допройти бд. Что мы можем в этом случае сделать? Если спрайт находится в первой половине - он 
-может узнать что он повтор рано и отключиться. Если во второй - поздно, поэтому выигрыш маленький от проверки и выгоднее заигнорить все до нас и начать с нас, правильно? Если мы повтор, мы просто не выиграем по 
+Теперь, я помню, была еще одна оптимизация, которую я отложил. Что-то не совсем тривиальное, про то, что нет смысла проверять какие-то области... Ах да. Что нет смысла проверять вообще что-либо до нас. Так ли
+это? Если область до нас... Да, вон от 16.12.2019 объясняется. Но там вроде ошибка. Если мы будем игнорить все до нашего спрайта, мы никогда не узнаем о том, что хоть кто-то повтор, потому что чтобы это узнать,
+надо проверить спрайты до нас. Но тут есть важное обстоятельство. Смысл проверки на повтор - уменьшение кол-ва работы. Т.е. если мы повтор - перестаем проходиться по всем спрайтам. Но если наш спрайт находится
+где-то во второй половине бд, нам надо будет пройти половину бд только чтобы понять что мы не повтор и дальше уже допройти бд. Что мы можем в этом случае сделать? Если спрайт находится в первой половине - он
+может узнать что он повтор рано и отключиться. Если во второй - поздно, поэтому выигрыш маленький от проверки и выгоднее заигнорить все до нас и начать с нас, правильно? Если мы повтор, мы просто не выиграем по
 счету. Вроде логично. Ок, попробую, но походу у меня пока вообще никакая проверка на повтор не реализована, надо заняться.
+
+Делать попиксельное условие трудно - нужно иметь обратную мапу диапазонов, чтобы исходя из глобального индекса пикселя понять с какого спрайта нам начинать. Можно это сделать, но как-нибудь потом, когда нечем
+будет заняться. А пока что легче сделать поспрайтовое условие - оно будет нормально работать если в первой половине будет примерно столько же пискелей сколько во второй. Можно в принципе об этом заботиться на
+этапе упаковки.
+
+Шикарно! Просто шикарно. Ускорились очень хорошо - до 160 сек!! Это с обеими оптимизациями. Можно конечно попробовать их по-отдельности чисто для теста, хотя я уверен, что результат будет хуже.
 */
 
 
@@ -475,7 +481,7 @@ int hostCeilToInt(int value, int divider)
 		return value / divider + 1;
 }
 
-__global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, unsigned int* results, unsigned int* indeciesInfo)
+__global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, int* results, unsigned int* indeciesInfo)
 {
 	/*if (threadIdx.x == 0)
 		printf("x = %d, z = %d\n", blockIdx.x, blockIdx.z);
@@ -557,7 +563,13 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 
 
 	//ОК, почему мы проходимся сначала по кандидатским спрайтам, а уже в них - по пикселям нашего спрайта? Потому что если мы сначала будем проходиться по пикселям, то каждый кандидат будет загружен такое кол-во раз, какое кол-во пикселей обрабатывает каждый тред.
-	for (size_t candidateIndex = 0; candidateIndex < SpritesCount; candidateIndex++)
+
+	/*
+	Ок, тут будет первая часть оптимизации повторов. Если наш целевой спрайт находится во второй половине БД мы не проверяем первую. Потому что если там что-то есть то мы повтор, а узнаем мы об этом только обработав большую половину бд, т.е. слишком поздно, чтобы оптимизация
+	работала. Так что игнорим все спрайты что до нас - если мы повтор, мы просто не выиграем у не-повтора из спрайта до нас. Эта оптимизация будет работать без второй половины? Да, будет. На самом деле она может работать и самостоятельно, если убрать условие и просто всегда
+	начинать с собственного спрайта. Но в этом случае для спрайтов, находящихся в первой половине, возможно, будет производиться ненужная работа - они никогда не узнают, если они повторы, и поэтому будут в любом случае обрабатывать большую часть бд, хотя могли бы отдыхать.
+	*/
+	for (size_t candidateIndex = blockIdx.x >= SpritesCount / 2 ? blockIdx.x : 0; candidateIndex < SpritesCount; candidateIndex++)
 	{
 		int candidateWorkingWidth = SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z] + 1;
 		int candidateWorkingHeight = SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z] + 1;
@@ -568,7 +580,7 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 		//int candidateHeight = SpriteHeights[candidateIndex];
 		//int candidateSquare = SpriteWidths[candidateIndex] * SpriteHeights[candidateIndex];
 
-		__syncthreads(); // - это очень важно, ок? Без этой синхронизации, некоторые треды будут опережать другие и начинать грузить в шаред мемори новые куски данных, хотя другие треды все еще хотят юзать старую память.
+		__syncthreads(); // - это очень важно, ок? Без этой синхронизации, некоторые варпы будут опережать другие и начинать грузить в память блока новые куски данных, хотя другие варпы все еще хотят юзать старую память.
 
 
 		if (RGBA_FLAGS_UTILIZING)
@@ -665,6 +677,12 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 
 			int ourWorkingX = (ourWorkingPixelIndex / ourWorkingHeight);
 			int ourWorkingY = ourWorkingPixelIndex % ourWorkingHeight;
+
+			if (results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] < 0)
+				continue;
+
+			bool isRepeat = false;
+
 			/*if (taskIndex == 0)
 				results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] = 0;*/
 				//int coincidences = 0; //Значения меньше 0 - повторы
@@ -761,21 +779,37 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 					}
 
 					if (isTheSame)
+					{
+						if (blockIdx.x > candidateIndex)
+						{
+							isRepeat = true;
+							break;
+						}
+
 						coincidences++;
+					}
 				}
+
+				if (isRepeat)
+					break;
 			}
 
-			results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] += coincidences * temp;
-			if (taskIndex == 0)
+			if (isRepeat)
+				results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] = -1;
+			else
 			{
-				indeciesInfo[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] = blockIdx.x;
-				indeciesInfo[OptimizedScoresCount + (workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] = blockIdx.z;
+				results[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] += coincidences * temp;
+				if (taskIndex == 0) //У каждого треда может быть много заданий. Нет смысла записывать много раз одни и те же данные.
+				{
+					indeciesInfo[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] = blockIdx.x;
+					indeciesInfo[OptimizedScoresCount + (workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingX * ourWorkingHeight + ourWorkingY)] = blockIdx.z;
+				}
 			}
 		}
 	}
 }
 
-__global__ void findTheBestScore(unsigned int* scores, unsigned int* indecies, unsigned int* indeciesInfo, int depth, int currentScoresLength, int allScoresLength)
+__global__ void findTheBestScore(int* scores, unsigned int* indecies, unsigned int* indeciesInfo, int depth, int currentScoresLength, int allScoresLength)
 {
 	/*if (blockIdx.x == 0 && threadIdx.x == 0)
 		printf("depth = %d, currentScoresLength = %d\n", depth, currentScoresLength);*/
@@ -946,7 +980,7 @@ __device__ void erase(unsigned char* rgbaData, unsigned char* voids, unsigned ch
 					printf("	erasing at %d,%d. Was %d, became %d\n", (int)(x + xx), (int)(y + yy), (int)((was >> (voidMapIndex % 8)) & 1), (int)((became >> (voidMapIndex % 8)) & 1));
 				}
 				else*/
-					currentSpriteSizeVoids[voidMapIndex / 8] &= ~(1 << (voidMapIndex % 8));
+				currentSpriteSizeVoids[voidMapIndex / 8] &= ~(1 << (voidMapIndex % 8));
 			}
 		}
 	}
@@ -1190,7 +1224,7 @@ __global__ void stripTheWinnerAreaFromData(unsigned char* rgbaData, unsigned cha
 	//}
 }
 
-__global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, unsigned int* scoresResults, unsigned int* indecies, unsigned int* indeciesInfo, unsigned int workingScoresLength, unsigned int optimizedWorkingScoresLength, char* atlas, unsigned int* offsets, unsigned int* spritesCountSizedArray, unsigned int* atlasLength)
+__global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, int* scoresResults, unsigned int* indecies, unsigned int* indeciesInfo, unsigned int workingScoresLength, unsigned int optimizedWorkingScoresLength, char* atlas, unsigned int* offsets, unsigned int* spritesCountSizedArray, unsigned int* atlasLength)
 {
 	/*printf("main threadx = %d, blockx = %d", threadIdx.x, blockIdx.x);
 	return;*/
@@ -1282,13 +1316,13 @@ __global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsig
 
 		/*if (currentIteration == 94)
 			printf("erasing the last area: %d, %d, %d, %d, %d. Before that strippedAreasCount = %d, test = %d\n", indeciesInfo[0], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight, strippedAreasCount, 123124);*/
-		//printf("BitLineLength = %d\n", (int)BitLineLength);
+			//printf("BitLineLength = %d\n", (int)BitLineLength);
 		erase(rgbaData, voids, rgbaFlags, indeciesInfo[0], indeciesInfo[OptimizedScoresCount], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight, true); //После того, как стерли все совпадения с победителем, стираем и самого победителя
 		offsets[SpriteByteOffsets[indeciesInfo[0]] + winnerAreaX * SpriteHeights[indeciesInfo[0]] + winnerAreaY] = currentIteration + 1;
 		printf("strippedAreasCount = %d\n", (strippedAreasCount + 1) * winnersOpaquePixelsCount); //+1, потому что победителя мы стираем отдельно и он тоже считается
 
 
-		memset(scoresResults, 0, optimizedWorkingScoresLength * sizeof(unsigned int));
+		memset(scoresResults, 0, optimizedWorkingScoresLength * sizeof(int));
 
 		opaquePixelsCount -= (strippedAreasCount + 1) * winnersOpaquePixelsCount;
 		printf("Opaque Pixels Left: %d\n", opaquePixelsCount);
@@ -1479,7 +1513,7 @@ int main()
 	//dim3 block(BLOCK_SIZE);
 	//dim3 grid(spritesCount, 1, sizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
 	//mainKernel << <grid, block >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceResultsPtr);
-	mainKernel << <1, 1 >> > (opaquePixelsCount, (unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceScoresPtr, (unsigned int*)deviceIndeciesPtr, (unsigned int*)deviceIndeciesInfoPtr, scoresCount, optimizedScoresCount, deviceAtlasPtr, (unsigned int*)deviceOffsetsPtr, (unsigned int*)deviceSpritesCountSizedArrayPtr, atlasLengthDevice);
+	mainKernel << <1, 1 >> > (opaquePixelsCount, (unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (int*)deviceScoresPtr, (unsigned int*)deviceIndeciesPtr, (unsigned int*)deviceIndeciesInfoPtr, scoresCount, optimizedScoresCount, deviceAtlasPtr, (unsigned int*)deviceOffsetsPtr, (unsigned int*)deviceSpritesCountSizedArrayPtr, atlasLengthDevice);
 	gpuErrchk(cudaPeekAtLastError());
 	cudaDeviceSynchronize();
 	gpuErrchk(cudaPeekAtLastError());
