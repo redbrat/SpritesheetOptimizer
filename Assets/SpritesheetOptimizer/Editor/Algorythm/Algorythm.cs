@@ -130,13 +130,20 @@ public class Algorythm
     public struct registryStruct
     {
         public int SpritesByteOffset; //С какой позиции в байтовых буфферах начинается данный спрайт
-        //public int SpritesBitOffset; //С какой позиции в битовыйх буфферах начинается данный спрайт
+        public int SpritesBitOffset; //С какой позиции в битовыйх буфферах начинается данный спрайт
         public int WidthAndHeight;
 
-        public registryStruct(int spritesByteOffset/*, int spritesBitOffset*/, int widthAndHeight)
+        public registryStruct(int spritesByteOffset, int spritesBitOffset, int widthAndHeight)
         {
             SpritesByteOffset = spritesByteOffset;
-            //SpritesBitOffset = spritesBitOffset;
+            SpritesBitOffset = spritesBitOffset;
+            WidthAndHeight = widthAndHeight;
+        }
+
+        public registryStruct(int spritesByteOffset, int widthAndHeight)
+        {
+            SpritesByteOffset = spritesByteOffset;
+            SpritesBitOffset = default;
             WidthAndHeight = widthAndHeight;
         }
     }

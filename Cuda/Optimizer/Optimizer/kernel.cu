@@ -402,7 +402,7 @@ spritesCount получится равным 5453. Уже более-менее.
 #define WARP_SIZE 32
 #define DIVERGENCE_CONTROL_CYCLE 128 //Через какое кол-во операций мы проверяем на необходимость ужатия, чтобы избежать дивергенции?
 #define DIVERGENCE_CONTROL_THRESHOLD 32 //Если какое число потоков простаивают надо ужимать? Думаю это значение вряд ли когда-нибудь изменится.
-#define REGISTRY_STRUCTURE_LENGTH 8
+#define REGISTRY_STRUCTURE_LENGTH 12
 #define SIZING_STRUCTURE_LENGTH 4
 #define DATA_STRUCTURE_LENGTH 4
 #define RESERVED_DATA_LENGHT 2
@@ -430,7 +430,7 @@ __constant__ int OptimizedScoresCount;
 __constant__ short SizingWidths[22];
 __constant__ short SizingHeights[22];
 __constant__ int SpriteByteOffsets[650];
-//__constant__ int SpriteBitOffsets[650];
+__constant__ int SpriteBitOffsets[650];
 __constant__ short SpriteWidths[650];
 __constant__ short SpriteHeights[650];
 __constant__ int VoidOffsets[14300];
@@ -487,7 +487,7 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 		//__shared__ char candidateRFlags[MAX_FLAGS_LENGTH_FOR_SPRITE];
 		//__shared__ char candidateGFlags[MAX_FLAGS_LENGTH_FOR_SPRITE];
 		//__shared__ char candidateVoidMap[MAX_FLAGS_LENGTH_FOR_SPRITE];//Экономим регистры
-	__shared__ char cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 5];
+	__shared__ unsigned char cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 5];
 
 	//int numberOfTimesWeNeedToLoadSelf = ceilToInt(SpriteWidths[blockIdx.x] * SpriteHeights[blockIdx.x], 8) / BLOCK_SIZE; // ceilToInt(ceilToInt(SpriteWidths[blockIdx.x] * SpriteHeights[blockIdx.x], 8), BLOCK_SIZE)
 	//if (ceilToInt(SpriteWidths[blockIdx.x] * SpriteHeights[blockIdx.x], 8) % BLOCK_SIZE != 0)
@@ -495,14 +495,45 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 
 	int temp;
 	size_t i;
-	//for (i = 0; i < ceilToInt(ceilToInt(SpriteWidths[blockIdx.x] * SpriteHeights[blockIdx.x], 8), BLOCK_SIZE); i++)// - КЭШ
-	//{
-	//	temp = i * BLOCK_SIZE + threadIdx.x;
-	//	if (temp >= ceilToInt(SpriteWidths[blockIdx.x] * SpriteHeights[blockIdx.x], 8))
-	//		continue;
-	//	cachedBits[temp] = rgbaFlags[SpriteBitOffsets[blockIdx.x] + temp];
-	//	cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE + temp] = rgbaFlags[BitLineLength + SpriteBitOffsets[blockIdx.x] + temp];
-	//}
+	for (i = 0; i < ceilToInt(ceilToInt(SpriteWidths[blockIdx.x] * SpriteHeights[blockIdx.x], 8), BLOCK_SIZE); i++)// - КЭШ
+	{
+		temp = i * BLOCK_SIZE + threadIdx.x;
+		if (temp >= ceilToInt(SpriteWidths[blockIdx.x] * SpriteHeights[blockIdx.x], 8))
+			continue;
+		/*if (i == 0 && blockIdx.x == 7 && blockIdx.z == 0 && threadIdx.x == 0)
+			printf("rgbaFlags[SpriteBitOffsets[blockIdx.x] + temp] = %d\n", rgbaFlags[SpriteBitOffsets[blockIdx.x] + temp]);
+		if (i == 0 && blockIdx.x == 7 && blockIdx.z == 0 && threadIdx.x == 0)
+			printf("cachedBits[0] before = %d\n", cachedBits[0]);*/
+		cachedBits[temp] = rgbaFlags[SpriteBitOffsets[blockIdx.x] + temp];
+		/*if (i == 0 && blockIdx.x == 7 && blockIdx.z == 0 && threadIdx.x == 0)
+			printf("cachedBits[0] after = %d\n", cachedBits[0]);*/
+		cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE + temp] = rgbaFlags[BitLineLength + SpriteBitOffsets[blockIdx.x] + temp];
+	}
+	/*__syncthreads();
+	if (blockIdx.x == 7 && blockIdx.z == 0 && threadIdx.x == 0)
+	{
+		printf("The 0'th byte of rgbaFlags (sprite#0) of R is %d\n", rgbaFlags[SpriteBitOffsets[0]]);
+		printf("The 0'th byte of rgbaFlags (sprite#0) of G is %d\n", rgbaFlags[BitLineLength + SpriteBitOffsets[0]]);
+		printf("The 0'th byte of rgbaFlags (sprite#0) of B is %d\n", rgbaFlags[BitLineLength * 2 + SpriteBitOffsets[0]]);
+		printf("The 0'th byte of rgbaFlags (sprite#0) of A is %d\n", rgbaFlags[BitLineLength * 3 + SpriteBitOffsets[0]]);
+		printf("The 0'th byte of rgbaFlags (sprite#7) of R is %d\n", rgbaFlags[SpriteBitOffsets[7]]);
+		printf("The 0'th byte of rgbaFlags (sprite#7) of G is %d\n", rgbaFlags[BitLineLength + SpriteBitOffsets[7]]);
+		printf("The 0'th byte of rgbaFlags (sprite#7) of B is %d\n", rgbaFlags[BitLineLength * 2 + SpriteBitOffsets[7]]);
+		printf("The 0'th byte of rgbaFlags (sprite#7) of A is %d\n", rgbaFlags[BitLineLength * 3 + SpriteBitOffsets[7]]);
+
+		printf("The 2'th byte of rgbaFlags (sprite#0) of R is %d\n", rgbaFlags[SpriteBitOffsets[0] + 2]);
+		printf("The 2'th byte of rgbaFlags (sprite#0) of G is %d\n", rgbaFlags[BitLineLength + SpriteBitOffsets[0] + 2]);
+		printf("The 2'th byte of rgbaFlags (sprite#0) of B is %d\n", rgbaFlags[BitLineLength * 2 + SpriteBitOffsets[0] + 2]);
+		printf("The 2'th byte of rgbaFlags (sprite#0) of A is %d\n", rgbaFlags[BitLineLength * 3 + SpriteBitOffsets[0] + 2]);
+		printf("The 2'th byte of rgbaFlags (sprite#7) of R is %d\n", rgbaFlags[SpriteBitOffsets[7] + 2]);
+		printf("The 2'th byte of rgbaFlags (sprite#7) of G is %d\n", rgbaFlags[BitLineLength + SpriteBitOffsets[7] + 2]);
+		printf("The 2'th byte of rgbaFlags (sprite#7) of B is %d\n", rgbaFlags[BitLineLength * 2 + SpriteBitOffsets[7] + 2]);
+		printf("The 2'th byte of rgbaFlags (sprite#7) of A is %d\n", rgbaFlags[BitLineLength * 3 + SpriteBitOffsets[7] + 2]);
+
+		printf("Cached 0'th byte of rgbaFlags (sprite#0) of R is %d\n", cachedBits[0]);
+		printf("Cached 0'th byte of rgbaFlags (sprite#0) of G is %d\n", cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE+0]);
+	}
+	return;*/
 
 	int ourWorkingHeight = SpriteHeights[blockIdx.x] - SizingHeights[blockIdx.z] + 1;
 	//int ourWorkingSquare = (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z]) * ourWorkingHeight;
@@ -514,7 +545,6 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 
 	for (size_t candidateIndex = 0; candidateIndex < SpritesCount; candidateIndex++)
 	{
-
 		int candidateWorkingWidth = SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z] + 1;
 		int candidateWorkingHeight = SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z] + 1;
 
@@ -536,16 +566,21 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 		//printf("BitLineLength = %d, ByteLineLength = %d, SpritesCount = %d, SizingsCount = %d\n", BitLineLength, ByteLineLength, SpritesCount, SizingsCount);
 
 		//__syncthreads();
+		__syncthreads(); // - это очень важно, ок? Без этой синхронизации, некоторые треды будут опережать другие и начинать грузить в шаред мемори новые куски данных, хотя другие треды все еще хотят юзать старую память.
 
-		//for (i = 0; i < numberOfTimesWeNeedToLoadCandidate; i++)// - КЭШ
-		//{
-		//	temp = i * BLOCK_SIZE + threadIdx.x;
-		//	if (temp >= candidateBitsSquare)
-		//		continue;
-		//	cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + temp] = rgbaFlags[SpriteBitOffsets[candidateIndex] + temp];
-		//	cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 3 + temp] = rgbaFlags[BitLineLength + SpriteBitOffsets[candidateIndex] + temp];
-		//}
-
+		for (i = 0; i < numberOfTimesWeNeedToLoadCandidate; i++)// - КЭШ
+		{
+			temp = i * BLOCK_SIZE + threadIdx.x;
+			//printf("numberOfTimesWeNeedToLoadCandidate = %d, candidateBitsSquare = %d\n", (int)numberOfTimesWeNeedToLoadCandidate, (int)candidateBitsSquare);
+			if (temp >= candidateBitsSquare)
+				continue;
+			/*if (candidateIndex == 5 && temp == 63)
+				printf("Ok, rgbaFlags[SpriteBitOffsets[5] + 63] = %d\n", (int)rgbaFlags[SpriteBitOffsets[candidateIndex] + temp]);*/
+			cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + temp] = rgbaFlags[SpriteBitOffsets[candidateIndex] + temp];
+			cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 3 + temp] = rgbaFlags[BitLineLength + SpriteBitOffsets[candidateIndex] + temp];
+			/*if (candidateIndex == 5 && temp == 63)
+				printf("Ok, cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 (%d) + 63 (%d)] = %d\n", MAX_FLAGS_LENGTH_FOR_SPRITE * 2, MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + 63, (int)cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + temp]);*/
+		}
 		//int candidateWidthMinusSizing = SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z];
 		//int candidateHeightMinusSizing = SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z];
 		//int candidateVoidAreaSquare = (SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z]) * (SpriteHeights[candidateIndex] - SizingHeights[blockIdx.z]);
@@ -587,7 +622,7 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 
 		__syncthreads(); //Обязательна синхронизация для того, чтобы потоки, которые не выполняли загрузку в шаред-память, не начали с этой шаред памятью работать, пока другие в нее еще не все загрузили, ибо результат - непредсказуем.
 
-		////Проверяем, что все скопировалось правильно. Для этого выбираем случайный спрайт и логируем его флаги. Пускай будет спрайт №7
+		//Проверяем, что все скопировалось правильно. Для этого выбираем случайный спрайт и логируем его флаги. Пускай будет спрайт №7
 		//if (blockIdx.x == 7 && blockIdx.z == 18) //Так мы обойдемся без повторов, только 1 блок будет логировать
 		//{
 		//	if (threadIdx.x < SpriteWidths[blockIdx.x] * SpriteHeights[blockIdx.x])
@@ -694,11 +729,30 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 				printf("r(%d) = %d\n", ourWorkingPixelIndex, rgbaData[SpriteByteOffsets[blockIdx.x] + ourWorkingX * SpriteHeights[blockIdx.x] + ourWorkingY]);
 			return;*/
 
+
+			/*if (candidateIndex == 5 && threadIdx.x == 0)
+				printf("1 Ok, cachedBits[16447] = %d\n", cachedBits[16447]);*/
+			/*bool b9 = false;
+			bool b254 = false;*/
 			//printf("1\n");
 			for (size_t candidateWorkingX = 0; candidateWorkingX < candidateWorkingWidth; candidateWorkingX++)
 			{
 				for (size_t candidateWorkingY = 0; candidateWorkingY < candidateWorkingHeight; candidateWorkingY++)
 				{
+					/*if (cachedBits[16447] == 254 && candidateIndex == 5 && blockIdx.x == 30 && !b254)
+					{
+						b254 = true;
+						printf("4 Ok, cachedBits[16447] became %d at candidateWorkingX = %d and candidateWorkingY = %d\n", (int)cachedBits[16447], (int)candidateWorkingX, (int)candidateWorkingX);
+					}
+					if (cachedBits[16447] == 9 && candidateIndex == 5 && blockIdx.x == 30 && !b9)
+					{
+						b9 = true;
+						printf("5 Ok, cachedBits[16447] became %d at candidateWorkingX = %d and candidateWorkingY = %d\n", (int)cachedBits[16447], (int)candidateWorkingX, (int)candidateWorkingX);
+					}
+
+					if (candidateIndex == 5 && threadIdx.x == 0 && candidateWorkingX == 0 && candidateWorkingY == 0)
+						printf("2 Ok, cachedBits[16447] = %d\n", (int)cachedBits[16447]);*/
+
 					int candidatePixelIndex = candidateWorkingX * candidateWorkingHeight + candidateWorkingY;
 					//int candidatePixelIndex = fmaf(candidateWorkingX, candidateWorkingHeight, candidateWorkingY);
 					//if (candidateIndex == 7 && blockIdx.z == 18)
@@ -732,20 +786,88 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 							i = (ourWorkingX + x) * SpriteHeights[blockIdx.x] + ourWorkingY + y;
 							int candidatePixelIndex = (candidateWorkingX + x) * SpriteHeights[candidateIndex] + candidateWorkingY + y;
 
-							/*if ((cachedBits[ourWorkingPixelIndex / 8] >> (ourWorkingPixelIndex % 8)) & 1 != (cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1)
+							/*
+							Ок, еще одна важная деталь - проверка прозрачных пикселей должна быть ВСЕГДА БЛЕАТЬ ПЕРЕД проверкой цвета.
+							*/
+
+							/*
+							Хм... Если у нас кандидатский пиксель прозрачный и наш прозрачный, то нам конечно неважно, какие там дальше цвета - нам такой пиксель подходит. Но. Если пиксель-кандидат прозрачный, а наш нет, то нам такой пиксель полюбому ведь НЕ подходит, верно?
+							А если кандидатский НЕ прозрачный, а наш прозрачный? Тоже не подходит. В общем прозрачность можно использовать как хороший такой гейт. Прозрачный - continue и не проверяем остальное, иначе - break. Нет, не так. Если обе прозрачности одинаковые, то
+							если одна из них равна 0 - continue, иначе break
+							*/
+
+							/*if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[candidateIndex] + candidatePixelIndex] == 0
+								&& rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + i] == 0)
+								continue;*/
+
+							if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[candidateIndex] + candidatePixelIndex] == rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + i])
+							{
+								if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + i] == 0)
+									continue;
+							}
+							else
 							{
 								isTheSame = false;
 								break;
 							}
 
-							if ((cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE + ourWorkingPixelIndex / 8] >> (ourWorkingPixelIndex % 8)) & 1 != (cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 3 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1)
+							//if ((int)(((int)cachedBits[ourWorkingPixelIndex / 8] >> (ourWorkingPixelIndex % 8)) & 1) != (int)(((int)cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1))
+							if ((int)(((int)cachedBits[(int)i / 8] >> ((int)i % 8)) & 1) != (int)(((int)cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1)) //Эти инты ((int)), оборачивающие выражение вплоть до "& 1" очень важны. Это очень забавно, ха-ха, но без них 1 != 1, прикольненько.
+							{
+								//if (rgbaData[SpriteByteOffsets[blockIdx.x] + i] == rgbaData[SpriteByteOffsets[candidateIndex] + candidatePixelIndex]/* && ourWorkingPixelIndex / 8 != 0 && candidateIndex != 0 && cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8] != 0*/)
+								//{
+								//	printf("Ok, here's an awkward situation: cachedBits[i {=%d} / 8 {=%d}] {=%d} >> ((int)i {=%d} %% 8 {=%d}) {=%d}) & 1 {=%d} != (cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex {=%d} / 8 {=%d}] {=%d} >> (candidatePixelIndex {=%d} %% 8 {=%d}) {=%d}) & 1 {=%d}. While rgbaData[SpriteByteOffsets[blockIdx.x {=%d}] {=%d} + i {=%d}] {=%d} == rgbaData[SpriteByteOffsets[candidateIndex {=%d}] {=%d} + candidatePixelIndex{=%d}] {=%d}\n", (int)i, (int)i / 8, (int)cachedBits[(int)i / 8], (int)i, (int)i % 8, (int)cachedBits[(int)i / 8] >> ((int)i % 8), ((int)cachedBits[(int)i / 8] >> ((int)i % 8)) & 1, (int)candidatePixelIndex, (int)candidatePixelIndex / 8, (int)cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8], (int)candidatePixelIndex, (int)candidatePixelIndex % 8, (int)cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8), ((int)cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1,     (int)blockIdx.x, (int)SpriteByteOffsets[blockIdx.x], (int)i, (int)rgbaData[SpriteByteOffsets[blockIdx.x] + i], (int)candidateIndex, (int)SpriteByteOffsets[candidateIndex], (int)candidatePixelIndex, (int)rgbaData[SpriteByteOffsets[candidateIndex] + candidatePixelIndex]);
+
+								//	/*if (i == 556 && candidatePixelIndex == 505 && blockIdx.x == 30 && candidateIndex == 5)
+								//		printf("Ok. cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 (%d) + candidatePixelIndex (%d) / 8 (%d)] = %d !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", MAX_FLAGS_LENGTH_FOR_SPRITE * 2, (int)candidatePixelIndex, MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8, cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8]);*/
+
+
+								//	//printf("i / 8 = %d !\n", (int)(i / 8));
+								//	//printf("ERROR R! flags are %d and %d. Colors are %d and %d\n", (int)(cachedBits[i / 8] >> (i % 8) & 1), (int)((cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1), (int)rgbaData[SpriteByteOffsets[blockIdx.x] + i], (int)rgbaData[SpriteByteOffsets[candidateIndex] + candidatePixelIndex]);
+								//	//printf("OK. Let's assume, we have the right r flags bytes for both sprites: %d-th sprite (offset %d) and %d-th (offset %d). Then the corresponding bytes (of pixelindexes %d (%d / 8) and %d (%d / 8)) would be %d and %d, %d\n", (int)blockIdx.x, (int)SpriteBitOffsets[blockIdx.x], (int)candidateIndex, (int)SpriteBitOffsets[candidateIndex], (int)(i / 8), (int)i, (int)(/*MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + */candidatePixelIndex / 8), (int)candidatePixelIndex, (int)cachedBits[i / 8], (int)cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8], 667);
+								//}
+								isTheSame = false;
+								break;
+							}
+							if ((int)(((int)cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE + (int)i / 8] >> ((int)i % 8)) & 1) != (int)(((int)cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 3 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1)) //Эти инты ((int)), оборачивающие выражение вплоть до "& 1" очень важны. Это очень забавно, ха-ха, но без них 1 != 1, прикольненько.
+							{
+								//if (rgbaData[SpriteByteOffsets[blockIdx.x] + i] == rgbaData[SpriteByteOffsets[candidateIndex] + candidatePixelIndex]/* && ourWorkingPixelIndex / 8 != 0 && candidateIndex != 0 && cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8] != 0*/)
+								//{
+								//	printf("Ok, here's an awkward situation: cachedBits[i {=%d} / 8 {=%d}] {=%d} >> ((int)i {=%d} %% 8 {=%d}) {=%d}) & 1 {=%d} != (cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex {=%d} / 8 {=%d}] {=%d} >> (candidatePixelIndex {=%d} %% 8 {=%d}) {=%d}) & 1 {=%d}. While rgbaData[SpriteByteOffsets[blockIdx.x {=%d}] {=%d} + i {=%d}] {=%d} == rgbaData[SpriteByteOffsets[candidateIndex {=%d}] {=%d} + candidatePixelIndex{=%d}] {=%d}\n", (int)i, (int)i / 8, (int)cachedBits[(int)i / 8], (int)i, (int)i % 8, (int)cachedBits[(int)i / 8] >> ((int)i % 8), ((int)cachedBits[(int)i / 8] >> ((int)i % 8)) & 1, (int)candidatePixelIndex, (int)candidatePixelIndex / 8, (int)cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8], (int)candidatePixelIndex, (int)candidatePixelIndex % 8, (int)cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8), ((int)cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1,     (int)blockIdx.x, (int)SpriteByteOffsets[blockIdx.x], (int)i, (int)rgbaData[SpriteByteOffsets[blockIdx.x] + i], (int)candidateIndex, (int)SpriteByteOffsets[candidateIndex], (int)candidatePixelIndex, (int)rgbaData[SpriteByteOffsets[candidateIndex] + candidatePixelIndex]);
+
+								//	/*if (i == 556 && candidatePixelIndex == 505 && blockIdx.x == 30 && candidateIndex == 5)
+								//		printf("Ok. cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 (%d) + candidatePixelIndex (%d) / 8 (%d)] = %d !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", MAX_FLAGS_LENGTH_FOR_SPRITE * 2, (int)candidatePixelIndex, MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8, cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8]);*/
+
+
+								//	//printf("i / 8 = %d !\n", (int)(i / 8));
+								//	//printf("ERROR R! flags are %d and %d. Colors are %d and %d\n", (int)(cachedBits[i / 8] >> (i % 8) & 1), (int)((cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1), (int)rgbaData[SpriteByteOffsets[blockIdx.x] + i], (int)rgbaData[SpriteByteOffsets[candidateIndex] + candidatePixelIndex]);
+								//	//printf("OK. Let's assume, we have the right r flags bytes for both sprites: %d-th sprite (offset %d) and %d-th (offset %d). Then the corresponding bytes (of pixelindexes %d (%d / 8) and %d (%d / 8)) would be %d and %d, %d\n", (int)blockIdx.x, (int)SpriteBitOffsets[blockIdx.x], (int)candidateIndex, (int)SpriteBitOffsets[candidateIndex], (int)(i / 8), (int)i, (int)(/*MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + */candidatePixelIndex / 8), (int)candidatePixelIndex, (int)cachedBits[i / 8], (int)cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8], 667);
+								//}
+								isTheSame = false;
+								break;
+							}
+
+							//if ((cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE + ourWorkingPixelIndex / 8] >> (ourWorkingPixelIndex % 8)) & 1 != (cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 3 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1)
+							//{
+							//	/*if (rgbaData[ByteLineLength + SpriteByteOffsets[blockIdx.x] + i] == rgbaData[ByteLineLength + SpriteByteOffsets[candidateIndex] + candidatePixelIndex])
+							//		printf("ERROR G!\n");*/
+							//	isTheSame = false;
+							//	break;
+							//}
+
+
+
+							/*if ((int)(((int)cachedBits[(int)i / 8] >> ((int)i % 8)) & 1) != (int)(((int)cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 2 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1))
 							{
 								isTheSame = false;
 								break;
 							}*/
-							if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[candidateIndex] + candidatePixelIndex] == 0
-								&& rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + i] == 0)
-								continue;
+
+							/*if ((cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE + i / 8] >> (i % 8)) & 1 != (cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 3 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1)
+							{
+								isTheSame = false;
+								break;
+							}*/
 
 							if (rgbaData[SpriteByteOffsets[blockIdx.x] + i] != rgbaData[SpriteByteOffsets[candidateIndex] + candidatePixelIndex])
 							{
@@ -762,11 +884,11 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 								isTheSame = false;
 								break;
 							}
-							if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + i] != rgbaData[ByteLineLength * 3 + SpriteByteOffsets[candidateIndex] + candidatePixelIndex])
+							/*if (rgbaData[ByteLineLength * 3 + SpriteByteOffsets[blockIdx.x] + i] != rgbaData[ByteLineLength * 3 + SpriteByteOffsets[candidateIndex] + candidatePixelIndex])
 							{
 								isTheSame = false;
 								break;
-							}
+							}*/
 						}
 
 						if (!isTheSame)
@@ -793,7 +915,6 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 			}
 			//return;
 		}
-
 		//Возвращаемся после первой итерации.
 
 		//printf("asjdisajiod\n");
@@ -1030,7 +1151,7 @@ __global__ void findTheBestScore(unsigned int* scores, unsigned int* indecies, u
 	Ок, чтобы обновить войдмапы, нам не нужно проходиться по width и height. Нам нужны лишь координаты самой области
 */
 
-__device__ void erase(unsigned char* rgbaData, unsigned char* voids, unsigned int spriteIndex, unsigned int sizingIndex, short x, short y, short sizingWidth, short sizingHeight, bool verbose)
+__device__ void erase(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int spriteIndex, unsigned int sizingIndex, short x, short y, short sizingWidth, short sizingHeight, bool verbose)
 {
 	for (size_t currentSizingIndex = sizingIndex; currentSizingIndex < SizingsCount; currentSizingIndex++)
 	{
@@ -1044,7 +1165,7 @@ __device__ void erase(unsigned char* rgbaData, unsigned char* voids, unsigned in
 
 		int diffWidth = sizingWidth - currentSizingWidth;
 		int diffHeight = sizingHeight - currentSizingHeight;
-		if (diffWidth < 0 || diffHeight < 0) //Это может быть, например, если сайзинг у насс 8,7 а мы спустились на 7,8 - пропускаем этот сайзинг.
+		if (diffWidth < 0 || diffHeight < 0) //Это может быть, например, если сайзинг у нас 8,7 а мы спустились на 7,8 - пропускаем этот сайзинг.
 			continue;
 		/*printf("diffWidth = %d\n", diffWidth);
 		printf("diffHeight = %d\n", diffHeight);
@@ -1093,6 +1214,11 @@ __device__ void erase(unsigned char* rgbaData, unsigned char* voids, unsigned in
 			rgbaData[ByteLineLength + SpriteByteOffsets[spriteIndex] + pixelIndex] = 0;
 			rgbaData[ByteLineLength * 2 + SpriteByteOffsets[spriteIndex] + pixelIndex] = 0;
 			rgbaData[ByteLineLength * 3 + SpriteByteOffsets[spriteIndex] + pixelIndex] = 0;
+
+			rgbaFlags[SpriteBitOffsets[spriteIndex] + pixelIndex / 8] &= ~(1 << (pixelIndex % 8));
+			rgbaFlags[BitLineLength + SpriteBitOffsets[spriteIndex] + pixelIndex / 8] &= ~(1 << (pixelIndex % 8));
+			rgbaFlags[BitLineLength * 2 + SpriteBitOffsets[spriteIndex] + pixelIndex / 8] &= ~(1 << (pixelIndex % 8));
+			rgbaFlags[BitLineLength * 3 + SpriteBitOffsets[spriteIndex] + pixelIndex / 8] &= ~(1 << (pixelIndex % 8));
 		}
 	}
 }
@@ -1116,7 +1242,7 @@ __device__ bool doOverlap(short x1, short y1, short w1, short h1, short x2, shor
 	//return true;
 }
 
-__global__ void stripTheWinnerAreaFromData(unsigned char* rgbaData, unsigned char* voids, unsigned int winnerSpriteIndex, unsigned int winnerSizing, unsigned short winnerX, unsigned short winnerY, unsigned short winnerWidth, unsigned short winnerHeight, unsigned int atlasIndex, unsigned int* offsets, unsigned int* numbersOfStrippings)
+__global__ void stripTheWinnerAreaFromData(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int winnerSpriteIndex, unsigned int winnerSizing, unsigned short winnerX, unsigned short winnerY, unsigned short winnerWidth, unsigned short winnerHeight, unsigned int atlasIndex, unsigned int* offsets, unsigned int* numbersOfStrippings)
 {
 	short candidateWorkingWidth = SpriteWidths[blockIdx.x] - winnerWidth + 1;
 	short candidateWorkingHeight = SpriteHeights[blockIdx.x] - winnerHeight + 1;
@@ -1180,7 +1306,7 @@ __global__ void stripTheWinnerAreaFromData(unsigned char* rgbaData, unsigned cha
 			//чтобы не повредить изначальную область.
 			if (isTheSame && (blockIdx.x != winnerSpriteIndex || !doOverlap(winnerX, winnerY, winnerWidth, winnerHeight, candidateWorkingX, candidateWorkingY, winnerWidth, winnerHeight)))
 			{
-				erase(rgbaData, voids, blockIdx.x, winnerSizing, candidateWorkingX, candidateWorkingY, winnerWidth, winnerHeight, false);
+				erase(rgbaData, voids, rgbaFlags, blockIdx.x, winnerSizing, candidateWorkingX, candidateWorkingY, winnerWidth, winnerHeight, false);
 				/*for (size_t x = 0; x < winnerWidth; x++)
 				{
 					for (size_t y = 0; y < winnerHeight; y++)
@@ -1388,17 +1514,16 @@ __global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsig
 
 		dim3 bestAreaStrippingBlock(1); //Мда, а что поделать....
 		dim3 bestAreaStrippingGrid(SpritesCount); //Нам здесь не нужно учитывать сайзинги. А раз так, кол-во блоков будет равно просто кол-ву спрайтов.
-		stripTheWinnerAreaFromData << <bestAreaStrippingGrid, bestAreaStrippingBlock >> > (rgbaData, voids, indeciesInfo[0], indeciesInfo[OptimizedScoresCount], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight, currentIteration, offsets, spritesCountSizedArray);
+		stripTheWinnerAreaFromData << <bestAreaStrippingGrid, bestAreaStrippingBlock >> > (rgbaData, voids, rgbaFlags, indeciesInfo[0], indeciesInfo[OptimizedScoresCount], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight, currentIteration, offsets, spritesCountSizedArray);
 		cudaDeviceSynchronize();
 		unsigned int strippedAreasCount = 0;
 		for (size_t i = 0; i < SpritesCount; i++)
 			strippedAreasCount += spritesCountSizedArray[i];
 
-		if (currentIteration == 94)
-		{
-			printf("erasing the last area: %d, %d, %d, %d, %d. Before that strippedAreasCount = %d, test = %d\n", indeciesInfo[0], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight, strippedAreasCount, 123124);
-		}
-		erase(rgbaData, voids, indeciesInfo[0], indeciesInfo[OptimizedScoresCount], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight, true); //После того, как стерли все совпадения с победителем, стираем и самого победителя
+		/*if (currentIteration == 94)
+			printf("erasing the last area: %d, %d, %d, %d, %d. Before that strippedAreasCount = %d, test = %d\n", indeciesInfo[0], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight, strippedAreasCount, 123124);*/
+		//printf("BitLineLength = %d\n", (int)BitLineLength);
+		erase(rgbaData, voids, rgbaFlags, indeciesInfo[0], indeciesInfo[OptimizedScoresCount], winnerAreaX, winnerAreaY, sizingWidth, sizingHeight, true); //После того, как стерли все совпадения с победителем, стираем и самого победителя
 		offsets[SpriteByteOffsets[indeciesInfo[0]] + winnerAreaX * SpriteHeights[indeciesInfo[0]] + winnerAreaY] = currentIteration + 1;
 		printf("strippedAreasCount = %d\n", (strippedAreasCount + 1) * winnersOpaquePixelsCount); //+1, потому что победителя мы стираем отдельно и он тоже считается
 
@@ -1426,7 +1551,7 @@ int main()
 
 	//string path = "P:\\U\\Some2DGame\\Cuda\\info\\new-data.bytes";
 	//string fileName = "+Ki2mqq6D3CLZJcSc1ukx6aKwsQ=";
-	string fileName = "mmaOTWcpp9q+IosR6E7O4+QNJEI=";
+	string fileName = "3L1lKIrjiyQGNUbZLCjrm3IBMjQ=";
 	string path = "P:\\U\\Some2DGame\\Assets\\SpritesheetOptimizer\\SomewhatCleanVersion\\DB\\Exported\\" + fileName + ".bytes";
 	tuple<char*, int> blobTuple = file_reader::readFile(path);
 	char* blob = get<0>(blobTuple);
@@ -1460,13 +1585,13 @@ int main()
 	char* registryBlob = sizingsBlob + sizingsBlobLenght;
 	int registryBlobLength = spritesCount * REGISTRY_STRUCTURE_LENGTH; //регистр на данный момент состоит из 2 шортов и 2 интов, длина структуры задается через REGISTRY_STRUCTURE_LENGTH
 	//Записываем регистр на девайс. Они там идут последовательно, сначала байтовые оффсеты потом битовые, потом иксы, потом игрики
-	int registryLineCount = spritesCount * sizingsCount;
+	//int registryLineCount = spritesCount * sizingsCount;
 	int* spriteByteOffsets = (int*)registryBlob;
-	//int* spriteBitOffsets = (int*)(registryBlob + spritesCount * sizeof(int));
-	short* spriteWidths = (short*)(registryBlob + spritesCount * sizeof(int));
-	short* spriteHeights = (short*)(registryBlob + spritesCount * (sizeof(int) + sizeof(short)));
+	int* spriteBitOffsets = (int*)(registryBlob + spritesCount * sizeof(int));
+	short* spriteWidths = (short*)(registryBlob + spritesCount * sizeof(int) * 2);
+	short* spriteHeights = (short*)(registryBlob + spritesCount * (sizeof(int) * 2 + sizeof(short)));
 	cudaMemcpyToSymbol(SpriteByteOffsets, spriteByteOffsets, spritesCount * sizeof(int));
-	//cudaMemcpyToSymbol(SpriteBitOffsets, spriteBitOffsets, spritesCount * sizeof(int));
+	cudaMemcpyToSymbol(SpriteBitOffsets, spriteBitOffsets, spritesCount * sizeof(int));
 	cudaMemcpyToSymbol(SpriteWidths, spriteWidths, spritesCount * sizeof(short));
 	cudaMemcpyToSymbol(SpriteHeights, spriteHeights, spritesCount * sizeof(short));
 
@@ -1523,9 +1648,9 @@ int main()
 	cudaMemcpyToSymbol(ScoresCount, &scoresCount, sizeof(unsigned int)); // Делаем это значение константой
 	unsigned int* workingByteOffsets = (unsigned int*)(rgbaFlags + rgbaFlagsLength + sizeof(unsigned int));
 	unsigned int workingByteOffsetsLength = spritesCount * sizingsCount * sizeof(unsigned int);
-	unsigned int* deviceWorkingByteOffsetsPtr;
+	/*unsigned int* deviceWorkingByteOffsetsPtr;
 	cudaMalloc((void**)&deviceWorkingByteOffsetsPtr, workingByteOffsetsLength);
-	cudaMemcpy(deviceWorkingByteOffsetsPtr, workingByteOffsets, workingByteOffsetsLength, cudaMemcpyHostToDevice);
+	cudaMemcpy(deviceWorkingByteOffsetsPtr, workingByteOffsets, workingByteOffsetsLength, cudaMemcpyHostToDevice);*/
 
 	//После этого у нас там наш замечательный OpaquePixelsCount
 	unsigned int opaquePixelsCount = bit_converter::GetUnsignedInt((char*)(workingByteOffsets + spritesCount * sizingsCount), 0);
@@ -1594,7 +1719,6 @@ int main()
 	//dim3 block(BLOCK_SIZE);
 	//dim3 grid(spritesCount, 1, sizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
 	//mainKernel << <grid, block >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceResultsPtr);
-	printf("scoresCount = %d\n", scoresCount);
 	mainKernel << <1, 1 >> > (opaquePixelsCount, (unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceScoresPtr, (unsigned int*)deviceIndeciesPtr, (unsigned int*)deviceIndeciesInfoPtr, scoresCount, optimizedScoresCount, deviceAtlasPtr, (unsigned int*)deviceOffsetsPtr, (unsigned int*)deviceSpritesCountSizedArrayPtr, atlasLengthDevice);
 	gpuErrchk(cudaPeekAtLastError());
 	cudaDeviceSynchronize();
@@ -1629,7 +1753,7 @@ int main()
 	cudaFree(deviceRgbaDataPtr);
 	cudaFree(deviceVoidsPtr);
 	cudaFree(deviceRgbaFlagsPtr);
-	cudaFree(deviceWorkingByteOffsetsPtr);
+	//cudaFree(deviceWorkingByteOffsetsPtr);
 
 	cudaFree(deviceScoresPtr);
 	cudaFree(deviceIndeciesPtr);

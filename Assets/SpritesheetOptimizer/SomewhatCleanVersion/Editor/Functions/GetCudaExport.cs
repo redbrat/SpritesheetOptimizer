@@ -47,6 +47,7 @@ public class GetCudaExport : FunctionBase1<SpritesInfo, byte[]>
             var widthAndHeight = width << 16 | height;
             var registryEntry = new RegistryStruct();
             registryEntry.SpritesByteOffset = dataList.Count;
+            //registryEntry.SpritesBitOffset = dataList.Count / 8 + (dataList.Count % 8 == 0 ? 0 : 1);
             registryEntry.WidthAndHeight = widthAndHeight;
             registry.Add(registryEntry);
 
@@ -59,6 +60,9 @@ public class GetCudaExport : FunctionBase1<SpritesInfo, byte[]>
                     dataList.Add(val);
                 }
         }
+
+        Debug.Log($"ok, dataList[registry[15].SpritesByteOffset (={registry[15].SpritesByteOffset}) + 119] = {dataList[registry[15].SpritesByteOffset + 119]}");
+        Debug.Log($"ok, dataList[registry[6].SpritesByteOffset (={registry[6].SpritesByteOffset}) + 52] = {dataList[registry[6].SpritesByteOffset + 52]}");
 
         for (int i = 0; i < spritesCount; i++)
         {
@@ -151,8 +155,8 @@ public class GetCudaExport : FunctionBase1<SpritesInfo, byte[]>
                         }
                         writeIntoBitsList(newSpriteSizingVoidMap, bitsCounter++, isVoid ? 0 : 1);
 
-                        if (i == 7 && j == 18)
-                            Debug.Log($"Voidness for {i}th sprite and {j}th sizing on the coordinates {x},{y} is {(isVoid ? 0 : 1)}");
+                        //if (i == 7 && j == 18)
+                        //    Debug.Log($"Voidness for {i}th sprite and {j}th sizing on the coordinates {x},{y} is {(isVoid ? 0 : 1)}");
                     }
                 }
 
@@ -160,8 +164,8 @@ public class GetCudaExport : FunctionBase1<SpritesInfo, byte[]>
                 voidMapsLength += newSpriteSizingVoidMap.Count;
                 newSpriteVoidMaps.Add(newSpriteSizingVoidMap);
 
-                if (i == 7 && j == 18)
-                    Debug.Log($"Area offset for {i}th sprite and {j}th sizing is {newSpriteVoidMapsOffsets[j]}");
+                //if (i == 7 && j == 18)
+                //    Debug.Log($"Area offset for {i}th sprite and {j}th sizing is {newSpriteVoidMapsOffsets[j]}");
             }
 
             voidMaps.Add(newSpriteVoidMaps);
@@ -204,20 +208,39 @@ public class GetCudaExport : FunctionBase1<SpritesInfo, byte[]>
                 }
             }
 
+            if (i == 0 || i == 7)
+            {
+                Debug.Log($"Sprite #{i}, R[0] = {newRFlagsList[0]}");
+                Debug.Log($"Sprite #{i}, G[0] = {newGFlagsList[0]}");
+                Debug.Log($"Sprite #{i}, B[0] = {newBFlagsList[0]}");
+                Debug.Log($"Sprite #{i}, A[0] = {newAFlagsList[0]}");
+                Debug.Log($"Sprite #{i}, R[2] = {newRFlagsList[2]}");
+                Debug.Log($"Sprite #{i}, G[2] = {newGFlagsList[2]}");
+                Debug.Log($"Sprite #{i}, B[2] = {newBFlagsList[2]}");
+                Debug.Log($"Sprite #{i}, A[2] = {newAFlagsList[2]}");
+            }
             rFlags.Add(newRFlagsList);
             gFlags.Add(newGFlagsList);
             bFlags.Add(newBFlagsList);
             aFlags.Add(newAFlagsList);
             var registryEntry = registry[i];
+            registryEntry.SpritesBitOffset = flagsLineLength;
             registry[i] = registryEntry;
             flagsLineLength += newRFlagsList.Count;
         }
+
+        var testedSpriteIndex1 = 15;
+        Debug.Log($"Ok, here's the info about {testedSpriteIndex1}-th Sprite (offset {registry[testedSpriteIndex1].SpritesBitOffset}): R-byte on pixelIndex 119 is {rFlags[testedSpriteIndex1][119 / 8]}");
+        testedSpriteIndex1 = 6;
+        Debug.Log($"Ok, here's the info about {testedSpriteIndex1}-th Sprite (offset {registry[testedSpriteIndex1].SpritesBitOffset}): R-byte on pixelIndex 52 is {rFlags[testedSpriteIndex1][52 / 8]}");
 
         Debug.Log($"opaquePixelsCount = {opaquePixelsCount}");
 
         var registryParalellized = new List<byte>();
         for (int i = 0; i < registry.Count; i++)
             registryParalellized.AddRange(BitConverter.GetBytes(registry[i].SpritesByteOffset));
+        for (int i = 0; i < registry.Count; i++)
+            registryParalellized.AddRange(BitConverter.GetBytes(registry[i].SpritesBitOffset));
         for (int i = 0; i < registry.Count; i++)
             registryParalellized.AddRange(BitConverter.GetBytes((short)(registry[i].WidthAndHeight >> 16 & 65535)));
         for (int i = 0; i < registry.Count; i++)
@@ -263,6 +286,12 @@ public class GetCudaExport : FunctionBase1<SpritesInfo, byte[]>
             combinedData[currentOffset + i] = registryParalellized[i];
         currentOffset += registryParalellized.Count;
 
+        Debug.Log($"registryParalellized[0] = {registryParalellized[0]}");
+        Debug.Log($"registryParalellized[{spritesCount * 4}] = {registryParalellized[spritesCount * 4]}");
+        Debug.Log($"registryParalellized[{spritesCount * 8}] = {registryParalellized[spritesCount * 8]}");
+        Debug.Log($"registryParalellized[{spritesCount * 10}] = {registryParalellized[spritesCount * 10]}");
+
+        Debug.Log($"byteLineLength = {byteLineLength}, currentOffset = {currentOffset}, registryParalellized.Count = {registryParalellized.Count}");
         combinedData[currentOffset++] = (byte)(byteLineLength & 255);
         combinedData[currentOffset++] = (byte)(byteLineLength >> 8 & 255);
         combinedData[currentOffset++] = (byte)(byteLineLength >> 16 & 255);
