@@ -61,8 +61,8 @@ public class GetCudaExport : FunctionBase1<SpritesInfo, byte[]>
                 }
         }
 
-        Debug.Log($"ok, dataList[registry[15].SpritesByteOffset (={registry[15].SpritesByteOffset}) + 119] = {dataList[registry[15].SpritesByteOffset + 119]}");
-        Debug.Log($"ok, dataList[registry[6].SpritesByteOffset (={registry[6].SpritesByteOffset}) + 52] = {dataList[registry[6].SpritesByteOffset + 52]}");
+        //Debug.Log($"ok, dataList[registry[15].SpritesByteOffset (={registry[15].SpritesByteOffset}) + 119] = {dataList[registry[15].SpritesByteOffset + 119]}");
+        //Debug.Log($"ok, dataList[registry[6].SpritesByteOffset (={registry[6].SpritesByteOffset}) + 52] = {dataList[registry[6].SpritesByteOffset + 52]}");
 
         for (int i = 0; i < spritesCount; i++)
         {
@@ -208,17 +208,17 @@ public class GetCudaExport : FunctionBase1<SpritesInfo, byte[]>
                 }
             }
 
-            if (i == 0 || i == 7)
-            {
-                Debug.Log($"Sprite #{i}, R[0] = {newRFlagsList[0]}");
-                Debug.Log($"Sprite #{i}, G[0] = {newGFlagsList[0]}");
-                Debug.Log($"Sprite #{i}, B[0] = {newBFlagsList[0]}");
-                Debug.Log($"Sprite #{i}, A[0] = {newAFlagsList[0]}");
-                Debug.Log($"Sprite #{i}, R[2] = {newRFlagsList[2]}");
-                Debug.Log($"Sprite #{i}, G[2] = {newGFlagsList[2]}");
-                Debug.Log($"Sprite #{i}, B[2] = {newBFlagsList[2]}");
-                Debug.Log($"Sprite #{i}, A[2] = {newAFlagsList[2]}");
-            }
+            //if (i == 0 || i == 7)
+            //{
+            //    Debug.Log($"Sprite #{i}, R[0] = {newRFlagsList[0]}");
+            //    Debug.Log($"Sprite #{i}, G[0] = {newGFlagsList[0]}");
+            //    Debug.Log($"Sprite #{i}, B[0] = {newBFlagsList[0]}");
+            //    Debug.Log($"Sprite #{i}, A[0] = {newAFlagsList[0]}");
+            //    Debug.Log($"Sprite #{i}, R[2] = {newRFlagsList[2]}");
+            //    Debug.Log($"Sprite #{i}, G[2] = {newGFlagsList[2]}");
+            //    Debug.Log($"Sprite #{i}, B[2] = {newBFlagsList[2]}");
+            //    Debug.Log($"Sprite #{i}, A[2] = {newAFlagsList[2]}");
+            //}
             rFlags.Add(newRFlagsList);
             gFlags.Add(newGFlagsList);
             bFlags.Add(newBFlagsList);
@@ -229,10 +229,10 @@ public class GetCudaExport : FunctionBase1<SpritesInfo, byte[]>
             flagsLineLength += newRFlagsList.Count;
         }
 
-        var testedSpriteIndex1 = 15;
-        Debug.Log($"Ok, here's the info about {testedSpriteIndex1}-th Sprite (offset {registry[testedSpriteIndex1].SpritesBitOffset}): R-byte on pixelIndex 119 is {rFlags[testedSpriteIndex1][119 / 8]}");
-        testedSpriteIndex1 = 6;
-        Debug.Log($"Ok, here's the info about {testedSpriteIndex1}-th Sprite (offset {registry[testedSpriteIndex1].SpritesBitOffset}): R-byte on pixelIndex 52 is {rFlags[testedSpriteIndex1][52 / 8]}");
+        //var testedSpriteIndex1 = 15;
+        //Debug.Log($"Ok, here's the info about {testedSpriteIndex1}-th Sprite (offset {registry[testedSpriteIndex1].SpritesBitOffset}): R-byte on pixelIndex 119 is {rFlags[testedSpriteIndex1][119 / 8]}");
+        //testedSpriteIndex1 = 6;
+        //Debug.Log($"Ok, here's the info about {testedSpriteIndex1}-th Sprite (offset {registry[testedSpriteIndex1].SpritesBitOffset}): R-byte on pixelIndex 52 is {rFlags[testedSpriteIndex1][52 / 8]}");
 
         Debug.Log($"opaquePixelsCount = {opaquePixelsCount}");
 
@@ -286,10 +286,10 @@ public class GetCudaExport : FunctionBase1<SpritesInfo, byte[]>
             combinedData[currentOffset + i] = registryParalellized[i];
         currentOffset += registryParalellized.Count;
 
-        Debug.Log($"registryParalellized[0] = {registryParalellized[0]}");
-        Debug.Log($"registryParalellized[{spritesCount * 4}] = {registryParalellized[spritesCount * 4]}");
-        Debug.Log($"registryParalellized[{spritesCount * 8}] = {registryParalellized[spritesCount * 8]}");
-        Debug.Log($"registryParalellized[{spritesCount * 10}] = {registryParalellized[spritesCount * 10]}");
+        //Debug.Log($"registryParalellized[0] = {registryParalellized[0]}");
+        //Debug.Log($"registryParalellized[{spritesCount * 4}] = {registryParalellized[spritesCount * 4]}");
+        //Debug.Log($"registryParalellized[{spritesCount * 8}] = {registryParalellized[spritesCount * 8]}");
+        //Debug.Log($"registryParalellized[{spritesCount * 10}] = {registryParalellized[spritesCount * 10]}");
 
         Debug.Log($"byteLineLength = {byteLineLength}, currentOffset = {currentOffset}, registryParalellized.Count = {registryParalellized.Count}");
         combinedData[currentOffset++] = (byte)(byteLineLength & 255);
