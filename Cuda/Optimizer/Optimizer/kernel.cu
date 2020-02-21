@@ -437,6 +437,82 @@ spritesCount получится равным 5453. Уже более-менее.
 Ок, еще 1 оптимизация - добавление стандартной проверки на альфу в стрипящий метод изменило вывод программы - с 129 итераций сократилось до 127, но в основном все осталось таким же. Я думаю это нормально, в отличие 
 от всех остальных разов когда такое было, потому что до этого я проверял альфу в последнюю очередь, да и действительно не было условия, что при нулевой альфе цвета не важны - это позволит более эффективно паковать. 
 Проверил, импорт в юнити дал такие же верные результаты как и предыдущие версии.
+
+Еще позже в тот же день.
+Ок, с багами вроде бы разобрался, производительность, конечно, пока неудовлетворительная. Но мне кажется, перед этим важнее сделать еще одну вещь - улучшить подсчет очков. У меня есть пара идей.
+
+Во-первых, сейчас у нас слишком много случаев, когда есть большая область, скажем 8х8, и куча совпадений, скажем, 131 (реальный кейс), которые при стриппинге преобразуются лишь в 3 реальных удаленных области. Это, 
+конечно, следствие того, что countScores у нас делает "грязный" счёт - не учитывает удаление областей. Что можно придумать? Ну, делать "чистый" счет невозоможно, сохранив производительность, поэтому сначала я думал 
+сделать какой-то штраф к счету за близость облстей. Скажем, если последнее совпадение было обнаружено за 2 пикселя до текущего - делать штраф, равный 2хКакой-нибудь-сайзинг, но во-первых реализация кажется мне 
+слишком громоздкой, а во-вторых мы же идем параллельно - как в таком случае определить "до"? Потом придумал другое - области не смогут сильно перекрываться при высокой энтропии пикселей. Т.е. если вся область состоит 
+из 1 цвета, то больше вероятности, что эти 131 область, которые мы насчитали - просто куча наложений. Так что нужно делать штраф на монотонность. Это правда может и не сработать против нас, поэтому надо делать это 
+как опцию, чтобы можно было включать-выключать при необходимости. Может в будущем сделать какой-нибудь ферст пасс, анализирующий картинки и проставляющий наилучшие опции.
+
+Ок, вообще-то я тут еще подумал. Совпадения-то случаются вообще-то редко. Мы не проиграем много, если при совпадении пройдемся немного по соседним пикселям и сделаем приблизительную оценку ущерба от наложений. Скажем, 
+в округе области 8х8 обнаружилось еще 15 наложенных областей. По сути у нас тогда из этих 16 областей вырежется 1. Что нужно сделать? Нужно делить счет на 16 % 64, где 16 - кол-во областей всего в округе, а 64 - 
+ - площадь области. Таким образом, каждый из этих 16 областей даст в сумме 1 счет область, что и требуется, ведь вырежется 1 область по факту. Если же областей больше, чем площадь в два раза, то вероятно (но это не 
+точно), что вырежется 2 области. В общем, я думаю, это хорошее приближение. А гулять надо туда-сюда по sizingWidth и sizingHeight во все стороны от целевой области.
+
+Ну и во-вторых, то, что я давно уже задумал - включить в счет себестоимость хранения структуры области. Т.е. чтобы хранить счет у нас тратится память - нужно знать номер спрайта, x, y, width и height. В хорошую погоду 
+это примерно 8 + 6 + 6 + 4 + 4, т. е. 28 бит информации. Эти 28 бит могут хранить область в 1 пиксель или в 64 пикселя. Конечно, выгоднее, если эта область будет хранить 64. Пиксель у нас весит 4 байта - по 1 байту на 
+4 канала цвета. Поэтому эта структура себя окупит, если любая область, пусть даже площадью в 1 пиксель будет представлена хотя бы 2 раза (потому что 32 * 2 > 32 + 28), и не окупит, если любая область, 
+пусть даже площадью в бесконечное кол-во пикселей встретится только 1 раз (потому что бесконечность < бесконечность + 28). Но это плавающее соотношение. Для больших наборов больших спрайтов у нас накладные расходы на 
+хранение могут легко превысить 4 байта.
+
+Короче, нужно добавить все эти соображения в формулу. Мы не можем заранее сказать, какие точно нам потребуются размеры структуры, но можем предположить - x и y не больше, чем размер самого большого спрайта в наборе 
+минус самые маленькие сайзинги. По width и height все немного легче. Почти со 100%-й вероятностью, мы встретим область максимального размера, поэтому берем ее. Ну а с номером чанка атласа немного сложнее - трудно 
+предположить, какое кол-во чанков будет в атласе. Думаю пока можно остановиться на 8 битах, и не сильно ошибиться, а в будущем придумать что-нибудь поумнее.
+
+Итак, у нас есть оценочный размер структуры, допустим - 28. Когда мы обрабатываем область, мы знаем её размер и кол-во совпадений, допустим 4 пикселя * 4 байта = 128 бит и 1 совпадение. При этому кол-во непрозрачных 
+пикселей равно 3. Сейчас счет за 1 область будет рассчитан как 3 * 3 * 3 / 4, и общий счет - умножить на кол-во совпадений. Нам же во-первых надо будет хранить теперь отдельно кол-во совпадений и счет за одну облать. А 
+во-вторых, собственно разделить этот счет на 28 / 128. Так счет будет увеличиваться, если накладные расходы на хранение структуры невелики. Хотя нет, он будет увеличиваться слишком резко, не выражая реальную стоимость.
+Нужно разделить счет на (128 + 28) / 128, вот. Так будет точно. Для 1 пикселя счет урежется почти вдвое. А для 64 пикселей почти не изменится. Я думаю, может даже не стоит хранить счет и кол-во совпадений отдельно. 
+Неважно когда домножать, а надо именно домножать, как-то по-другому будет искусственно - работу свою данный счет выполнит - у двух областей полюбому будет преимущество перед 1 областью.
+
+Ок, я честно искал, перелопатил свои заметки везде, но так и не смог найти объяснения почему именно в кубе мы берем кол-во непрозрачных пикселей для счета. Я просто помню, была веская причина умножать именно 3 раза. 
+Ближайшее, что нашел, это что "Нам важно, чтобы большие по размеру области превалировали над такими же по вкладу в экономию меньшими областями, поэтому дополнительно умножаем на кол-во пикселей области в квадрате". 
+Но мне кажется, такой подход делает счет необъективным. Слишком сильно увеличивает значение больших областей. Отсюда и такие вот проблемы, что я уже жду 3й час, пока там 200-какая-то итерация находит мне 1 "идеальную" 
+большую область, убирабщую 60 пикселей, и только примерно 1 раз из 20 мелкую область, убирающая тысячи пикселей. В общем я, конечно, прав, что счет должен быть прямо пропорционален кол-ву непрозрачных пикселей, но от 
+куба надо избавиться. Я думаю, сейчас, когда заботу о том, чтобы отдавать приоритет большим областям берет на себя штука из предыдущего абзаца, можно просто сделать степень 1. Таким образом что там у нам по формуле? 
+
+(opaquePixelsCount / sizingSquare) * ((32 * sizingSquare) / (32 * sizingSquare + dataStructureSizeBits)) * coincidentsCount
+
+Т.к. мы умножаем и делим на sizingSquare, можно сократить до
+
+opaquePixelsCount * 32 * coincidentsCount / (32 * sizingSquare + dataStructureSizeBits)
+
+Как-то так, надеюсь, моя математика норм.
+
+Еще надо перед тем, как все это делать, добавить тестовый фреймворк - просто инфу о результатах: сколько всего пикселей занимает атлас, сколько областей используется всего в спрайтах. Посчитать в целом вес атласа и 
+областей. Поделить его на общий вес входящих спрайтов. Так сможем в принципе объективно оценивать сжатие.
+
+На самом деле кол-во областей не явно выражает степень сжатия. Нужно считать именно по битам. Получили 3 совпадения с областью - приплюсовали 3 * 28 к общему весу атласа.
+
+
+19.2.2020
+Ок, слегка непонятно, как считать, давай еще раз. Вот у нас есть атлас. Это просто набор спрайтов под порядковыми номерами. Себестоимость области атласа самой по себе - это площадт области на 32 бита.
+
+selftCostOfAtlasArea = atlasChunkWidth * atlasChunkHeight * 32;
+
+Далее - себестоимость чанка оптимизированного спрайта - длина индекса чанка атласа + длина x + длина y.
+
+По сути у нас вся сжатая инфа это атлас и смещения.
+
+21.2.2020
+Как это все хранится на целевой платформе?
+
+1.) Есть спрайт-атлас, там имеет значение только площать спрайт атласа - width * height.
+2.) Есть спрайты, нарезенные из этого спрайт-атласа - структуры размером со спрайт, сколько он занимает на целевой платформе. Минимум - x,y,width,height. На юнити еще всякое разное. Можно создать свой оптимизированный 
+фомрат спрайта.
+3.) И есть наши собственно спрайты - это структура, состоящая из ширины-высоты спрайта - тут уже мы можем и должны оптимизировать - 2 шорта. Пивот пойнта - 2 шорта. И массива чанков - размер указателя на начало массива 
+и дальше уже структуры чанков спрайта - x, y, и номер спрайта в атласе. Вот, собственно, все, что требуется от формата.
+
+Стоп. Все, что взаимодействует со стандартными вызовами движка использует стандартный размер 4 байта. И все наши оптимизации все равно в конечном итоге преобразуются в инты и флоаты. Что конкретно будет использовать 
+4-байтовые данные? Спрайты атласа, из которых состоят оптимизированные спрайты - это вся инфа спрайтов + координаты для каждого чанка, все это будет в 4х-байтах. Т.е., в общем-то, практический все. За исклюечением, 
+возможно, индексов атласа. И то вряд ли. Индекс может и будет храниться компактно, но работа с ним все равно будет вестись в интах. Вообще момент работы довольно исчезающий, по сравнению с хранением, так что может в этом 
+и есть смысл. Пока что, думаю, стоит ориентироваться в своей оценке на худший сценарий, когда все данные будут по 4 байта - все-таки это в идеале не должно сильно влиять.
+
+
 */
 
 #define RGBA_FLAGS_UTILIZING false
@@ -448,7 +524,7 @@ spritesCount получится равным 5453. Уже более-менее.
 #define BLOCK_SIZE 1024
 #define WARP_SIZE 32
 #define DIVERGENCE_CONTROL_CYCLE 128 //Через какое кол-во операций мы проверяем на необходимость ужатия, чтобы избежать дивергенции?
-#define DIVERGENCE_CONTROL_THRESHOLD 32 //Если какое число потоков простаивают надо ужимать? Думаю это значение вряд ли когда-нибудь изменится.
+#define DIVERGENCE_CONTROL_THRESHOLD 32 //Если какое число потоков простаивают надо ужимать? Думаю это значение будет всегда равно кол-ву потоков в варпе.
 #define REGISTRY_STRUCTURE_LENGTH 12
 #define SIZING_STRUCTURE_LENGTH 4
 #define DATA_STRUCTURE_LENGTH 4
@@ -476,6 +552,8 @@ __device__ void cdpAssert(cudaError_t code, const char* file, int line, bool abo
 		if (abort) assert(0);
 	}
 }
+
+__constant__ int EstimatedAreaCost;
 
 __constant__ short SizingsCount;
 __constant__ short SpritesCount;
@@ -1347,6 +1425,10 @@ __global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsig
 	/*printf("main threadx = %d, blockx = %d", threadIdx.x, blockIdx.x);
 	return;*/
 	unsigned int currentIteration = 0;
+	int overallAtlasVolume = 0;
+	int maxAreaWidth = 0;
+	int maxAreaHeight = 0;
+
 	while (opaquePixelsCount > 0/* && currentIteration < 4*/)
 	{
 		printf("Iteration %d (%d left):\n", (int)currentIteration, opaquePixelsCount);
@@ -1418,6 +1500,8 @@ __global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsig
 		int temp = winnersOpaquePixelsCount * winnersOpaquePixelsCount * winnersOpaquePixelsCount;
 		temp = __fdividef(temp, sizingWidth * sizingHeight);
 
+		overallAtlasVolume += sizingWidth * sizingHeight;
+
 		printf("AAAaaaaaaaaaannd the WINNER is %d with the ASTONISHING score of %d (%d areas with the score of %d each)!!!!!!!!!!!!\n", indecies[0], scoresResults[0], scoresResults[0] / temp, temp);
 		printf("Aaaaannd the sprite id of the winner is %d. And the sizing is %d.\n", indeciesInfo[0], indeciesInfo[OptimizedScoresCount]);
 
@@ -1463,7 +1547,76 @@ __global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsig
 	}
 	printf("The End! opaquePixelsCount = %d.\n", opaquePixelsCount);
 
+	printf("SUMMARY\n");
+
 	atlasLength[0] = currentIteration;
+}
+
+int getBitsCount(int number)
+{
+	if (number < 2)
+		return 1;
+	if (number < 4)
+		return 2;
+	if (number < 8)
+		return 3;
+	if (number < 16)
+		return 4;
+	if (number < 32)
+		return 5;
+	if (number < 64)
+		return 6;
+	if (number < 128)
+		return 7;
+	if (number < 256)
+		return 8;
+	if (number < 512)
+		return 9;
+	if (number < 1024)
+		return 10;
+	if (number < 2048)
+		return 11;
+	if (number < 4096)
+		return 12;
+	if (number < 8192)
+		return 13;
+	if (number < 16384)
+		return 14;
+	if (number < 32768)
+		return 15;
+	if (number < 65536)
+		return 16;
+	if (number < 131072)
+		return 17;
+	if (number < 262144)
+		return 18;
+	if (number < 524288)
+		return 19;
+	if (number < 1048576)
+		return 20;
+	if (number < 2097152)
+		return 21;
+	if (number < 4194304)
+		return 22;
+	if (number < 8388608)
+		return 23;
+	if (number < 16777216)
+		return 24;
+	if (number < 33554432)
+		return 25;
+	if (number < 67108864)
+		return 26;
+	if (number < 134217728)
+		return 27;
+	if (number < 268435456)
+		return 28;
+	if (number < 536870912)
+		return 29;
+	if (number < 1073741824)
+		return 30;
+	//if (number < 2_147_483_648) //int range exceeded
+	return 31;
+	//return 32;
 }
 
 int main()
@@ -1517,12 +1670,14 @@ int main()
 	cudaMemcpyToSymbol(SpriteWidths, spriteWidths, spritesCount * sizeof(short));
 	cudaMemcpyToSymbol(SpriteHeights, spriteHeights, spritesCount * sizeof(short));
 
-	/*for (size_t i = 0; i < spritesCount; i++)
-	{
-		printf("SpriteHeights[%d] = %d. SpriteWidths[%d] = %d\n", i, spriteHeights[i], i, spriteWidths[i]);
-	}
-
-	return;*/
+	//int overallPixelCount = 0;
+	//for (size_t i = 0; i < spritesCount; i++)
+	//{
+	//	overallPixelCount += spriteHeights[i] * spriteWidths[i];
+	//	//printf("SpriteHeights[%d] = %d. SpriteWidths[%d] = %d\n", i, spriteHeights[i], i, spriteWidths[i]);
+	//}
+	//return;
+	//printf("overallPixelCount = %d\n", (int)overallPixelCount);
 
 	//Дальше идет длина 1 канала цвета
 	int byteLineLength = bit_converter::GetInt(registryBlob + registryBlobLength, 0);
@@ -1638,6 +1793,24 @@ int main()
 	unsigned int* atlasLengthDevice;
 	cudaMalloc((void**)&atlasLengthDevice, sizeof(unsigned int));
 
+
+	int estimatedAreaCost = 10; //Примерно кол-во областей ставим на 1024, т.е. 10 бит.
+	int maxSpriteWidth = 0;
+	int maxSpriteHeight = 0;
+	for (size_t i = 0; i < spritesCount; i++)
+	{
+		if (maxSpriteWidth < spriteWidths[i])
+			maxSpriteWidth = spriteWidths[i];
+		if (maxSpriteHeight < spriteHeights[i])
+			maxSpriteHeight = spriteHeights[i];
+	}
+	estimatedAreaCost += getBitsCount(maxSpriteWidth - sizingWidths[sizingsCount - 1]);
+	estimatedAreaCost += getBitsCount(maxSpriteHeight - sizingHeights[sizingsCount - 1]);
+	estimatedAreaCost += getBitsCount(sizingWidths[0]); //В 0-х у нас самые большие сайзинги
+	estimatedAreaCost += getBitsCount(sizingHeights[0]);
+	cudaMemcpyToSymbol(EstimatedAreaCost, &estimatedAreaCost, sizeof(int));
+
+
 	//dim3 block(BLOCK_SIZE);
 	//dim3 grid(spritesCount, 1, sizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
 	//mainKernel << <grid, block >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceResultsPtr);
@@ -1691,10 +1864,20 @@ int main()
 
 	printf("atlas length is %d\n", altasLength[0]);
 
-	std::tuple<char*, int> bufferAndLength = format_packer::pack(altasLength[0], atlasPtr, offsetsPtr, spritesCount, spriteWidths, spriteHeights, blob, metaLength + sizeof(int));
+	std::tuple<char*, int, unsigned int> bufferAndLength = format_packer::pack(altasLength[0], atlasPtr, offsetsPtr, spritesCount, spriteWidths, spriteHeights, blob, metaLength + sizeof(int));
 
 	char* buffer = get<0>(bufferAndLength);
 	int bufferLength = get<1>(bufferAndLength);
+	unsigned int compressedSizeInBits = get<2>(bufferAndLength);
+	float compressedSizeInBytes = compressedSizeInBits / (float)8;
+
+
+	int overallPixelsInput = 0;
+	for (size_t i = 0; i < spritesCount; i++)
+		overallPixelsInput += spriteWidths[i] * spriteHeights[i];
+	printf("Input size: %d\n", overallPixelsInput);
+	printf("Compressed size: %f\n", compressedSizeInBytes);
+	printf("Overall compression: %f\n", compressedSizeInBytes / overallPixelsInput);
 
 	std::ofstream ofile(fileName + ".bytes", std::ios::binary);
 	ofile.write(buffer, bufferLength);

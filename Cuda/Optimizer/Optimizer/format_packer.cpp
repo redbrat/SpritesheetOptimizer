@@ -341,7 +341,7 @@ atlasChunkSpriteIndexLength. При этом нельзя просто взят�
 в атласе. Они используются все, поэтому длина этого индекса будет bistCount(atlasLength).
 */
 
-std::tuple<char*, int> format_packer::pack(int atlasLength, char* atlasBuffer, unsigned int* offsetsBuffer, int spritesCount, short* spriteWidths, short* spriteHeights, char* prefixBuffer, int prefixLength)
+std::tuple<char*, int, unsigned int> format_packer::pack(int atlasLength, char* atlasBuffer, unsigned int* offsetsBuffer, int spritesCount, short* spriteWidths, short* spriteHeights, char* prefixBuffer, int prefixLength)
 {
 	unsigned char atlasChunkSpriteIndexLength = 0;
 	unsigned char atlasXLength = 0;
@@ -352,6 +352,8 @@ std::tuple<char*, int> format_packer::pack(int atlasLength, char* atlasBuffer, u
 	unsigned char atlasLengthLength = getBitsCount(atlasLength);
 	unsigned char chunkOffsetXLength = 0;
 	unsigned char chunkOffsetYLength = 0;
+
+	unsigned int overallCompressedSize = 0;
 
 	printf("pack 1\n");
 
@@ -379,8 +381,12 @@ std::tuple<char*, int> format_packer::pack(int atlasLength, char* atlasBuffer, u
 		char chunkHeightLength = getBitsCount(chunkHeight);
 		if (chunkHeightLength > atlasHeightLength)
 			atlasHeightLength = chunkHeightLength;
+
+		overallCompressedSize += chunkWidth * chunkHeight * 32; //Добавляем по 4 байта на пиксель атласа
 	}
 	printf("pack 2\n");
+
+	overallCompressedSize += atlasLength * 30 * 8; //На юнити 1 спрайт на менеджед-стороне занимает в среднем 14.75 байт. Допустим, столько же будет на плюсовой.
 
 	int maxChunksInSpriteCount = 0;
 	int overallChunksCount = 0;
@@ -543,6 +549,7 @@ std::tuple<char*, int> format_packer::pack(int atlasLength, char* atlasBuffer, u
 		}
 
 		bitIndex = bitwiseWrite(buffer, bitIndex, chunksInSpriteCount, maxChunksInSpriteCountLength);
+		overallCompressedSize += (16 + 4) * 8; //Каждый оптимизированный спрайт будет содержать как минимум указатель на массив (16) и размер массива (4) чанков
 		offsetSoFar += spriteWidths[i] * spriteHeights[i];
 	}
 	printf("bufferLengthInBits = %d\n", bufferLengthInBits);
@@ -565,6 +572,10 @@ std::tuple<char*, int> format_packer::pack(int atlasLength, char* atlasBuffer, u
 					//printf("i = %zd, x = %zd, y = %zd, bitIndex = %d, chunkOffsetYLength = %d\n", i, x, y, bitIndex, chunkOffsetYLength);
 					bitIndex = bitwiseWrite(buffer, bitIndex, y, chunkOffsetYLength);
 					overallChunksCount++;
+
+					overallCompressedSize += atlasLengthLength;
+					overallCompressedSize += chunkOffsetXLength;
+					overallCompressedSize += chunkOffsetYLength;
 				}
 			}
 		}
@@ -573,5 +584,5 @@ std::tuple<char*, int> format_packer::pack(int atlasLength, char* atlasBuffer, u
 	printf("overallChunksCount (2) = %d\n", overallChunksCount);
 	printf("bitIndex after chunks writing: %d\n", bitIndex);
 
-	return { (char*)buffer, bufferLength };
+	return { (char*)buffer, bufferLength, overallCompressedSize };
 }

@@ -121,8 +121,6 @@ public class ImportFromCuda : FunctionBase2<byte[], DefaultAsset, Import>
                 newChunkStruct.Sprite = chunkSprite;
                 newChunkStruct.X = offsetX;
                 newChunkStruct.Y = offsetY;
-                newChunkStruct.Width = Mathf.FloorToInt(chunkSprite.rect.width);
-                newChunkStruct.Heihght = Mathf.FloorToInt(chunkSprite.rect.height);
                 chunkList.Add(newChunkStruct);
             }
             var newOptimizedSprite = (OptimizedSprite)CreateInstance(typeof(OptimizedSprite));

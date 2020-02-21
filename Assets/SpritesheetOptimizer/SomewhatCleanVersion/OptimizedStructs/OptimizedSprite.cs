@@ -34,7 +34,7 @@ public class OptimizedSprite : ScriptableObject
         for (int i = 0; i < Chunks.Length; i++)
         {
             var chunk = Chunks[i];
-            if (x >= chunk.X && x < chunk.X + chunk.Width && y >= chunk.Y && y < chunk.Y + chunk.Heihght)
+            if (x >= chunk.X && x < chunk.X + chunk.Sprite.rect.width && y >= chunk.Y && y < chunk.Y + chunk.Sprite.rect.height)
             {
                 var chunkSprite = chunk.Sprite;
                 var spriteRect = chunkSprite.rect;
