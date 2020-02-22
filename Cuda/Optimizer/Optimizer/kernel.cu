@@ -434,46 +434,46 @@ spritesCount получится равным 5453. Уже более-менее.
 
 А потому что я лопух и написал неправильно - на самом деле я отображал не стрипнутые области, а стрипнутые пиксели. А областей действительно намного меньше стирипается чем находится.
 
-Ок, еще 1 оптимизация - добавление стандартной проверки на альфу в стрипящий метод изменило вывод программы - с 129 итераций сократилось до 127, но в основном все осталось таким же. Я думаю это нормально, в отличие 
-от всех остальных разов когда такое было, потому что до этого я проверял альфу в последнюю очередь, да и действительно не было условия, что при нулевой альфе цвета не важны - это позволит более эффективно паковать. 
+Ок, еще 1 оптимизация - добавление стандартной проверки на альфу в стрипящий метод изменило вывод программы - с 129 итераций сократилось до 127, но в основном все осталось таким же. Я думаю это нормально, в отличие
+от всех остальных разов когда такое было, потому что до этого я проверял альфу в последнюю очередь, да и действительно не было условия, что при нулевой альфе цвета не важны - это позволит более эффективно паковать.
 Проверил, импорт в юнити дал такие же верные результаты как и предыдущие версии.
 
 Еще позже в тот же день.
 Ок, с багами вроде бы разобрался, производительность, конечно, пока неудовлетворительная. Но мне кажется, перед этим важнее сделать еще одну вещь - улучшить подсчет очков. У меня есть пара идей.
 
-Во-первых, сейчас у нас слишком много случаев, когда есть большая область, скажем 8х8, и куча совпадений, скажем, 131 (реальный кейс), которые при стриппинге преобразуются лишь в 3 реальных удаленных области. Это, 
-конечно, следствие того, что countScores у нас делает "грязный" счёт - не учитывает удаление областей. Что можно придумать? Ну, делать "чистый" счет невозоможно, сохранив производительность, поэтому сначала я думал 
-сделать какой-то штраф к счету за близость облстей. Скажем, если последнее совпадение было обнаружено за 2 пикселя до текущего - делать штраф, равный 2хКакой-нибудь-сайзинг, но во-первых реализация кажется мне 
-слишком громоздкой, а во-вторых мы же идем параллельно - как в таком случае определить "до"? Потом придумал другое - области не смогут сильно перекрываться при высокой энтропии пикселей. Т.е. если вся область состоит 
-из 1 цвета, то больше вероятности, что эти 131 область, которые мы насчитали - просто куча наложений. Так что нужно делать штраф на монотонность. Это правда может и не сработать против нас, поэтому надо делать это 
+Во-первых, сейчас у нас слишком много случаев, когда есть большая область, скажем 8х8, и куча совпадений, скажем, 131 (реальный кейс), которые при стриппинге преобразуются лишь в 3 реальных удаленных области. Это,
+конечно, следствие того, что countScores у нас делает "грязный" счёт - не учитывает удаление областей. Что можно придумать? Ну, делать "чистый" счет невозоможно, сохранив производительность, поэтому сначала я думал
+сделать какой-то штраф к счету за близость облстей. Скажем, если последнее совпадение было обнаружено за 2 пикселя до текущего - делать штраф, равный 2хКакой-нибудь-сайзинг, но во-первых реализация кажется мне
+слишком громоздкой, а во-вторых мы же идем параллельно - как в таком случае определить "до"? Потом придумал другое - области не смогут сильно перекрываться при высокой энтропии пикселей. Т.е. если вся область состоит
+из 1 цвета, то больше вероятности, что эти 131 область, которые мы насчитали - просто куча наложений. Так что нужно делать штраф на монотонность. Это правда может и не сработать против нас, поэтому надо делать это
 как опцию, чтобы можно было включать-выключать при необходимости. Может в будущем сделать какой-нибудь ферст пасс, анализирующий картинки и проставляющий наилучшие опции.
 
-Ок, вообще-то я тут еще подумал. Совпадения-то случаются вообще-то редко. Мы не проиграем много, если при совпадении пройдемся немного по соседним пикселям и сделаем приблизительную оценку ущерба от наложений. Скажем, 
-в округе области 8х8 обнаружилось еще 15 наложенных областей. По сути у нас тогда из этих 16 областей вырежется 1. Что нужно сделать? Нужно делить счет на 16 % 64, где 16 - кол-во областей всего в округе, а 64 - 
- - площадь области. Таким образом, каждый из этих 16 областей даст в сумме 1 счет область, что и требуется, ведь вырежется 1 область по факту. Если же областей больше, чем площадь в два раза, то вероятно (но это не 
+Ок, вообще-то я тут еще подумал. Совпадения-то случаются вообще-то редко. Мы не проиграем много, если при совпадении пройдемся немного по соседним пикселям и сделаем приблизительную оценку ущерба от наложений. Скажем,
+в округе области 8х8 обнаружилось еще 15 наложенных областей. По сути у нас тогда из этих 16 областей вырежется 1. Что нужно сделать? Нужно делить счет на 16 % 64, где 16 - кол-во областей всего в округе, а 64 -
+ - площадь области. Таким образом, каждый из этих 16 областей даст в сумме 1 счет область, что и требуется, ведь вырежется 1 область по факту. Если же областей больше, чем площадь в два раза, то вероятно (но это не
 точно), что вырежется 2 области. В общем, я думаю, это хорошее приближение. А гулять надо туда-сюда по sizingWidth и sizingHeight во все стороны от целевой области.
 
-Ну и во-вторых, то, что я давно уже задумал - включить в счет себестоимость хранения структуры области. Т.е. чтобы хранить счет у нас тратится память - нужно знать номер спрайта, x, y, width и height. В хорошую погоду 
-это примерно 8 + 6 + 6 + 4 + 4, т. е. 28 бит информации. Эти 28 бит могут хранить область в 1 пиксель или в 64 пикселя. Конечно, выгоднее, если эта область будет хранить 64. Пиксель у нас весит 4 байта - по 1 байту на 
-4 канала цвета. Поэтому эта структура себя окупит, если любая область, пусть даже площадью в 1 пиксель будет представлена хотя бы 2 раза (потому что 32 * 2 > 32 + 28), и не окупит, если любая область, 
-пусть даже площадью в бесконечное кол-во пикселей встретится только 1 раз (потому что бесконечность < бесконечность + 28). Но это плавающее соотношение. Для больших наборов больших спрайтов у нас накладные расходы на 
+Ну и во-вторых, то, что я давно уже задумал - включить в счет себестоимость хранения структуры области. Т.е. чтобы хранить счет у нас тратится память - нужно знать номер спрайта, x, y, width и height. В хорошую погоду
+это примерно 8 + 6 + 6 + 4 + 4, т. е. 28 бит информации. Эти 28 бит могут хранить область в 1 пиксель или в 64 пикселя. Конечно, выгоднее, если эта область будет хранить 64. Пиксель у нас весит 4 байта - по 1 байту на
+4 канала цвета. Поэтому эта структура себя окупит, если любая область, пусть даже площадью в 1 пиксель будет представлена хотя бы 2 раза (потому что 32 * 2 > 32 + 28), и не окупит, если любая область,
+пусть даже площадью в бесконечное кол-во пикселей встретится только 1 раз (потому что бесконечность < бесконечность + 28). Но это плавающее соотношение. Для больших наборов больших спрайтов у нас накладные расходы на
 хранение могут легко превысить 4 байта.
 
-Короче, нужно добавить все эти соображения в формулу. Мы не можем заранее сказать, какие точно нам потребуются размеры структуры, но можем предположить - x и y не больше, чем размер самого большого спрайта в наборе 
-минус самые маленькие сайзинги. По width и height все немного легче. Почти со 100%-й вероятностью, мы встретим область максимального размера, поэтому берем ее. Ну а с номером чанка атласа немного сложнее - трудно 
+Короче, нужно добавить все эти соображения в формулу. Мы не можем заранее сказать, какие точно нам потребуются размеры структуры, но можем предположить - x и y не больше, чем размер самого большого спрайта в наборе
+минус самые маленькие сайзинги. По width и height все немного легче. Почти со 100%-й вероятностью, мы встретим область максимального размера, поэтому берем ее. Ну а с номером чанка атласа немного сложнее - трудно
 предположить, какое кол-во чанков будет в атласе. Думаю пока можно остановиться на 8 битах, и не сильно ошибиться, а в будущем придумать что-нибудь поумнее.
 
-Итак, у нас есть оценочный размер структуры, допустим - 28. Когда мы обрабатываем область, мы знаем её размер и кол-во совпадений, допустим 4 пикселя * 4 байта = 128 бит и 1 совпадение. При этому кол-во непрозрачных 
-пикселей равно 3. Сейчас счет за 1 область будет рассчитан как 3 * 3 * 3 / 4, и общий счет - умножить на кол-во совпадений. Нам же во-первых надо будет хранить теперь отдельно кол-во совпадений и счет за одну облать. А 
+Итак, у нас есть оценочный размер структуры, допустим - 28. Когда мы обрабатываем область, мы знаем её размер и кол-во совпадений, допустим 4 пикселя * 4 байта = 128 бит и 1 совпадение. При этому кол-во непрозрачных
+пикселей равно 3. Сейчас счет за 1 область будет рассчитан как 3 * 3 * 3 / 4, и общий счет - умножить на кол-во совпадений. Нам же во-первых надо будет хранить теперь отдельно кол-во совпадений и счет за одну облать. А
 во-вторых, собственно разделить этот счет на 28 / 128. Так счет будет увеличиваться, если накладные расходы на хранение структуры невелики. Хотя нет, он будет увеличиваться слишком резко, не выражая реальную стоимость.
-Нужно разделить счет на (128 + 28) / 128, вот. Так будет точно. Для 1 пикселя счет урежется почти вдвое. А для 64 пикселей почти не изменится. Я думаю, может даже не стоит хранить счет и кол-во совпадений отдельно. 
+Нужно разделить счет на (128 + 28) / 128, вот. Так будет точно. Для 1 пикселя счет урежется почти вдвое. А для 64 пикселей почти не изменится. Я думаю, может даже не стоит хранить счет и кол-во совпадений отдельно.
 Неважно когда домножать, а надо именно домножать, как-то по-другому будет искусственно - работу свою данный счет выполнит - у двух областей полюбому будет преимущество перед 1 областью.
 
-Ок, я честно искал, перелопатил свои заметки везде, но так и не смог найти объяснения почему именно в кубе мы берем кол-во непрозрачных пикселей для счета. Я просто помню, была веская причина умножать именно 3 раза. 
-Ближайшее, что нашел, это что "Нам важно, чтобы большие по размеру области превалировали над такими же по вкладу в экономию меньшими областями, поэтому дополнительно умножаем на кол-во пикселей области в квадрате". 
-Но мне кажется, такой подход делает счет необъективным. Слишком сильно увеличивает значение больших областей. Отсюда и такие вот проблемы, что я уже жду 3й час, пока там 200-какая-то итерация находит мне 1 "идеальную" 
-большую область, убирабщую 60 пикселей, и только примерно 1 раз из 20 мелкую область, убирающая тысячи пикселей. В общем я, конечно, прав, что счет должен быть прямо пропорционален кол-ву непрозрачных пикселей, но от 
-куба надо избавиться. Я думаю, сейчас, когда заботу о том, чтобы отдавать приоритет большим областям берет на себя штука из предыдущего абзаца, можно просто сделать степень 1. Таким образом что там у нам по формуле? 
+Ок, я честно искал, перелопатил свои заметки везде, но так и не смог найти объяснения почему именно в кубе мы берем кол-во непрозрачных пикселей для счета. Я просто помню, была веская причина умножать именно 3 раза.
+Ближайшее, что нашел, это что "Нам важно, чтобы большие по размеру области превалировали над такими же по вкладу в экономию меньшими областями, поэтому дополнительно умножаем на кол-во пикселей области в квадрате".
+Но мне кажется, такой подход делает счет необъективным. Слишком сильно увеличивает значение больших областей. Отсюда и такие вот проблемы, что я уже жду 3й час, пока там 200-какая-то итерация находит мне 1 "идеальную"
+большую область, убирабщую 60 пикселей, и только примерно 1 раз из 20 мелкую область, убирающая тысячи пикселей. В общем я, конечно, прав, что счет должен быть прямо пропорционален кол-ву непрозрачных пикселей, но от
+куба надо избавиться. Я думаю, сейчас, когда заботу о том, чтобы отдавать приоритет большим областям берет на себя штука из предыдущего абзаца, можно просто сделать степень 1. Таким образом что там у нам по формуле?
 
 (opaquePixelsCount / sizingSquare) * ((32 * sizingSquare) / (32 * sizingSquare + dataStructureSizeBits)) * coincidentsCount
 
@@ -483,7 +483,7 @@ opaquePixelsCount * 32 * coincidentsCount / (32 * sizingSquare + dataStructureSi
 
 Как-то так, надеюсь, моя математика норм.
 
-Еще надо перед тем, как все это делать, добавить тестовый фреймворк - просто инфу о результатах: сколько всего пикселей занимает атлас, сколько областей используется всего в спрайтах. Посчитать в целом вес атласа и 
+Еще надо перед тем, как все это делать, добавить тестовый фреймворк - просто инфу о результатах: сколько всего пикселей занимает атлас, сколько областей используется всего в спрайтах. Посчитать в целом вес атласа и
 областей. Поделить его на общий вес входящих спрайтов. Так сможем в принципе объективно оценивать сжатие.
 
 На самом деле кол-во областей не явно выражает степень сжатия. Нужно считать именно по битам. Получили 3 совпадения с областью - приплюсовали 3 * 28 к общему весу атласа.
@@ -502,17 +502,55 @@ selftCostOfAtlasArea = atlasChunkWidth * atlasChunkHeight * 32;
 Как это все хранится на целевой платформе?
 
 1.) Есть спрайт-атлас, там имеет значение только площать спрайт атласа - width * height.
-2.) Есть спрайты, нарезенные из этого спрайт-атласа - структуры размером со спрайт, сколько он занимает на целевой платформе. Минимум - x,y,width,height. На юнити еще всякое разное. Можно создать свой оптимизированный 
+2.) Есть спрайты, нарезенные из этого спрайт-атласа - структуры размером со спрайт, сколько он занимает на целевой платформе. Минимум - x,y,width,height. На юнити еще всякое разное. Можно создать свой оптимизированный
 фомрат спрайта.
-3.) И есть наши собственно спрайты - это структура, состоящая из ширины-высоты спрайта - тут уже мы можем и должны оптимизировать - 2 шорта. Пивот пойнта - 2 шорта. И массива чанков - размер указателя на начало массива 
+3.) И есть наши собственно спрайты - это структура, состоящая из ширины-высоты спрайта - тут уже мы можем и должны оптимизировать - 2 шорта. Пивот пойнта - 2 шорта. И массива чанков - размер указателя на начало массива
 и дальше уже структуры чанков спрайта - x, y, и номер спрайта в атласе. Вот, собственно, все, что требуется от формата.
 
-Стоп. Все, что взаимодействует со стандартными вызовами движка использует стандартный размер 4 байта. И все наши оптимизации все равно в конечном итоге преобразуются в инты и флоаты. Что конкретно будет использовать 
-4-байтовые данные? Спрайты атласа, из которых состоят оптимизированные спрайты - это вся инфа спрайтов + координаты для каждого чанка, все это будет в 4х-байтах. Т.е., в общем-то, практический все. За исклюечением, 
-возможно, индексов атласа. И то вряд ли. Индекс может и будет храниться компактно, но работа с ним все равно будет вестись в интах. Вообще момент работы довольно исчезающий, по сравнению с хранением, так что может в этом 
+Стоп. Все, что взаимодействует со стандартными вызовами движка использует стандартный размер 4 байта. И все наши оптимизации все равно в конечном итоге преобразуются в инты и флоаты. Что конкретно будет использовать
+4-байтовые данные? Спрайты атласа, из которых состоят оптимизированные спрайты - это вся инфа спрайтов + координаты для каждого чанка, все это будет в 4х-байтах. Т.е., в общем-то, практический все. За исклюечением,
+возможно, индексов атласа. И то вряд ли. Индекс может и будет храниться компактно, но работа с ним все равно будет вестись в интах. Вообще момент работы довольно исчезающий, по сравнению с хранением, так что может в этом
 и есть смысл. Пока что, думаю, стоит ориентироваться в своей оценке на худший сценарий, когда все данные будут по 4 байта - все-таки это в идеале не должно сильно влиять.
 
+Ок, систему оценки сделал. Теперь счет. Я думаю, я ошибался слегка - у нас все повторы спрайта не содержат width и height - только индекс чанка атласа и его смещение. И храниться они будут действительно в компактном виде.
+Сама же формула по-моему верна. И счет будет верным. По идее.
 
+Ок, при такой формуле у нас предпочтение почти всегда отдается единичным пикселям - неудивительно, учитывая что размер структуры получается меньше размера пискеля. Но так ли оно на практике? Нет, потому что для отображения
+каждого пикселя требуется целый спрайтрендерер. Не знаю, может в будущем я сделаю свою реализацию в шейдере или рендерере, но пока что надо закладывать большую цену в 1 область. Посмотрел, размер гемобжа со
+спрайтрендерером в менеджед среде - примерно 112 байт. Вместе с анменеджед пускай будет 200. Учитывая, что в каждый момент времени показываются не все спрайты, то можно предположить, что будет меньше. Насколько - надо
+смотреть. А пока возьмем 64.
+
+Ок, вот я тут понял, что пытаюсь определить что важно а что нет, прикинуть размеры, но я понял, что у меня пока слишком мало информации. Прикидывать размеры на такой маленькой выборке дело неблагодарное. Нужно сначала
+поиметь средних размеров рабочую выборку, запилить средства анализа реальной экономии памяти и уже на осное его анализа делать выводы о среднем занимаемом объеме видео- и оперативной памяти, а также выигранной\проигранной
+производительности.
+
+Думаю пытаться реальный тест кейс запилить нет смысла - можно на основе реального тест кейса запилить синтетический. Скажем, несколько больших бекграундов, штук 5 повторяющихся много раз тайлов, штук 10 анимированных
+персонажей. Плюс где-то раза в 4 больше отсутствющих, просто лежащих в памяти структур, готовых появиться на сцене в любое время. И затем можно будет в эту вот сцену запиливать обычные спрайты и мои и смотреть разницу.
+
+Но перед этим надо добиться того, чтобы можно было обработать в разумное время хотя бы 16 мегапикселей информации - думаю вполне нормальная выборка, 1 4к-текстура графики. Сейчас еле-еле четверть мегапикселя обрабатывается.
+
+Чтобы ускориться, думаю можно аппроксимировать подсчет счета. Т.е. проходиться не по всей бд, а по случайной ее части. Сделать скажем выборку какого-то размера. Так, ок, у нас каждый блок проходится по спрайто-сайзу, и на
+каждый тред в блоке приходится по несколько пикселей от нашего спрайто-сайза. Ок, тогда каким-то пикселам достанется меньше проходов чем другим, но, я думаю не сильно большая разница должна быть. Допустим мы получили
+задание пройтись по большому спрайту, скажем площадью в 1 мегапиксель. Т.к. у нас всего 1024 треда работают, то у нас будет 1024 задания для каждого треда пройтись по всей бд при этом каждый из тредов должен в идеале иметь
+примерно одинаковый объем пройденной бд.
+
+Ок, я понял, нужно иметь 1 счетчик на все таски. Последний таск, делающий работу инкрементирует и проверяет счетчик, и если он дошел до нужного значения, заканчивает работу всего треда. Так все пиксели нашего спрайта получат
+одинаковое кол-во проходов.
+
+Ок, если мы так делаем, то мы не можем больше проходиться с 0 до SpritesCount - мы должны начитнать с момента, на котором закончили в прошлую итерацию, и не заканчивать если пришли к последнему спрайту, а приходить к 0му. Ок,
+значит, во-первых нам нужна структура, содержащая candidateIndex, candidateX и candidateY, с которых мы будем начинать цикл и возвращать эти данные для следующего цикла. Ок, тут нужен целый буффер размером с spritesCount *
+sizingsCount для хранения 3х size_t каждого блока между итерациями.
+
+
+2.22.2020
+Ок, аппроксимация должна делаться только по непустым областям. Если делать по областям вообще, то может случиться так, что те области по которым мы прошлись не содержат областей. Но это еще полбеды, можно было бы сделать
+простую проверку на то, что если победитель пустой - continue, но что если мы прошлись по областям, которые содержат всего 1 пиксель? Победитель будет не пустой, но крайне далекий от оптимального. Конечно, если делать
+аппрокимацию только по НЕ-пустым областям, последние стадии могут сильно растянуться, т.к., возможно, придется проходиться по всей бд, чтобы просмотреть нужное для аппроксимации кол-во. В этом случае, можно как-то привязать
+аппроксимацию к общему объему бд... Но мы не можем точно знать, что эти последние пиксели будут распределены равномерно по бд. Наверное, это предел данного способа оптимизации, и на последних стадиях надо будет придумывать
+что-то другое.
+
+Ок, вроде починил один очень непонятный баг. И вроде я понял из-за чего он сейчас, но почему в этим датасетом он проявлялся несколько дней назад don't make any sense. Ну ладно, будем посмотреть что будет дальше. Сейчас, по 
+крайней мере пол-мегапиксельный датасет заработал как надо.
 */
 
 #define RGBA_FLAGS_UTILIZING false
@@ -520,6 +558,7 @@ selftCostOfAtlasArea = atlasChunkWidth * atlasChunkHeight * 32;
 #define REPEAT_OPTIMIZATION_2 true
 #define SMART_INDECIES_INFO_OPTIMIZATION false
 
+#define SCORE_MULTIPLIER 1000
 
 #define BLOCK_SIZE 1024
 #define WARP_SIZE 32
@@ -532,6 +571,9 @@ selftCostOfAtlasArea = atlasChunkWidth * atlasChunkHeight * 32;
 #define INDECIES_INFO_LENGHT 8
 
 #define MAX_FLAGS_LENGTH_FOR_SPRITE 8192 //Для 256х256 спрайта он именно такой
+
+//#define APPROXIMATION_THRESHOLD 100000000 //Сколько областей кандидатов максимум надо проверить прежде чем полюбому заканчивать.
+#define APPROXIMATION_THRESHOLD 10000 //Сколько областей кандидатов максимум надо проверить прежде чем полюбому заканчивать.
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char* file, int line, bool abort = true)
@@ -595,7 +637,10 @@ int hostCeilToInt(int value, int divider)
 		return value / divider + 1;
 }
 
-__global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, int* results, int* indeciesInfo)
+#define PBSTR "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
+#define PBWIDTH 60
+
+__global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, int* results, int* indeciesInfo, unsigned int* loopStates, unsigned int* iterationState/*, volatile int* data*/)
 {
 	/*if (threadIdx.x == 0)
 		printf("x = %d, z = %d\n", blockIdx.x, blockIdx.z);
@@ -696,8 +741,13 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 
 	i = REPEAT_OPTIMIZATION_2 ? (REPEAT_OPTIMIZATION_1 ? (blockIdx.x >= SpritesCount / 2 ? blockIdx.x : 0) : blockIdx.x) : 0;
 
-	for (size_t candidateIndex = i; candidateIndex < SpritesCount; candidateIndex++)
+	int numberOfNonVoidCandidateAreasChecked = 0;
+	int counter = 0;
+
+	for (size_t candidateIndexSizeT = i; candidateIndexSizeT < SpritesCount; candidateIndexSizeT++)
 	{
+		int candidateIndex = (candidateIndexSizeT + loopStates[blockIdx.x * SizingsCount + blockIdx.z]) % SpritesCount;
+
 		int candidateWorkingWidth = SpriteWidths[candidateIndex] - SizingWidths[blockIdx.z] + 1;
 		if (candidateWorkingWidth <= 0)
 			continue;
@@ -801,10 +851,42 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 			if (ourWorkingPixelIndex >= (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z] + 1) * ourWorkingHeight)
 				break;
 
-			/*if ((int)((cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + ourWorkingPixelIndex / 8] >> (ourWorkingPixelIndex % 8)) & 1) == 0)
-				continue;*/
+			bool taskIsTheLast = false;
+			if (taskIndex + 1 >= numberOfTasksPerThread)
+				taskIsTheLast = true;
+			else
+			{
+				temp = (taskIndex + 1) * BLOCK_SIZE + threadIdx.x;
+				if (temp >= (SpriteWidths[blockIdx.x] - SizingWidths[blockIdx.z] + 1) * ourWorkingHeight)
+					taskIsTheLast = true;
+			}
+
+			counter++;
+			/*if (counter % 1000 == 0)
+				printf("counter = %d, candidateIndex = %d, numberOfTasksPerThread = %d\n", (int)counter, (int)candidateIndex, (int)numberOfTasksPerThread);*/
+
+			/*if (counter > 1000000)
+				printf("SPAM");*/
+
+			/*if (counter > 1000 && numberOfTasksPerThread == 3 && taskIsTheLast)
+				printf("SPAM");*/
+
+			/*if (counter > 1000 && numberOfTasksPerThread == 3 && taskIsTheLast)
+				printf("SPAM");*/
+
+				/*if ((int)((cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + ourWorkingPixelIndex / 8] >> (ourWorkingPixelIndex % 8)) & 1) == 0)
+					continue;*/
+
+
+			//Ок, вот эта вот фигня отрабатывает, а counter ну никак не может быть больше 100 миллионов. Это бы означало, что один тред (пусть даже максимально с 3 тасками), прошелся по спрайтам вот столько раз. Это даже не по пикселям.
+			//Т.е. либо таски у нас бесконечно крутятся либо спрайты. Ааа, ну да, мы же когда делаем континуум, мы не доходим до места в котором обратно форматируем индекс спрайта. Надеюсь, дело всего лишь в этом.
+			if (counter > 100000000)
+				printf("SPAM");
 			if ((int)((voids + VoidOffsets[blockIdx.x * SizingsCount + blockIdx.z])[ourWorkingPixelIndex / 8] >> (ourWorkingPixelIndex % 8) & 1) == 0)
 				continue;
+
+			/*if (counter > 1000000 && numberOfTasksPerThread == 3 && taskIsTheLast)
+				printf("SPAM");*/
 
 			int ourWorkingX = (ourWorkingPixelIndex / ourWorkingHeight);
 			int ourWorkingY = ourWorkingPixelIndex % ourWorkingHeight;
@@ -832,26 +914,76 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 				}
 			}
 			i = (SizingWidths[blockIdx.z] * SizingHeights[blockIdx.z]);
-			temp = temp * temp * temp;
-			temp = __fdividef(temp, i);
+			/*temp = temp * temp * temp; //Старый счет
+			temp = __fdividef(temp, i);*/
+
+			temp = __fdividef(temp/* * temp*/, i) * __fdividef((32 * i), (32 * i + EstimatedAreaCost)) * SCORE_MULTIPLIER; //(opaquePixelsCount / sizingSquare) * ((32 * sizingSquare) / (32 * sizingSquare + dataStructureSizeBits)) * coincidentsCount
 
 			int coincidences = 0;
+			/*if (counter > 1000)
+				printf(" > 1000, taskIndex = %d, candidateIndex = %d\n", (int)taskIndex, (int)candidateIndex);*/
 
-			for (size_t candidateWorkingX = 0; candidateWorkingX < candidateWorkingWidth; candidateWorkingX++)
+				//if (counter >= 1001 && counter < 1010)
+				//	printf("taskIndex = %d, candidateIndex = %d, loopStates[(blockIdx.x * SizingsCount + blockIdx.z) * 2] = %d, loopStates[(blockIdx.x * SizingsCount + blockIdx.z) * 3] = %d, candidateWorkingWidth = %d, candidateWorkingHeight = %d, numberOfNonVoidCandidateAreasChecked = %d\n", (int)taskIndex, (int)candidateIndex, (int)loopStates[(blockIdx.x * SizingsCount + blockIdx.z) * 2], (int)loopStates[(blockIdx.x * SizingsCount + blockIdx.z) * 3], (int)candidateWorkingWidth, (int)candidateWorkingHeight, (int)numberOfNonVoidCandidateAreasChecked);
+
+			for (size_t candidateWorkingX = loopStates[(blockIdx.x * SizingsCount + blockIdx.z) * 2]; candidateWorkingX < candidateWorkingWidth; candidateWorkingX++)
 			{
-				for (size_t candidateWorkingY = 0; candidateWorkingY < candidateWorkingHeight; candidateWorkingY++)
+				for (size_t candidateWorkingY = loopStates[(blockIdx.x * SizingsCount + blockIdx.z) * 3]; candidateWorkingY < candidateWorkingHeight; candidateWorkingY++)
 				{
+					if (numberOfNonVoidCandidateAreasChecked > 0 && numberOfNonVoidCandidateAreasChecked % 1000000 == 0)
+					{
+						//atomicAdd((int*)data, 1);
+						printf("numberOfNonVoidCandidateAreasChecked = %d\n", numberOfNonVoidCandidateAreasChecked);
+					}
+					/*if (counter >= 1000000 && counter % 1000 == 0)
+						printf("candidateWorkingX = %d, candidateWorkingY = %d\n", candidateWorkingX, candidateWorkingY);*/
 					int candidatePixelIndex = candidateWorkingX * candidateWorkingHeight + candidateWorkingY;
 					/*if (MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + candidatePixelIndex / 8 >= 40960)
 						printf("ok, we tried to get to impossible address with candidatePixelIndex=%d, pixel %d,%d of the %d-th sprite (%d, %d)", (int)candidatePixelIndex, (int)candidateWorkingX, (int)candidateWorkingY, (int)candidateIndex, (int)candidateWorkingWidth, (int)candidateWorkingHeight);*/
+
+						/*if (counter >= 1001 && counter < 1010)
+						{
+							printf("Checking void. candidatePixelIndex = %d, cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + candidatePixelIndex / 8] = %d, fincal void is %d \n", (int)candidatePixelIndex, (int)cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + candidatePixelIndex / 8], (int)((cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1));
+						}*/
+
 					if ((int)((cachedBits[MAX_FLAGS_LENGTH_FOR_SPRITE * 4 + candidatePixelIndex / 8] >> (candidatePixelIndex % 8)) & 1) == 0)
 						continue;
+					else if (taskIsTheLast)
+					{
+
+						/*if (counter >= 1001 && counter < 1010)
+							printf("taskIsTheLast and numberOfNonVoidCandidateAreasChecked (%d) is ++\n", (int)numberOfNonVoidCandidateAreasChecked);*/
+						numberOfNonVoidCandidateAreasChecked++;
+						iterationState[blockIdx.x * SizingsCount + blockIdx.z] = numberOfNonVoidCandidateAreasChecked;
+						//if (threadIdx.x == 0 && numberOfNonVoidCandidateAreasChecked % 1000 == 0)
+						//{
+						//	i = 0;
+						//	for (x = 0; x < SpritesCount; x++)
+						//		for (y = 0; y < SizingsCount; y++)
+						//			i += iterationState[x * SizingsCount + y];
+						//	float percentage = __fdividef(i, SizingsCount * SpritesCount * APPROXIMATION_THRESHOLD);
+						//	if ((int)(percentage * 100) % 10 == 0)
+						//		printf("Percentage: %d, SizingWidths[blockIdx.z] = %d, SizingHeights[blockIdx.z] = %d, numberOfNonVoidCandidateAreasChecked = %d\n", (int)(percentage * 100), (int)SizingWidths[blockIdx.z], (int)SizingHeights[blockIdx.z], (int)numberOfNonVoidCandidateAreasChecked);
+						//}
+						if (numberOfNonVoidCandidateAreasChecked >= APPROXIMATION_THRESHOLD)
+						{
+							loopStates[blockIdx.x * SizingsCount + blockIdx.z] = candidateIndex;
+							loopStates[(blockIdx.x * SizingsCount + blockIdx.z) * 2] = candidateWorkingX;
+							loopStates[(blockIdx.x * SizingsCount + blockIdx.z) * 3] = candidateWorkingY;
+							return;
+						}
+					}
+
 
 					bool isTheSame = true;
 					for (x = 0; x < SizingWidths[blockIdx.z]; x++)
 					{
+						/*if (x > 0 && x % 100 == 0)
+							printf("x = %d\n", (int)x);*/
 						for (y = 0; y < SizingHeights[blockIdx.z]; y++)
 						{
+							/*if (y > 0 && y % 100 == 0)
+								printf("y = %d\n", (int)y);*/
 							i = (ourWorkingX + x) * SpriteHeights[blockIdx.x] + ourWorkingY + y;
 							int candidatePixelIndex = (candidateWorkingX + x) * SpriteHeights[candidateIndex] + candidateWorkingY + y;
 
@@ -923,9 +1055,13 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 					}
 				}
 
+				loopStates[(blockIdx.x * SizingsCount + blockIdx.z) * 3] = 0;
+
 				if (isRepeat)
 					break;
 			}
+
+			loopStates[(blockIdx.x * SizingsCount + blockIdx.z) * 2] = 0;
 			//printf("countScores 0\n");
 
 			/*if ((int)(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingPixelIndex) == 4743346)
@@ -966,7 +1102,7 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 				в первой половине, а так его просто нигде больше не встречалось. Такой вот уникальный спрайт с многократно повторяющейся областью, т.ч. это
 				работает нормально.
 
-				Ок, судя по всему эта херня с мемсетом все-таки замедляет сильнее чем ускоряет, делаю это опцией SMART_INDECIES_INFO_OPTIMIZATION, отключенной по 
+				Ок, судя по всему эта херня с мемсетом все-таки замедляет сильнее чем ускоряет, делаю это опцией SMART_INDECIES_INFO_OPTIMIZATION, отключенной по
 				умолчанию.
 				*/
 				if (!SMART_INDECIES_INFO_OPTIMIZATION || indeciesInfo[(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingPixelIndex)] < 0) //У каждого треда может быть много заданий. Нет смысла записывать много раз одни и те же данные.
@@ -977,12 +1113,17 @@ __global__ void countScores(unsigned char* rgbaData, unsigned char* voids, unsig
 					indeciesInfo[OptimizedScoresCount + (workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingPixelIndex)] = blockIdx.z;
 					/*if ((int)(workingOffsets[blockIdx.x * SizingsCount + blockIdx.z] + ourWorkingPixelIndex) == 4743346)
 						printf("Aaaand it's writing to indeciesInfo %d and %d\n", (int)blockIdx.x, (int)blockIdx.z);*/
-					//printf("countScores 7\n");
+						//printf("countScores 7\n");
 				}
 				//printf("countScores 8\n");
 			}
 			//printf("countScores 9\n");
 		}
+
+		/*if (counter > 1000000)
+			printf("AOujdpajsdpJASIodpjasipdjpaoJSDpJOASDJasiod 111");*/
+
+		//candidateIndex = (candidateIndex + SpritesCount - loopStates[blockIdx.x * SizingsCount + blockIdx.z]) % SpritesCount;
 	}
 }
 
@@ -1420,7 +1561,7 @@ __global__ void stripTheWinnerAreaFromData(unsigned char* rgbaData, unsigned cha
 	//}
 }
 
-__global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, int* scoresResults, unsigned int* indecies, int* indeciesInfo, unsigned int workingScoresLength, unsigned int optimizedWorkingScoresLength, char* atlas, unsigned int* offsets, unsigned int* spritesCountSizedArray, unsigned int* atlasLength)
+__global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsigned char* voids, unsigned char* rgbaFlags, unsigned int* workingOffsets, int* scoresResults, unsigned int* indecies, int* indeciesInfo, unsigned int workingScoresLength, unsigned int optimizedWorkingScoresLength, char* atlas, unsigned int* offsets, unsigned int* spritesCountSizedArray, unsigned int* atlasLength, unsigned int* loopStates, unsigned int* iterationState/*, volatile int* data*/)
 {
 	/*printf("main threadx = %d, blockx = %d", threadIdx.x, blockIdx.x);
 	return;*/
@@ -1437,7 +1578,9 @@ __global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsig
 		//printf("%d,%d,%d\n", BLOCK_SIZE, SpritesCount, SizingsCount);
 		if (SMART_INDECIES_INFO_OPTIMIZATION)
 			memset(indeciesInfo, -1, optimizedWorkingScoresLength * INDECIES_INFO_LENGHT); //Нужно инициализировать инфо индексов в -1 чтобы можно было проверять когда там еще не было ничего записано, чтобы не писать туда лишний раз. Может оно того и не стоит?...
-		countScores << <scoresCountingGrid, scoresCountingBlock >> > (rgbaData, voids, rgbaFlags, workingOffsets, scoresResults, indeciesInfo);
+		memset(iterationState, 0, SizingsCount * SpritesCount * sizeof(unsigned int));
+		//data = 0;
+		countScores << <scoresCountingGrid, scoresCountingBlock >> > (rgbaData, voids, rgbaFlags, workingOffsets, scoresResults, indeciesInfo, loopStates, iterationState/*, data*/);
 		cdpErrchk(cudaPeekAtLastError());
 
 		//cudaError_t scoreCountingError = cudaPeekAtLastError();
@@ -1497,8 +1640,9 @@ __global__ void mainKernel(int opaquePixelsCount, unsigned char* rgbaData, unsig
 					winnersOpaquePixelsCount++;
 			}
 		}
-		int temp = winnersOpaquePixelsCount * winnersOpaquePixelsCount * winnersOpaquePixelsCount;
-		temp = __fdividef(temp, sizingWidth * sizingHeight);
+		//int temp = winnersOpaquePixelsCount * winnersOpaquePixelsCount * winnersOpaquePixelsCount;
+		//temp = __fdividef(temp, sizingWidth * sizingHeight);
+		int temp = __fdividef(winnersOpaquePixelsCount/* * winnersOpaquePixelsCount*/, sizingWidth * sizingHeight) * __fdividef((32 * sizingWidth * sizingHeight), (32 * sizingWidth * sizingHeight + EstimatedAreaCost)) * SCORE_MULTIPLIER; //(opaquePixelsCount / sizingSquare) * ((32 * sizingSquare) / (32 * sizingSquare + dataStructureSizeBits)) * coincidentsCount
 
 		overallAtlasVolume += sizingWidth * sizingHeight;
 
@@ -1619,14 +1763,17 @@ int getBitsCount(int number)
 	//return 32;
 }
 
+#define INCS 10
+
 int main()
 {
 	cudaDeviceReset();
+	//gpuErrchk(cudaSetDeviceFlags(cudaDeviceMapHost));
 
 	//string path = "P:\\U\\Some2DGame\\Cuda\\info\\new-data.bytes";
 	//string fileName = "+Ki2mqq6D3CLZJcSc1ukx6aKwsQ=";
-	string fileName = "3L1lKIrjiyQGNUbZLCjrm3IBMjQ=";
-	//string fileName = "QXmSV+VlrPcTmPTdk2R5ZS5kzoI=";
+	//string fileName = "3L1lKIrjiyQGNUbZLCjrm3IBMjQ=";
+	string fileName = "QXmSV+VlrPcTmPTdk2R5ZS5kzoI=";
 	string path = "P:\\U\\Some2DGame\\Assets\\SpritesheetOptimizer\\SomewhatCleanVersion\\DB\\Exported\\" + fileName + ".bytes";
 	tuple<char*, int> blobTuple = file_reader::readFile(path);
 	char* blob = get<0>(blobTuple);
@@ -1793,8 +1940,16 @@ int main()
 	unsigned int* atlasLengthDevice;
 	cudaMalloc((void**)&atlasLengthDevice, sizeof(unsigned int));
 
+	unsigned int* deviceLoopStatesPtr;
+	cudaMalloc((void**)&deviceLoopStatesPtr, sizingsCount * spritesCount * sizeof(unsigned int) * 3);
+	cudaMemset(deviceLoopStatesPtr, 0, sizingsCount * spritesCount * sizeof(unsigned int) * 3);
 
-	int estimatedAreaCost = 10; //Примерно кол-во областей ставим на 1024, т.е. 10 бит.
+	unsigned int* deviceIterationStatePtr;
+	cudaMalloc((void**)&deviceIterationStatePtr, sizingsCount * spritesCount * sizeof(unsigned int));
+	cudaMemset(deviceIterationStatePtr, 0, sizingsCount * spritesCount * sizeof(unsigned int));
+
+
+	int estimatedAreaCost = 10 + 64 * 8; //Примерно кол-во областей ставим на 1024, т.е. 10 бит. 64 байта - приблизительное значение занимаемое всякими рендерерами в среднем на область.
 	int maxSpriteWidth = 0;
 	int maxSpriteHeight = 0;
 	for (size_t i = 0; i < spritesCount; i++)
@@ -1806,15 +1961,55 @@ int main()
 	}
 	estimatedAreaCost += getBitsCount(maxSpriteWidth - sizingWidths[sizingsCount - 1]);
 	estimatedAreaCost += getBitsCount(maxSpriteHeight - sizingHeights[sizingsCount - 1]);
-	estimatedAreaCost += getBitsCount(sizingWidths[0]); //В 0-х у нас самые большие сайзинги
-	estimatedAreaCost += getBitsCount(sizingHeights[0]);
+	//estimatedAreaCost += getBitsCount(sizingWidths[0]); //В 0-х у нас самые большие сайзинги
+	//estimatedAreaCost += getBitsCount(sizingHeights[0]);
 	cudaMemcpyToSymbol(EstimatedAreaCost, &estimatedAreaCost, sizeof(int));
 
+	/*volatile int* d_data, * h_data;
+	gpuErrchk(cudaHostAlloc((void**)&h_data, sizeof(int), cudaHostAllocMapped));
+	gpuErrchk(cudaHostGetDevicePointer((int**)&d_data, (int*)h_data, 0));
+	*h_data = 0;*/
+	//printf("kernel starting\n");
 
 	//dim3 block(BLOCK_SIZE);
 	//dim3 grid(spritesCount, 1, sizingsCount); //Сайзингов будет меньше, чем спрайтов, так что сайзинги записываем в z
 	//mainKernel << <grid, block >> > ((unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (unsigned int*)deviceResultsPtr);
-	mainKernel << <1, 1 >> > (opaquePixelsCount, (unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (int*)deviceScoresPtr, (unsigned int*)deviceIndeciesPtr, (int*)deviceIndeciesInfoPtr, scoresCount, optimizedScoresCount, deviceAtlasPtr, (unsigned int*)deviceOffsetsPtr, (unsigned int*)deviceSpritesCountSizedArrayPtr, atlasLengthDevice);
+	mainKernel << <1, 1 >> > (opaquePixelsCount, (unsigned char*)deviceRgbaDataPtr, (unsigned char*)deviceVoidsPtr, (unsigned char*)deviceRgbaFlagsPtr, deviceWorkingSpriteOffsetsPtr, (int*)deviceScoresPtr, (unsigned int*)deviceIndeciesPtr, (int*)deviceIndeciesInfoPtr, scoresCount, optimizedScoresCount, deviceAtlasPtr, (unsigned int*)deviceOffsetsPtr, (unsigned int*)deviceSpritesCountSizedArrayPtr, atlasLengthDevice, deviceLoopStatesPtr, deviceIterationStatePtr/*, d_data*/);
+
+	//float progress = 0.0f;
+	//while (progress < 0.9f)
+	//{
+	//	int value1 = *h_data;
+	//	progress = float(value1) / (SizingsCount * SpritesCount * APPROXIMATION_THRESHOLD);
+	//	int barWidth = 70;
+
+	//	std::cout << "[";
+	//	int pos = barWidth * progress;
+	//	for (int i = 0; i < barWidth; ++i) {
+	//		if (i < pos) std::cout << "=";
+	//		else if (i == pos) std::cout << ">";
+	//		else std::cout << " ";
+	//	}
+	//	std::cout << "] " << int(progress * 100.0) << " %\r";
+	//	std::cout.flush();
+
+	//	//progress += 0.16; // for demonstration only
+	//}
+	//std::cout << std::endl;
+	//do {
+	//	int value1 = *h_data;
+	//	/*if (value1 > value) {
+	//		printf("h_data = %d\n", value1);
+	//		value = value1;
+	//	}*/
+	//	float percentage = float(value1) / (SizingsCount * SpritesCount * APPROXIMATION_THRESHOLD);
+	//	int val = (int)(percentage * 100);
+	//	int lpad = (int)(percentage * PBWIDTH);
+	//	int rpad = PBWIDTH - lpad;
+	//	printf("\r%3d%% [%.*s%*s]", val, lpad, PBSTR, rpad, "");
+	//	fflush(stdout);
+	//} while (value < 100);
+
 	gpuErrchk(cudaPeekAtLastError());
 	cudaDeviceSynchronize();
 	gpuErrchk(cudaPeekAtLastError());

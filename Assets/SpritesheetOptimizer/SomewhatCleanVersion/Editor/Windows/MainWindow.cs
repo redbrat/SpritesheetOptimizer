@@ -90,6 +90,24 @@ public class MainWindow : EditorWindow
         Debug.Log($"Size of reference to sprite is {((sizeOfYArr - sizeOfNArr) / (float)times).ToString("n2")}");
     }
 
+    [MenuItem("Optimizer/Test 3")]
+    private static void test3()
+    {
+        var times = 100_000;
+        var arr = new GameObject[times];
+        var before = GC.GetTotalMemory(true);
+        for (int i = 0; i < times; i++)
+        {
+            arr[i] = new GameObject();
+            arr[i].AddComponent<SpriteRenderer>();
+        }
+        var after = GC.GetTotalMemory(true);
+        var sizeOfArr = after - before;
+        for (int i = 0; i < times; i++)
+            DestroyImmediate(arr[i]);
+        Debug.Log($"Size of GameObject with SpriteRenderer is {(sizeOfArr / (float)times).ToString("n2")}");
+    }
+
     private void OnGUI()
     {
         _selectedSprite = EditorGUILayout.ObjectField("Sprite: ", _selectedSprite, typeof(Sprite), false) as Sprite;
